@@ -142,6 +142,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempo por núcleo</span></button>
     <button class="nav" id="navApr" onclick="nav('apr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span>Aprobaciones</span></button>
     <div class="grp">Ajustes</div>
+    <button class="nav" id="navAlta" onclick="nav('alta')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Alta masiva</span></button>
     <button class="nav" id="navConf" onclick="nav('conf')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configuración</span></button>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
   </aside>
@@ -288,6 +289,20 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         <button class="chip" onclick="Apr.reload()" style="background:var(--surf2);color:var(--ink)">↻ Actualizar</button>
       </div>
       <div id="aprLista" style="margin-top:12px"></div>
+    </div>
+
+    <div class="content" id="view-alta" style="display:none">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div><div class="h1">Alta masiva</div><div class="h1sub">Importa el catálogo (modelos y núcleos) desde un Excel</div></div>
+        <label class="chip" style="cursor:pointer">Seleccionar Excel
+          <input type="file" id="fileAlta" accept=".xls,.xlsx,.csv" style="display:none"></label>
+      </div>
+      <div style="background:var(--surf2);border-radius:10px;padding:12px 16px;margin:12px 0;font-size:13px;color:var(--ink2)">
+        Columnas esperadas: <b>CÓDIGOS PF</b> (código del modelo), <b>NOMBRE PF</b>, <b>MEDIDA</b>, <b>PROGRAMA NÚCLEOS</b>, <b>SKU NÚCLEOS</b>, <b>DESCRIPCIÓN NÚCLEOS</b>. La primera fila debe ser la cabecera.
+      </div>
+      <div id="altaAviso"></div>
+      <div class="card"><div id="altaTabla" style="max-height:55vh;overflow:auto"></div></div>
+      <button id="btnImportar" class="chip" style="padding:13px 28px;font-size:15px;margin-top:14px;opacity:.5" disabled onclick="Alta.importar()">Importar</button>
     </div>
   </div>
 </div>
@@ -503,9 +518,9 @@ function go2(){toast('Órdenes de trabajo: próximamente en web','')}
 //  PRODUCCIÓN
 // ============================================================
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones'};
-  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr'};
-  ['dash','prod','ot','conf','usr','inv','prodv','tsku','apr'].forEach(k=>{
+  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva'};
+  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta'};
+  ['dash','prod','ot','conf','usr','inv','prodv','tsku','apr','alta'].forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
   });
@@ -1217,6 +1232,101 @@ const Apr = {
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   }
 };
+
+
+// ============================================================
+//  ALTA MASIVA (importar catálogo desde Excel)
+// ============================================================
+const Alta = {
+  modelos:[], nucleosNuevos:[],
+
+  norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); },
+  pick(row, keys){ for(const k of keys){ const kk=this.norm(k); for(const col in row){ if(this.norm(col)===kk) return String(row[col]).trim(); } } return ''; },
+
+  async abrir(file){
+    try{
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+      if(!rows.length){ toast('El archivo está vacío','err'); return; }
+      // preparar modelos (dedup por sku_pf)
+      const vistos=new Set(); this.modelos=[];
+      rows.forEach(d=>{
+        let sku_pf=this.pick(d,['sku_pf','codigos pf','codigo pf','sku pf','modelo','codigo','codigos','sku']);
+        if(!sku_pf)return; sku_pf=sku_pf.toUpperCase();
+        if(vistos.has(sku_pf))return; vistos.add(sku_pf);
+        this.modelos.push({
+          sku_pf,
+          nombre:this.pick(d,['nombre pf','nombre','descripcion','desc']),
+          medida:this.pick(d,['medida','medidas','tamano']),
+          programa:this.pick(d,['programa nucleos','programa','prog']),
+          sku_nucleo:(this.pick(d,['sku nucleos','sku nucleo','sku_nucleo','nucleo'])||'').toUpperCase()||null
+        });
+      });
+      // núcleos referenciados
+      const nucMap={};
+      rows.forEach(d=>{
+        const sku=(this.pick(d,['sku nucleos','sku nucleo','sku_nucleo','nucleo'])||'').toUpperCase();
+        if(!sku)return;
+        const nombre=this.pick(d,['descripcion nucleos','descripcion nucleo'])||sku;
+        const prog=this.pick(d,['programa nucleos','programa']);
+        const progDesc=this.pick(d,['descripcion programa nucleos']);
+        const desc=prog&&progDesc?`${prog} · ${progDesc}`:(progDesc||prog||nombre);
+        if(!nucMap[sku])nucMap[sku]={sku,nombre,descripcion:desc};
+      });
+      if(!this.modelos.length){ toast('No se detectaron modelos. Revisa la cabecera (CÓDIGOS PF).','err'); return; }
+      // ¿qué núcleos faltan?
+      const existentes=new Set(Object.keys(MET));
+      this.nucleosNuevos=Object.values(nucMap).filter(n=>!existentes.has(n.sku));
+      this.render();
+      $('#altaAviso').innerHTML=`<div style="background:#F5E7DF;color:#8a4426;border-left:4px solid var(--terra);border-radius:9px;padding:10px 14px;margin-bottom:10px;font-size:13px"><b>${this.modelos.length}</b> modelos listos para importar${this.nucleosNuevos.length?` · se crearán <b>${this.nucleosNuevos.length}</b> núcleos nuevos`:''}. Revisa la tabla y pulsa Importar.</div>`;
+      const btn=$('#btnImportar'); btn.disabled=false; btn.style.opacity=1;
+    }catch(e){ toast('Error al leer el archivo: '+(e.message||e),'err'); }
+  },
+
+  render(){
+    const rs=this.modelos.slice(0,300);
+    $('#altaTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:var(--surf2);text-align:left">
+        <th style="padding:10px 12px">Código PF</th><th style="padding:10px 12px">Nombre</th>
+        <th style="padding:10px 12px">Medida</th><th style="padding:10px 12px">Programa</th><th style="padding:10px 12px">Núcleo</th></tr></thead><tbody>
+      ${rs.map(m=>`<tr style="border-bottom:1px solid var(--border);${!m.sku_nucleo?'background:#FDF6EF':''}">
+        <td style="padding:8px 12px;font-family:'JetBrains Mono';font-weight:700">${esc(m.sku_pf)}</td>
+        <td style="padding:8px 12px">${esc(m.nombre||'')}</td><td style="padding:8px 12px">${esc(m.medida||'')}</td>
+        <td style="padding:8px 12px">${esc(m.programa||'')}</td>
+        <td style="padding:8px 12px;font-family:'JetBrains Mono';${!m.sku_nucleo?'color:var(--red)':''}">${m.sku_nucleo?esc(m.sku_nucleo):'— sin núcleo'}</td></tr>`).join('')}
+      </tbody></table>${this.modelos.length>300?`<div style="padding:10px;color:var(--muted);text-align:center">…y ${this.modelos.length-300} más</div>`:''}`;
+  },
+
+  async importar(){
+    if(!this.modelos.length)return;
+    if(!confirm(`¿Importar ${this.modelos.length} modelos${this.nucleosNuevos.length?` y crear ${this.nucleosNuevos.length} núcleos nuevos`:''}?`))return;
+    const btn=$('#btnImportar'); btn.disabled=true; btn.textContent='Importando…';
+    try{
+      // 1. crear núcleos que falten (productos)
+      if(this.nucleosNuevos.length){
+        for(let i=0;i<this.nucleosNuevos.length;i+=200){
+          const {error}=await sb.from('productos').upsert(this.nucleosNuevos.slice(i,i+200),{onConflict:'sku'});
+          if(error)throw error;
+        }
+      }
+      // 2. upsert modelos
+      const mod=this.modelos.map(m=>({sku_pf:m.sku_pf,nombre:m.nombre,medida:m.medida,sku_nucleo:m.sku_nucleo}));
+      for(let i=0;i<mod.length;i+=200){
+        const {error}=await sb.from('modelos').upsert(mod.slice(i,i+200),{onConflict:'sku_pf'});
+        if(error)throw error;
+      }
+      toast(`✓ ${this.modelos.length} modelos importados`+(this.nucleosNuevos.length?` · ${this.nucleosNuevos.length} núcleos creados`:''),'ok');
+      this.modelos=[];this.nucleosNuevos=[];
+      $('#altaTabla').innerHTML='';$('#altaAviso').innerHTML='';
+      btn.textContent='Importar';btn.style.opacity=.5;
+      // refrescar métricas y referencias de producción
+      MET=await calcularMetricas(); render(); Prod.refs=false;
+    }catch(e){ toast('Error al importar: '+(e.message||e),'err'); btn.disabled=false; btn.textContent='Importar'; }
+  }
+};
+document.getElementById('fileAlta').addEventListener('change',e=>{ if(e.target.files[0])Alta.abrir(e.target.files[0]); });
 
 // ---- arranque ----
 async function boot(){

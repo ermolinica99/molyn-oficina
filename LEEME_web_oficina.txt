@@ -1,0 +1,38 @@
+============================================================
+  MOLYN · Web de Oficina — COMPLETA
+============================================================
+
+Version WEB de toda la app de escritorio. Se abre en el
+navegador, SIN instalar nada y SIN que el antivirus la
+bloquee. Conectada a tu Supabase real.
+
+LAS 10 PAGINAS:
+  OPERACION
+   - Dashboard: KPIs, filtros, forzar diario
+   - Produccion: subir parte, lanzar OT, parte imprimible + QR
+   - Ordenes de trabajo: fabricar, cerrar, anular, reimprimir QR
+   - Inventario fisico: altas y bajas de stock
+   - Usuarios: alta de plantilla con rol y PIN
+  ANALISIS
+   - Productividad: rendimiento por operario (con fecha)
+   - Tiempo por nucleo: tiempos medios aprendidos
+   - Aprobaciones: validar inventarios de planta
+  AJUSTES
+   - Alta masiva: importar catalogo desde Excel
+   - Configuracion: parametros + lotes por programa
+
+------------------------------------------------------------
+ACTUALIZAR EN GITHUB
+------------------------------------------------------------
+Sube este index.html al repo molyn-oficina (reemplaza el
+anterior). En 1-2 min GitHub Pages se actualiza solo.
+URL: https://ermolinica99.github.io/molyn-oficina/
+
+PRUDENCIA AL ESTRENAR
+ - Las paginas que escriben datos (Produccion, Ordenes,
+   Inventario, Usuarios, Aprobaciones, Configuracion, Alta
+   masiva) estan probadas cargando datos, pero la PRIMERA
+   vez que uses cada accion que crea/borra/modifica, hazlo
+   con un caso de prueba y verifica el resultado.
+ - Para imprimir (parte + etiquetas), permite las ventanas
+   emergentes del navegador para esta pagina.
