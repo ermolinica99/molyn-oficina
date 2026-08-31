@@ -502,6 +502,15 @@ function render(){
 
   // tarjetas
   $('#grid').innerHTML=rs.length?rs.map(cardN).join(''):'<div class="vacio">No hay núcleos que cumplan este filtro.</div>';
+  const gridEl=$('#grid');
+  if(gridEl && !gridEl._bound){
+    gridEl._bound=true;
+    gridEl.addEventListener('click',function(ev){
+      if(ev.target.closest('input,button,label')) return;
+      const card=ev.target.closest('.nc-click');
+      if(card && card.dataset.sku) open_detalle(card.dataset.sku);
+    });
+  }
 }
 
 function cardN(b){
@@ -509,7 +518,7 @@ function cardN(b){
   const cls=forz?'forz':(b.personalizado?'':'diario');
   const tag=forz?'<span class="tag forz">Diario (forzado)</span>':(b.personalizado?'<span class="tag pers">Personalizado</span>':'<span class="tag diario">Diario</span>');
   const med=medida(b.sku)||esc(b.nombre||'');
-  return `<div class="nc ${cls}" style="cursor:pointer" onclick='open_detalle(${JSON.stringify(b.sku)})'>
+  return `<div class="nc ${cls} nc-click" data-sku="${esc(b.sku)}" style="cursor:pointer">
     <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(med)}</div></div>${tag}</div>
     <div class="nb">
       <div class="saldo"><span class="big ${b.saldo<=0?'zero':''}">${b.saldo}</span><span class="sl">SALDO<br>uds en total</span></div>
