@@ -135,6 +135,8 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav on" id="navDash" onclick="nav('dash')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Dashboard</span></button>
     <button class="nav" id="navProd" onclick="nav('prod')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span>Producción</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
+    <div class="grp">Ajustes</div>
+    <button class="nav" id="navConf" onclick="nav('conf')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configuración</span></button>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
   </aside>
 
@@ -211,6 +213,20 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="card">
         <div id="otTabla"></div>
       </div>
+    </div>
+
+    <div class="content" id="view-conf" style="display:none">
+      <div class="h1">Configuración</div>
+      <div class="h1sub">Parámetros globales de consumo y reposición</div>
+      <div class="card" style="padding:8px 4px">
+        <div id="confFields"></div>
+      </div>
+      <div class="card">
+        <div class="ch"><div class="t">Lote de fabricación por programa</div><div class="s">Unidades que se fabrican por lote de cada programa</div></div>
+        <div id="confLotes" style="padding:8px 16px 4px"></div>
+      </div>
+      <button class="chip" style="padding:13px 28px;font-size:15px" onclick="Conf.save()">Guardar configuración</button>
+      <div style="height:20px"></div>
     </div>
   </div>
 </div>
@@ -425,14 +441,16 @@ function go2(){toast('Órdenes de trabajo: próximamente en web','')}
 //  PRODUCCIÓN
 // ============================================================
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo'};
-  ['dash','prod','ot'].forEach(k=>{
+  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración'};
+  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf'};
+  ['dash','prod','ot','conf'].forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
-    const nb=document.getElementById('nav'+(k==='dash'?'Dash':k==='prod'?'Prod':'OT')); if(nb)nb.classList.toggle('on',v===k);
+    const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
   });
   $('.crumb').innerHTML='MOLYN&nbsp;&nbsp;/&nbsp;&nbsp;<b>'+titulos[v]+'</b>';
   if(v==='prod') Prod.init();
   if(v==='ot') OT.reload();
+  if(v==='conf') Conf.load();
 }
 
 const Prod = {
@@ -612,12 +630,14 @@ const Prod = {
         nucRows.push({ot,sku,nombre,cant:n,tipo:this.tipo[sku]||'stock'});
       }
       const {bA,bB,bC}=this.repartirFifo(pools,otByNuc);
+      const _bA=JSON.parse(JSON.stringify(bA)),_bB=JSON.parse(JSON.stringify(bB)),_bC=JSON.parse(JSON.stringify(bC));
       const res=[];
       [[bA,'disponible'],[bB,'maduracion'],[bC,'pendiente']].forEach(([blk,name])=>{
         blk.forEach(x=>{ if(x.nucleo) res.push({parte_ref:this.parteNum||null,sku:x.nucleo,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:name}); });
       });
       if(res.length){ let e3=(await sb.from('reservas').insert(res)).error; if(e3)throw e3; }
-      // etiquetas QR
+      // documento de parte + etiquetas QR
+      this.imprimirParte(nucRows,_bA,_bB,_bC);
       this.imprimirEtiquetas(nuevos);
       // limpiar
       this.lineas=[];this.cant={};this.tipo={};this.manual={};this.manualTipo={};this.parteNum='';
@@ -660,16 +680,65 @@ const Prod = {
   },
   repartirFifo(pools,otByNuc){
     const bA=[],bB=[],bC=[];
+    const espDate=new Date(Date.now()+(CFG.dias_fabricacion||0+CFG.maduracion)*86400000).toISOString();
     this.lineas.forEach(l=>{ if(l.cant<=0)return;
       let rest=l.cant;
       const base={sku_pf:l.sku_pf,desc:l.descParte||l.nombre||'',nucleo:l.sku_nucleo,enrollado:l.enrollado||''};
       const p=(l.sku_nucleo&&pools[l.sku_nucleo])?pools[l.sku_nucleo]:{disp:[],madur:[],fabri:[]};
       while(rest>0&&p.disp.length){ const g=p.disp[0],t=Math.min(rest,g.n); bA.push({...base,ot:g.ot,cant:t}); g.n-=t;rest-=t; if(g.n<=0)p.disp.shift(); }
-      while(rest>0&&p.madur.length){ const g=p.madur[0],t=Math.min(rest,g.n); bB.push({...base,ot:g.ot,cant:t}); g.n-=t;rest-=t; if(g.n<=0)p.madur.shift(); }
-      while(rest>0&&p.fabri.length){ const g=p.fabri[0],t=Math.min(rest,g.n); bC.push({...base,ot:g.ot,cant:t}); g.n-=t;rest-=t; if(g.n<=0)p.fabri.shift(); }
-      if(rest>0){ const ot=l.sku_nucleo?(otByNuc[l.sku_nucleo]||''):''; bC.push({...base,ot,cant:rest}); }
+      while(rest>0&&p.madur.length){ const g=p.madur[0],t=Math.min(rest,g.n); bB.push({...base,ot:g.ot,cant:t,dispDate:g.dispDate}); g.n-=t;rest-=t; if(g.n<=0)p.madur.shift(); }
+      while(rest>0&&p.fabri.length){ const g=p.fabri[0],t=Math.min(rest,g.n); bC.push({...base,ot:g.ot,cant:t,dispDate:g.dispDate}); g.n-=t;rest-=t; if(g.n<=0)p.fabri.shift(); }
+      if(rest>0){ const ot=l.sku_nucleo?(otByNuc[l.sku_nucleo]||''):''; bC.push({...base,ot,cant:rest,dispDate:l.sku_nucleo?espDate:null}); }
     });
     return {bA,bB,bC};
+  },
+
+
+  // ---- documento de PARTE de fabricación imprimible ----
+  imprimirParte(nucRows, bA, bB, bC){
+    const ref=this.parteNum||'—';
+    const fecha=new Date().toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const css=`<style>
+      body{font-family:Arial,sans-serif;color:#1B1A17;margin:16px}
+      h1{font-size:17pt;text-transform:uppercase;margin:0 0 4px}
+      .meta{font-size:9pt;color:#333;border-bottom:2px solid #B85C38;padding-bottom:5px;margin-bottom:8px}
+      table{width:100%;border-collapse:collapse;font-size:9pt;margin-bottom:10px}
+      th{background:#1B1A17;color:#fff;text-align:left;padding:5px 7px}
+      td{padding:5px 7px;border-bottom:1px solid #ddd}
+      .n{text-align:right}.grp{background:#f3ece7;font-weight:bold}
+      .tot{font-weight:bold;border-top:2px solid #1B1A17}.falta{color:#a04e2e}
+      .pb{page-break-before:always}
+    </style>`;
+    // hoja núcleos
+    const tot=nucRows.reduce((s,x)=>s+x.cant,0);
+    const gS=nucRows.filter(x=>x.tipo!=='personalizado'),gP=nucRows.filter(x=>x.tipo==='personalizado');
+    const grp=(tit,arr)=>arr.length?`<tr class="grp"><td colspan="4">${tit} · ${arr.reduce((s,x)=>s+x.cant,0)} uds</td></tr>`+
+      arr.map(x=>`<tr><td><b>${esc(x.ot)}</b></td><td>${esc(x.sku)}</td><td>${esc(x.nombre||'')}</td><td class="n">${x.cant}</td></tr>`).join(''):'';
+    const hojaNuc=`<h1>Parte de fabricación · Núcleos</h1>
+      <div class="meta">Parte ref.: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Núcleos: <b>${nucRows.length}</b> &nbsp; Unidades: <b>${tot}</b></div>
+      <table><tr><th>OT</th><th>SKU núcleo</th><th>Descripción</th><th class="n">Cant.</th></tr>
+      ${grp('De stock (diarios)',gS)}${grp('Personalizados',gP)}
+      <tr class="tot"><td colspan="3">TOTAL</td><td class="n">${tot}</td></tr></table>`;
+    // hojas de modelos por bloque
+    const hojaMod=(titulo,sub,arr,conFecha)=>{
+      if(!arr.length)return'';
+      const t=arr.reduce((s,x)=>s+x.cant,0);
+      const head=`<th>Código</th><th>Descripción</th><th>Núcleo</th><th>OT</th>${conFecha?'<th>Disponible</th>':''}<th class="n">Cant.</th>`;
+      const rows=arr.map(x=>{
+        const dd=conFecha?(x.dispDate?new Date(x.dispDate).toLocaleDateString('es-ES'):'—'):'';
+        return `<tr class="${x.nucleo?'':'falta'}"><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td></tr>`;
+      }).join('');
+      const colspan=conFecha?5:4;
+      return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
+        <table><tr>${head}</tr>${rows}<tr class="tot"><td colspan="${colspan}">TOTAL</td><td class="n">${t}</td></tr></table>`;
+    };
+    const h1=hojaMod('Parte · Modelos con núcleo DISPONIBLE','Se puede fabricar ya (OT indicada).',bA,false);
+    const h2=hojaMod('Parte · Modelos EN MADURACIÓN','El núcleo ya está fabricado pero aún no disponible.',bB,true);
+    const h3=hojaMod('Parte · Modelos PENDIENTES de fabricar','Se ha lanzado / está en curso la OT indicada.',bC,true);
+    const w=window.open('','_blank');
+    w.document.write(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}
+      <script>setTimeout(()=>window.print(),500);<\/script></body></html>`);
+    w.document.close();
   },
 
   // ---- etiquetas QR (ventana imprimible) ----
@@ -790,6 +859,77 @@ const OT = {
   }
 };
 document.getElementById('otSearch').addEventListener('input',()=>OT.paint());
+
+
+// ============================================================
+//  CONFIGURACIÓN
+// ============================================================
+const Conf = {
+  raw:{}, loaded:false,
+  async load(){
+    try{
+      const {data}=await sb.from('config').select('*').eq('id',1).single();
+      this.raw=data||{};
+      const {data:lt}=await sb.from('lotes_programa').select('programa,lote');
+      this.lotes={}; (lt||[]).forEach(r=>this.lotes[r.programa]=r.lote);
+      this.loaded=true; this.render();
+    }catch(e){ $('#confFields').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  render(){
+    const c=this.raw;
+    const f=(id,lab,val,step,suf)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--border)">
+      <label style="font-size:14px">${lab}</label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input id="${id}" type="${step?'number':'text'}" ${step?`step="${step}"`:''} value="${esc(val)}" style="width:120px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;text-align:right;font-family:inherit">
+        ${suf?`<span style="font-size:12px;color:var(--muted);width:34px">${suf}</span>`:'<span style="width:34px"></span>'}
+      </div></div>`;
+    $('#confFields').innerHTML=
+      f('cf_dias','Días de histórico (con consumo)',c.dias_historico??5,'1','')+
+      f('cf_umbral','Umbral personalizado (consumo/día mínimo)',c.umbral_semanal??2,'0.1','')+
+      f('cf_madur','Maduración (días)',c.maduracion??2,'1','')+
+      f('cf_fab','Días de fabricación (de lanzar a fabricado)',c.dias_fabricacion??0,'1','')+
+      f('cf_ini','Horario · hora de inicio',c.hora_inicio||'06:00','','h')+
+      f('cf_fin','Horario · hora de fin',c.hora_fin||'15:00','','h')+
+      f('cf_desc','Descanso de la jornada',c.descanso_min??30,'1','min');
+    // lotes en 2 columnas
+    const progs=Object.keys(PROG_DESC).sort();
+    $('#confLotes').innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px">'+
+      progs.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <label style="font-size:13px"><b>${p}</b> · ${esc(PROG_DESC[p]||'')}</label>
+        <input id="lote_${p}" type="number" min="1" value="${this.lotes[p]??(c.lote??10)}" style="width:90px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit">
+      </div>`).join('')+'</div>';
+  },
+  async save(){
+    try{
+      const val=id=>document.getElementById(id).value;
+      const cfg={
+        id:1,
+        dias_historico:parseInt(val('cf_dias'))||5,
+        umbral_semanal:parseFloat(val('cf_umbral'))||2,
+        maduracion:parseInt(val('cf_madur'))||2,
+        dias_fabricacion:parseInt(val('cf_fab'))||0,
+        hora_inicio:val('cf_ini')||'06:00',
+        hora_fin:val('cf_fin')||'15:00',
+        descanso_min:parseInt(val('cf_desc'))||30,
+        lote:this.raw.lote??10,
+        updated_at:new Date().toISOString()
+      };
+      const {error}=await sb.from('config').update(cfg).eq('id',1);
+      if(error)throw error;
+      // lotes
+      const progs=Object.keys(PROG_DESC);
+      const filas=progs.map(p=>({programa:p,lote:parseInt(document.getElementById('lote_'+p).value)||10}));
+      const {error:e2}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
+      if(e2)throw e2;
+      // actualizar en memoria y recalcular dashboard
+      CFG.dias_historico=cfg.dias_historico;CFG.umbral_semanal=cfg.umbral_semanal;CFG.maduracion=cfg.maduracion;LOTE_DFLT=cfg.lote;
+      filas.forEach(f=>LOTES[f.programa]=f.lote);
+      this.raw=cfg;
+      toast('✓ Configuración guardada','ok');
+      MET=await calcularMetricas(); render();
+    }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
+  }
+};
 
 // ---- arranque ----
 async function boot(){
