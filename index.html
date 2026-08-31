@@ -137,6 +137,10 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
     <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
     <button class="nav" id="navUsr" onclick="nav('usr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Usuarios</span></button>
+    <div class="grp">Análisis</div>
+    <button class="nav" id="navProdv" onclick="nav('prodv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10l4 4"/><circle cx="12" cy="12" r="10"/></svg><span>Productividad</span></button>
+    <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempo por núcleo</span></button>
+    <button class="nav" id="navApr" onclick="nav('apr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span>Aprobaciones</span></button>
     <div class="grp">Ajustes</div>
     <button class="nav" id="navConf" onclick="nav('conf')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configuración</span></button>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
@@ -256,6 +260,34 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         <input id="invSearch" placeholder="Buscar núcleo por SKU o nombre…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div id="invLista" class="ngrid"></div>
+    </div>
+
+    <div class="content" id="view-prodv" style="display:none">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div><div class="h1">Productividad</div><div class="h1sub">Tiempo efectivo, ocupación y rendimiento por operario</div></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="prodvFecha" type="date" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+          <button class="chip" onclick="Prodv.reload()" style="background:var(--surf2);color:var(--ink)">Ver</button>
+        </div>
+      </div>
+      <div id="prodvLista" style="margin-top:12px"></div>
+    </div>
+
+    <div class="content" id="view-tsku" style="display:none">
+      <div class="h1">Tiempo por núcleo</div>
+      <div class="h1sub">Tiempo medio de fabricación aprendido por núcleo</div>
+      <div style="display:flex;gap:10px;margin:12px 0">
+        <input id="tskuSearch" placeholder="Buscar núcleo…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+      </div>
+      <div class="card"><div id="tskuTabla"></div></div>
+    </div>
+
+    <div class="content" id="view-apr" style="display:none">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div><div class="h1">Aprobaciones</div><div class="h1sub">Inventarios enviados desde la planta pendientes de validar</div></div>
+        <button class="chip" onclick="Apr.reload()" style="background:var(--surf2);color:var(--ink)">↻ Actualizar</button>
+      </div>
+      <div id="aprLista" style="margin-top:12px"></div>
     </div>
   </div>
 </div>
@@ -471,9 +503,9 @@ function go2(){toast('Órdenes de trabajo: próximamente en web','')}
 //  PRODUCCIÓN
 // ============================================================
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico'};
-  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv'};
-  ['dash','prod','ot','conf','usr','inv'].forEach(k=>{
+  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones'};
+  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr'};
+  ['dash','prod','ot','conf','usr','inv','prodv','tsku','apr'].forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
   });
@@ -483,6 +515,9 @@ function nav(v){
   if(v==='conf') Conf.load();
   if(v==='usr') Usr.reload();
   if(v==='inv') Inv.paint();
+  if(v==='prodv') Prodv.reload();
+  if(v==='tsku') Tsku.reload();
+  if(v==='apr') Apr.reload();
 }
 
 const Prod = {
@@ -1062,6 +1097,127 @@ const Inv = {
   }
 };
 
+
+function fmtDur(seg){ seg=Math.round(seg); const h=Math.floor(seg/3600),m=Math.floor((seg%3600)/60),s=seg%60;
+  if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+s+'s'; return s+'s'; }
+function medianaJs(arr){ if(!arr.length)return 0; const s=[...arr].sort((a,b)=>a-b),m=Math.floor(s.length/2);
+  return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+
+// ============================================================
+//  PRODUCTIVIDAD
+// ============================================================
+const Prodv = {
+  async reload(){
+    const fecha=$('#prodvFecha').value || new Date().toISOString().slice(0,10);
+    $('#prodvFecha').value=fecha;
+    $('#prodvLista').innerHTML='<div class="loading">Calculando…</div>';
+    try{
+      const ini=fecha+'T00:00:00', fin=fecha+'T23:59:59';
+      const ops=(await sb.from('usuarios').select('id,nombre').eq('rol','operario').eq('activo',true)).data||[];
+      let evs=[]; for(let f=0;;f+=1000){ const {data}=await sb.from('fabricacion_eventos').select('unidad_id,ot,sku,usuario_id,tipo,ts').gte('ts',ini).lte('ts',fin).range(f,f+999); evs=evs.concat(data||[]); if(!data||data.length<1000)break; }
+      const pars=(await sb.from('paradas').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin)).data||[];
+      const turs=(await sb.from('turnos').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin)).data||[];
+      const now=new Date();
+      const res=ops.map(o=>{
+        const evO=evs.filter(e=>e.usuario_id===o.id);
+        const byU={}; evO.forEach(e=>{(byU[e.unidad_id]=byU[e.unidad_id]||[]).push(e);});
+        let efectivo=0,hechas=0; const porSku={};
+        for(const uid in byU){ const arr=byU[uid].sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+          const inis=arr.filter(x=>x.tipo==='inicio'),fins=arr.filter(x=>x.tipo==='fin');
+          fins.forEach((f,i)=>{ if(i<inis.length){ const d=(new Date(f.ts)-new Date(inis[i].ts))/1000;
+            if(d>0&&d<86400){ efectivo+=d;hechas++; const sk=f.sku||inis[i].sku; const s=porSku[sk]=porSku[sk]||{sku:sk,n:0,durs:[]}; s.n++;s.durs.push(d); } } });
+        }
+        Object.values(porSku).forEach(s=>{s.mediana=medianaJs(s.durs);s.total=s.durs.reduce((a,b)=>a+b,0);});
+        let turno=0; turs.filter(t=>t.usuario_id===o.id).forEach(t=>{ const i=new Date(t.inicio),f=t.fin?new Date(t.fin):now; turno+=Math.max(0,(f-i)/1000); });
+        let paradas=0,npar=0; pars.filter(p=>p.usuario_id===o.id).forEach(p=>{ const i=new Date(p.inicio),f=p.fin?new Date(p.fin):now; paradas+=Math.max(0,(f-i)/1000);npar++; });
+        const disp=Math.max(0,turno-paradas);
+        return {nombre:o.nombre,efectivo,turno,paradas,npar,disp,hechas,
+          ocup:turno>0?disp/turno:0, rend:disp>0?efectivo/disp:0, media:hechas?efectivo/hechas:0,
+          porSku:Object.values(porSku).sort((a,b)=>b.total-a.total)};
+      });
+      this.paint(res);
+    }catch(e){ $('#prodvLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  paint(res){
+    const bar=(pct,col)=>`<div style="height:7px;border-radius:4px;background:var(--surf2);overflow:hidden"><div style="width:${Math.min(pct*100,100)}%;height:100%;background:${col}"></div></div>`;
+    $('#prodvLista').innerHTML=res.length?res.map(r=>`
+      <div class="card" style="margin-bottom:12px"><div style="padding:16px 20px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <div style="width:40px;height:40px;border-radius:50%;background:#F5E7DF;color:var(--terra);display:flex;align-items:center;justify-content:center;font-weight:700">${esc((r.nombre||'?')[0].toUpperCase())}</div>
+          <div style="font-weight:700;font-size:16px">${esc(r.nombre)}</div>
+          <div style="margin-left:auto;font-family:'JetBrains Mono';font-size:22px;font-weight:700">${r.hechas}<span style="font-size:12px;color:var(--muted);font-family:'Archivo'"> uds</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:12px">
+          <div><div style="font-size:11px;color:var(--muted)">Tiempo efectivo</div><div style="font-family:'JetBrains Mono';font-weight:700">${fmtDur(r.efectivo)}</div></div>
+          <div><div style="font-size:11px;color:var(--muted)">Media por unidad</div><div style="font-family:'JetBrains Mono';font-weight:700">${r.hechas?fmtDur(r.media):'—'}</div></div>
+          <div><div style="font-size:11px;color:var(--muted)">Paradas</div><div style="font-family:'JetBrains Mono';font-weight:700">${fmtDur(r.paradas)} (${r.npar})</div></div>
+          <div><div style="font-size:11px;color:var(--muted)">Turno</div><div style="font-family:'JetBrains Mono';font-weight:700">${fmtDur(r.turno)}</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Ocupación del turno · ${Math.round(r.ocup*100)}%</div>${bar(r.ocup,'var(--blue)')}</div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Rendimiento (efectivo/disp) · ${Math.round(r.rend*100)}%</div>${bar(r.rend,'var(--terra)')}</div>
+        </div>
+      </div></div>`).join('')
+      : '<div class="vacio">No hay operarios activos o no hay datos ese día.</div>';
+  }
+};
+
+// ============================================================
+//  TIEMPO POR NÚCLEO
+// ============================================================
+const Tsku = {
+  data:[],
+  async reload(){
+    $('#tskuTabla').innerHTML='<div class="loading">Cargando…</div>';
+    try{ const {data}=await sb.from('tiempos_sku').select('*').eq('vigente',true).order('sku');
+      this.data=data||[]; this.paint();
+    }catch(e){ $('#tskuTabla').innerHTML='<div class="vacio">Aún no hay tiempos registrados (se aprenden con el uso).</div>'; }
+  },
+  paint(){
+    const q=($('#tskuSearch').value||'').toLowerCase().trim();
+    let rs=this.data; if(q)rs=rs.filter(t=>(t.sku||'').toLowerCase().includes(q));
+    if(!rs.length){ $('#tskuTabla').innerHTML='<div class="vacio">Sin tiempos aún. Se van aprendiendo cuando los operarios fabrican.</div>'; return; }
+    $('#tskuTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
+      ${rs.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono';font-weight:700">${esc(t.sku)}</td>
+        <td style="padding:9px 14px;color:var(--muted)">${esc(medida(t.sku)||'')}</td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${fmtDur(t.segundos||t.mediana||0)}</td>
+        <td style="padding:9px 14px;text-align:right;color:var(--muted)">${t.muestras||t.n||'—'}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+};
+
+// ============================================================
+//  APROBACIONES
+// ============================================================
+const Apr = {
+  async reload(){
+    $('#aprLista').innerHTML='<div class="loading">Cargando…</div>';
+    try{
+      const {data}=await sb.from('ajustes_inventario').select('*').eq('estado','pendiente').order('created_at');
+      const rows=data||[];
+      if(!rows.length){ $('#aprLista').innerHTML='<div class="vacio">No hay inventarios pendientes de aprobar. ✓</div>'; return; }
+      // nombres de usuario
+      const uids=[...new Set(rows.map(r=>r.usuario_id).filter(Boolean))];
+      const users={}; if(uids.length){ const {data:us}=await sb.from('usuarios').select('id,nombre').in('id',uids); (us||[]).forEach(u=>users[u.id]=u.nombre); }
+      $('#aprLista').innerHTML=rows.map(r=>`
+        <div class="card" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:14px;padding:14px 18px">
+          <div style="flex:1"><div style="font-family:'JetBrains Mono';font-weight:700">${esc(r.sku)}</div>
+            <div style="font-size:12px;color:var(--muted)">${esc(users[r.usuario_id]||'—')} · ${r.cantidad>0?'+':''}${r.cantidad} uds · ${r.created_at?new Date(r.created_at).toLocaleString('es-ES'):''}</div></div>
+          <button class="chip" style="background:var(--green)" onclick="Apr.resolver(${r.id},'aprobado')">Aprobar</button>
+          <button class="chip" style="background:var(--red)" onclick="Apr.resolver(${r.id},'rechazado')">Rechazar</button>
+        </div></div>`).join('');
+    }catch(e){ $('#aprLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  async resolver(id,estado){
+    try{
+      await sb.from('ajustes_inventario').update({estado,resuelto_at:new Date().toISOString()}).eq('id',id);
+      toast(estado==='aprobado'?'✓ Aprobado':'Rechazado', estado==='aprobado'?'ok':'');
+      this.reload(); MET=await calcularMetricas(); render();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  }
+};
+
 // ---- arranque ----
 async function boot(){
   try{
@@ -1077,6 +1233,7 @@ async function boot(){
 }
 $('#search').addEventListener('input',render);
 if($('#invSearch'))$('#invSearch').addEventListener('input',()=>Inv.paint());
+if($('#tskuSearch'))$('#tskuSearch').addEventListener('input',()=>Tsku.paint());
 $('#logo').src='data:image/png;base64,'+LOGO_B64;
 boot();
 </script>
