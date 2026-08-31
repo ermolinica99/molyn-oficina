@@ -135,6 +135,8 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav on" id="navDash" onclick="nav('dash')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Dashboard</span></button>
     <button class="nav" id="navProd" onclick="nav('prod')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span>Producción</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
+    <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
+    <button class="nav" id="navUsr" onclick="nav('usr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Usuarios</span></button>
     <div class="grp">Ajustes</div>
     <button class="nav" id="navConf" onclick="nav('conf')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configuración</span></button>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
@@ -228,6 +230,33 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <button class="chip" style="padding:13px 28px;font-size:15px" onclick="Conf.save()">Guardar configuración</button>
       <div style="height:20px"></div>
     </div>
+
+    <div class="content" id="view-usr" style="display:none">
+      <div class="h1">Usuarios</div>
+      <div class="h1sub">Plantilla · da de alta encargados y operarios con su PIN</div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ch"><div class="t">Nuevo usuario</div></div>
+        <div style="padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+            <input id="uNom" placeholder="Nombre y apellido" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:220px"></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Rol</div>
+            <select id="uRol" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"><option value="operario">Operario</option><option value="encargado">Encargado</option></select></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">PIN</div>
+            <input id="uPin" placeholder="4 dígitos" maxlength="6" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:110px"></div>
+          <button class="chip" onclick="Usr.crear()">Añadir usuario</button>
+        </div>
+      </div>
+      <div id="usrLista"></div>
+    </div>
+
+    <div class="content" id="view-inv" style="display:none">
+      <div class="h1">Inventario físico</div>
+      <div class="h1sub">Da de alta o baja unidades del almacén (rotura, recuento, ajustes)</div>
+      <div style="display:flex;gap:10px;margin:12px 0">
+        <input id="invSearch" placeholder="Buscar núcleo por SKU o nombre…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+      </div>
+      <div id="invLista" class="ngrid"></div>
+    </div>
   </div>
 </div>
 <div id="toast" class="toast"></div>
@@ -241,6 +270,7 @@ const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=s=>document.querySelector(s);
 function toast(m,t){const e=$('#toast');e.textContent=m;e.className='toast show '+(t||'');setTimeout(()=>e.className='toast',1900)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function cssId(s){return String(s).replace(/[^a-zA-Z0-9]/g,'_')}
 
 const PROG_DESC={N001:'Extra Firm',N002:'040',N003:'030',N004:'V50',N005:'Medium',N006:'V65/32',N007:'V65/40',N008:'V80 Soft',N009:'V80/40',N010:'Abatible',N011:'Kids',N012:'Articulado'};
 function progDe(p){const m=(p.descripcion||p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
@@ -441,9 +471,9 @@ function go2(){toast('Órdenes de trabajo: próximamente en web','')}
 //  PRODUCCIÓN
 // ============================================================
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración'};
-  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf'};
-  ['dash','prod','ot','conf'].forEach(k=>{
+  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico'};
+  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv'};
+  ['dash','prod','ot','conf','usr','inv'].forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
   });
@@ -451,6 +481,8 @@ function nav(v){
   if(v==='prod') Prod.init();
   if(v==='ot') OT.reload();
   if(v==='conf') Conf.load();
+  if(v==='usr') Usr.reload();
+  if(v==='inv') Inv.paint();
 }
 
 const Prod = {
@@ -931,6 +963,105 @@ const Conf = {
   }
 };
 
+
+// ============================================================
+//  USUARIOS
+// ============================================================
+const Usr = {
+  data:[],
+  async reload(){
+    $('#usrLista').innerHTML='<div class="loading">Cargando usuarios…</div>';
+    try{ const {data}=await sb.from('usuarios').select('id,nombre,pin,rol,activo').order('nombre');
+      this.data=data||[]; this.paint();
+    }catch(e){ $('#usrLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  paint(){
+    const act=this.data.filter(u=>u.activo), baj=this.data.filter(u=>!u.activo);
+    const card=(u)=>{
+      const enc=u.rol==='encargado';
+      return `<div class="card" style="border-left:4px solid ${enc?'var(--blue)':'var(--terra)'};margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:14px;padding:14px 18px">
+          <div style="width:42px;height:42px;border-radius:50%;background:${enc?'#E4EDF0':'#F5E7DF'};color:${enc?'var(--blue)':'var(--terra)'};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px">${esc((u.nombre||'?')[0].toUpperCase())}</div>
+          <div style="flex:1"><div style="font-weight:700;font-size:15px">${esc(u.nombre)}</div>
+            <div style="font-size:12px;color:var(--muted)">${enc?'Encargado':'Operario'} · PIN ${esc(u.pin)}</div></div>
+          ${u.activo?`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.baja(${u.id},'${esc(u.nombre)}')">Dar de baja</button>`
+            :`<button class="chip" style="background:var(--green)" onclick="Usr.alta(${u.id})">Reactivar</button>`}
+        </div></div>`;
+    };
+    $('#usrLista').innerHTML=
+      `<div style="font-size:11px;font-weight:700;color:var(--terra);letter-spacing:.8px;margin:4px 0 8px">ACTIVOS (${act.length})</div>`+
+      (act.length?act.map(card).join(''):'<div class="vacio">Aún no hay usuarios. Añade el primero arriba.</div>')+
+      (baj.length?`<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin:16px 0 8px">DE BAJA (${baj.length})</div>`+baj.map(card).join(''):'');
+  },
+  async crear(){
+    const nombre=$('#uNom').value.trim(), rol=$('#uRol').value, pin=$('#uPin').value.trim();
+    if(!nombre){ toast('Escribe el nombre','err'); return; }
+    if(!/^\d{4,6}$/.test(pin)){ toast('El PIN debe tener 4-6 dígitos','err'); return; }
+    if(this.data.some(u=>u.pin===pin&&u.activo)){ toast('Ya hay un usuario activo con ese PIN','err'); return; }
+    try{ const {error}=await sb.from('usuarios').insert({nombre,pin,rol,activo:true}); if(error)throw error;
+      $('#uNom').value='';$('#uPin').value='';
+      toast('✓ Usuario creado','ok'); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async baja(id,nombre){ if(!confirm('¿Dar de baja a '+nombre+'?'))return;
+    try{ await sb.from('usuarios').update({activo:false}).eq('id',id); toast('Usuario dado de baja','ok'); this.reload(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  async alta(id){ try{ await sb.from('usuarios').update({activo:true}).eq('id',id); toast('Usuario reactivado','ok'); this.reload(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); } }
+};
+
+// ============================================================
+//  INVENTARIO FÍSICO
+// ============================================================
+const Inv = {
+  paint(){
+    const q=($('#invSearch').value||'').toLowerCase().trim();
+    let rs=Object.values(MET);
+    if(q)rs=rs.filter(b=>b.sku.toLowerCase().includes(q)||(b.nombre||'').toLowerCase().includes(q));
+    rs.sort((a,b)=>a.sku.localeCompare(b.sku));
+    rs=rs.slice(0,120); // no pintar 272 de golpe si no hay búsqueda
+    $('#invLista').innerHTML=rs.length?rs.map(b=>`
+      <div class="nc ${b.forzado?'forz':(b.personalizado?'':'diario')}">
+        <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(medida(b.sku)||b.nombre||'')}</div></div></div>
+        <div class="nb">
+          <div class="saldo"><span class="big ${(b.disp+b.madurando)<=0?'zero':''}">${b.disp+b.madurando}</span><span class="sl">EN STOCK<br>disp+madur</span></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="chip" style="background:var(--red);flex:1" onclick="Inv.ajuste('${esc(b.sku)}',-1)">− Baja</button>
+            <input id="inv_${cssId(b.sku)}" type="number" min="1" value="1" style="width:60px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit">
+            <button class="chip" style="background:var(--green);flex:1" onclick="Inv.ajuste('${esc(b.sku)}',1)">+ Alta</button>
+          </div>
+        </div></div>`).join('')
+      : '<div class="vacio">Escribe para buscar un núcleo.</div>';
+  },
+  async ajuste(sku,signo){
+    const inp=document.getElementById('inv_'+cssId(sku));
+    const n=Math.max(1,parseInt(inp?.value)||1);
+    const b=MET[sku];
+    if(signo<0){
+      const disp=b?b.disp:0;
+      if(n>disp){ toast('No hay tantas unidades disponibles ('+disp+')','err'); return; }
+    }
+    if(!confirm(`${signo>0?'Dar de ALTA':'Dar de BAJA'} ${n} uds de ${sku}?`))return;
+    try{
+      const now=new Date().toISOString();
+      if(signo>0){
+        const rows=[]; for(let i=0;i<n;i++)rows.push({id:`AJ-${Date.now()}-${i}`,sku,estado:'stock',fabricada_at:now,lanzada_at:now,ot:'AJUSTE'});
+        const {error}=await sb.from('unidades').insert(rows); if(error)throw error;
+      }else{
+        // borrar n unidades disponibles (stock, más antiguas)
+        const {data}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(n);
+        const ids=(data||[]).map(u=>u.id);
+        if(ids.length<n){ toast('No hay tantas unidades en stock','err'); return; }
+        const {error}=await sb.from('unidades').delete().in('id',ids); if(error)throw error;
+      }
+      // registrar ajuste
+      try{ await sb.from('ajustes_inventario').insert({sku,cantidad:signo*n,fecha:now}); }catch(e){}
+      toast('✓ Ajuste aplicado','ok');
+      MET=await calcularMetricas(); this.paint(); render();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  }
+};
+
 // ---- arranque ----
 async function boot(){
   try{
@@ -945,6 +1076,7 @@ async function boot(){
   }
 }
 $('#search').addEventListener('input',render);
+if($('#invSearch'))$('#invSearch').addEventListener('input',()=>Inv.paint());
 $('#logo').src='data:image/png;base64,'+LOGO_B64;
 boot();
 </script>
