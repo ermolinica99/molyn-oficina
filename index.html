@@ -134,6 +134,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="grp">Operación</div>
     <button class="nav on" id="navDash" onclick="nav('dash')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Dashboard</span></button>
     <button class="nav" id="navProd" onclick="nav('prod')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span>Producción</span></button>
+    <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
   </aside>
 
@@ -192,6 +193,23 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
             <button id="btnLanzar" class="chip" style="width:100%;padding:13px;background:var(--ink);font-size:15px" onclick="Prod.lanzar()">Lanzar OT · partes · reservas</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="content" id="view-ot" style="display:none">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+        <div><div class="h1">Órdenes de trabajo</div><div class="h1sub">Órdenes abiertas · fabricar, cerrar o anular</div></div>
+        <button class="chip" onclick="OT.reload()" style="background:var(--surf2);color:var(--ink)">↻ Actualizar</button>
+      </div>
+      <div style="display:flex;gap:10px;margin:12px 0">
+        <input id="otSearch" placeholder="Buscar OT, SKU o núcleo…" style="flex:1;max-width:360px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+        <button class="chip" style="background:var(--green)" onclick="OT.accion('fabricar')">Fabricar</button>
+        <button class="chip" style="background:var(--ink)" onclick="OT.accion('cerrar')">Cerrar</button>
+        <button class="chip" style="background:var(--blue)" onclick="OT.accion('qr')">Reimprimir QR</button>
+        <button class="chip" style="background:var(--red)" onclick="OT.accion('anular')">Anular</button>
+      </div>
+      <div class="card">
+        <div id="otTabla"></div>
       </div>
     </div>
   </div>
@@ -407,12 +425,14 @@ function go2(){toast('Órdenes de trabajo: próximamente en web','')}
 //  PRODUCCIÓN
 // ============================================================
 function nav(v){
-  $('#view-dash').style.display = v==='dash'?'block':'none';
-  $('#view-prod').style.display = v==='prod'?'block':'none';
-  $('#navDash').classList.toggle('on', v==='dash');
-  $('#navProd').classList.toggle('on', v==='prod');
-  $('.crumb').innerHTML = 'MOLYN&nbsp;&nbsp;/&nbsp;&nbsp;<b>'+(v==='dash'?'Dashboard':'Producción')+'</b>';
+  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo'};
+  ['dash','prod','ot'].forEach(k=>{
+    const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
+    const nb=document.getElementById('nav'+(k==='dash'?'Dash':k==='prod'?'Prod':'OT')); if(nb)nb.classList.toggle('on',v===k);
+  });
+  $('.crumb').innerHTML='MOLYN&nbsp;&nbsp;/&nbsp;&nbsp;<b>'+titulos[v]+'</b>';
   if(v==='prod') Prod.init();
+  if(v==='ot') OT.reload();
 }
 
 const Prod = {
@@ -671,6 +691,105 @@ const Prod = {
   }
 };
 document.getElementById('fileParte').addEventListener('change',e=>{ if(e.target.files[0]) Prod.subirParte(e.target.files[0]); });
+
+
+// ============================================================
+//  ÓRDENES DE TRABAJO
+// ============================================================
+const OT = {
+  rows:[], sel:new Set(),
+
+  async reload(){
+    $('#otTabla').innerHTML='<div class="loading">Cargando órdenes…</div>';
+    try{
+      const ords=await selectAll('ordenes','*');
+      const abiertas=ords.filter(o=>o.estado==='abierta').sort((a,b)=>String(a.ot).localeCompare(String(b.ot)));
+      const ots=abiertas.map(o=>o.ot);
+      let uds=[];
+      if(ots.length){
+        // traer unidades de esas OT (en bloques para no pasar de la URL)
+        for(let i=0;i<ots.length;i+=200){
+          const chunk=ots.slice(i,i+200);
+          const {data}=await sb.from('unidades').select('ot,estado').in('ot',chunk);
+          uds=uds.concat(data||[]);
+        }
+      }
+      const cont={};
+      uds.forEach(u=>{const c=cont[u.ot]||(cont[u.ot]={pend:0,stock:0});if(u.estado==='pendiente')c.pend++;else if(u.estado==='stock')c.stock++;});
+      this.rows=abiertas.map(o=>({ot:o.ot,sku:o.sku,nombre:o.nombre,cant:o.cantidad,
+        pend:(cont[o.ot]||{}).pend||0,stock:(cont[o.ot]||{}).stock||0,lanzada:o.lanzada_at}));
+      this.sel.clear();
+      this.paint();
+    }catch(e){ $('#otTabla').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+
+  paint(){
+    const q=($('#otSearch').value||'').toLowerCase().trim();
+    let rs=this.rows;
+    if(q)rs=rs.filter(r=>String(r.ot).toLowerCase().includes(q)||(r.sku||'').toLowerCase().includes(q)||(r.nombre||'').toLowerCase().includes(q));
+    if(!rs.length){ $('#otTabla').innerHTML='<div class="vacio">No hay órdenes abiertas.</div>'; return; }
+    const fecha=ts=>{ if(!ts)return'—'; const d=new Date(ts); return d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}); };
+    $('#otTabla').innerHTML=`
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--surf2);text-align:left">
+          <th style="padding:11px 14px;width:36px"><input type="checkbox" id="otAll" onchange="OT.toggleAll(this.checked)" style="width:16px;height:16px;accent-color:var(--terra)"></th>
+          <th style="padding:11px 14px">OT</th><th style="padding:11px 14px">Núcleo</th>
+          <th style="padding:11px 14px;text-align:center">Fabricadas</th><th style="padding:11px 14px;text-align:center">Pendientes</th>
+          <th style="padding:11px 14px">Lanzada</th>
+        </tr></thead><tbody>
+        ${rs.map(r=>`<tr style="border-bottom:1px solid var(--border);${this.sel.has(r.ot)?'background:#F5E7DF':''}" onclick="OT.rowClick(event,'${esc(r.ot)}')">
+          <td style="padding:9px 14px"><input type="checkbox" class="otchk" data-ot="${esc(r.ot)}" ${this.sel.has(r.ot)?'checked':''} onclick="event.stopPropagation();OT.toggle('${esc(r.ot)}',this.checked)" style="width:16px;height:16px;accent-color:var(--terra)"></td>
+          <td style="padding:9px 14px;font-family:'JetBrains Mono';font-weight:700">${esc(r.ot)}</td>
+          <td style="padding:9px 14px"><div style="font-family:'JetBrains Mono';font-size:12px">${esc(r.sku)}</div><div style="font-size:11px;color:var(--muted)">${esc(r.nombre||'')}</div></td>
+          <td style="padding:9px 14px;text-align:center;font-family:'JetBrains Mono';color:var(--green);font-weight:700">${r.stock}</td>
+          <td style="padding:9px 14px;text-align:center;font-family:'JetBrains Mono';color:var(--blue);font-weight:700">${r.pend}</td>
+          <td style="padding:9px 14px;color:var(--muted);font-size:12px">${fecha(r.lanzada)}</td>
+        </tr>`).join('')}
+        </tbody></table>`;
+  },
+  rowClick(e,ot){ this.toggle(ot, !this.sel.has(ot)); },
+  toggle(ot,on){ if(on)this.sel.add(ot);else this.sel.delete(ot); this.paint(); },
+  toggleAll(on){ const q=($('#otSearch').value||'').toLowerCase().trim();
+    this.rows.filter(r=>!q||String(r.ot).toLowerCase().includes(q)||(r.sku||'').toLowerCase().includes(q)).forEach(r=>{ if(on)this.sel.add(r.ot);else this.sel.delete(r.ot); });
+    this.paint(); },
+
+  selected(){ return this.rows.filter(r=>this.sel.has(r.ot)); },
+
+  async accion(tipo){
+    const sel=this.selected();
+    if(!sel.length){ toast('Selecciona al menos una OT','err'); return; }
+    const nombres={fabricar:'Fabricar',cerrar:'Cerrar',qr:'Reimprimir QR',anular:'Anular'};
+    if(tipo!=='qr' && !confirm(`¿${nombres[tipo]} ${sel.length} OT?`)) return;
+    try{
+      const now=new Date().toISOString();
+      for(const o of sel){
+        if(tipo==='fabricar'){
+          await sb.from('unidades').update({estado:'stock',fabricada_at:now}).eq('ot',o.ot).eq('estado','pendiente');
+          await sb.from('ordenes').update({estado:'cerrada',cerrada_at:now}).eq('ot',o.ot);
+        }else if(tipo==='cerrar'){
+          await sb.from('unidades').delete().eq('ot',o.ot).eq('estado','pendiente');
+          await sb.from('ordenes').update({estado:'cerrada',cerrada_at:now}).eq('ot',o.ot);
+        }else if(tipo==='anular'){
+          await sb.from('reservas').delete().eq('ot',o.ot);
+          await sb.from('unidades').delete().eq('ot',o.ot);
+          await sb.from('ordenes').delete().eq('ot',o.ot);
+        }
+      }
+      if(tipo==='qr'){ await this.reimprimir(sel); }
+      else{ toast('✓ '+nombres[tipo]+': '+sel.length+' OT','ok'); await this.reload(); MET=await calcularMetricas(); render(); }
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+
+  async reimprimir(sel){
+    const ots=sel.map(o=>o.ot);
+    let uds=[];
+    for(let i=0;i<ots.length;i+=200){ const {data}=await sb.from('unidades').select('id,sku,ot,estado').in('ot',ots.slice(i,i+200)); uds=uds.concat(data||[]); }
+    uds=uds.filter(u=>u.estado==='stock'||u.estado==='pendiente');
+    const nombres={}; sel.forEach(o=>nombres[o.ot]=o.nombre);
+    Prod.imprimirEtiquetas(uds.map(u=>({id:u.id,sku:u.sku,ot:u.ot,nombre:nombres[u.ot]||''})));
+  }
+};
+document.getElementById('otSearch').addEventListener('input',()=>OT.paint());
 
 // ---- arranque ----
 async function boot(){
