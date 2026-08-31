@@ -465,7 +465,7 @@ function render(){
 
   // KPIs
   const kpi=(id,ic,tint,col,tit,val,unit,sub,delta,bars,vcol)=>`
-    <div class="kpi ${KPI===id?'on':''}" onclick="${id==='fab'?'go2()':`setKpi('${id}')`}">
+    <div class="kpi ${KPI===id?'on':''}" onclick="${id==='fab'?`nav('ot')`:`setKpi('${id}')`}">
       <div class="kh"><div class="ki" style="background:${tint}">${ic}</div>
         <div class="kt" style="color:${col}">${tit}</div><div class="kd">${delta||''}</div></div>
       <div class="kv" style="${vcol?'color:'+vcol:''}">${val} <small>${unit}</small></div>
@@ -536,7 +536,7 @@ function svgIco(n,c){
     down:"<path d='M12 5v14M19 12l-7 7-7-7'/>"};
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${P[n]||''}</svg>`;
 }
-function go2(){toast('Órdenes de trabajo: próximamente en web','')}
+function go2(){nav('ot')}
 
 
 // ============================================================
