@@ -1427,7 +1427,9 @@ async function open_detalle(sku,nombre){
         <div class="mini"><div><div class="v" style="color:var(--terra)">${disp}</div><div class="k">Disponible</div></div>
         <div><div class="v" style="color:var(--blue)">${madur}</div><div class="k">Madurando</div></div>
         <div><div class="v">${pend}</div><div class="k">Pendiente</div></div>
-        <div><div class="v">${o.cantidad||us.length}</div><div class="k">Total OT</div></div></div></div>`;
+        <div><div class="v">${o.cantidad||us.length}</div><div class="k">Total OT</div></div></div>
+        ${(disp+madur+pend)>0?`<button class="chip qr-ot" data-ot="${esc(o.ot)}" style="background:var(--blue);margin-top:10px;font-size:12px;padding:7px 12px">🏷️ Etiquetas QR de esta OT</button>`:''}
+        </div>`;
     };
     let html=`<div style="display:flex;gap:22px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)">
       <div><span style="font-size:22px;font-weight:800;color:var(--terra)">${st}</span> <span style="color:var(--muted);font-size:13px">en stock</span></div>
@@ -1435,6 +1437,8 @@ async function open_detalle(sku,nombre){
       <div><span style="font-size:22px;font-weight:800;color:var(--muted)">${co}</span> <span style="color:var(--muted);font-size:13px">consumidas</span></div></div>`;
     if(!activas.length){ html+='<div class="vacio">Este núcleo no tiene stock ni unidades en fabricación.</div>'; }
     else{
+      // botón general: imprimir TODAS las etiquetas imprimibles del núcleo
+      if(st+pe>0){ html+=`<button class="chip qr-all" style="background:var(--terra);margin-bottom:14px;width:100%;padding:11px">🏷️ Imprimir todas las etiquetas (${st+pe} uds)</button>`; }
       if(abiertas.length){ html+='<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin:4px 0 8px">OT ABIERTAS</div>'+abiertas.map(otCard).join(''); }
       if(otras.length){ html+='<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin:14px 0 8px">OTRAS OT CON STOCK</div>'+otras.map(otCard).join(''); }
       // FIFO próximas a consumir
@@ -1443,6 +1447,21 @@ async function open_detalle(sku,nombre){
         <div style="font-family:'JetBrains Mono';font-size:11px;color:var(--ink2);line-height:1.8;word-break:break-all">${stockU.slice(0,12).map(u=>esc(u.id)).join('  →  ')}${stockU.length>12?' …':''}</div>`; }
     }
     $('#modalBody').innerHTML=html;
+    // conectar botones de etiquetas
+    const body=$('#modalBody');
+    body.querySelectorAll('.qr-ot').forEach(btn=>btn.addEventListener('click',async()=>{
+      const ot=btn.dataset.ot;
+      const us=(await sb.from('unidades').select('id,sku,ot,estado').eq('ot',ot)).data||[];
+      const imp=us.filter(u=>u.estado==='stock'||u.estado==='pendiente').map(u=>({id:u.id,sku:u.sku,ot:u.ot,nombre}));
+      if(!imp.length){ toast('No hay unidades imprimibles en esta OT','err'); return; }
+      Prod.parteNum=''; Prod.imprimirEtiquetas(imp);
+    }));
+    const qrAll=body.querySelector('.qr-all');
+    if(qrAll)qrAll.addEventListener('click',()=>{
+      const imp=uds.filter(u=>u.estado==='stock'||u.estado==='pendiente').map(u=>({id:u.id,sku,ot:u.ot,nombre}));
+      if(!imp.length){ toast('No hay unidades imprimibles','err'); return; }
+      Prod.parteNum=''; Prod.imprimirEtiquetas(imp);
+    });
   }catch(e){ $('#modalBody').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
 }
 
