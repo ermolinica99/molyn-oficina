@@ -740,7 +740,7 @@ const Prod = {
         let e1=(await sb.from('ordenes').insert({ot,sku,nombre,cantidad:n,lanzada_at:now,fabricada_at:null,estado:'abierta'})).error; if(e1)throw e1;
         const uds=[]; for(let i=1;i<=n;i++) uds.push({id:`${ot}-${String(i).padStart(4,'0')}`,ot,sku,estado:'pendiente',lanzada_at:now});
         let e2=(await sb.from('unidades').insert(uds)).error; if(e2)throw e2;
-        uds.forEach(u=>nuevos.push({id:u.id,sku,ot,nombre}));
+        uds.forEach(u=>nuevos.push({id:u.id,sku,ot,nombre,lanzada_at:now}));
         otByNuc[sku]=ot;
         nucRows.push({ot,sku,nombre,cant:n,tipo:this.tipo[sku]||'stock'});
       }
@@ -882,34 +882,39 @@ const Prod = {
   // ---- etiquetas QR (ventana imprimible) ----
   imprimirEtiquetas(units){
     if(!units.length)return;
+    const madDias=(CFG.dias_fabricacion||0)+(CFG.maduracion||0);
+    const fmt=(d)=>{ if(!d)return '—'; const x=new Date(d); return x.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}); };
     const w=window.open('','_blank');
     w.document.write(`<html><head><title>Etiquetas ${this.parteNum||''}</title>
       <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>
-      <style>@page{size:75mm 50mm;margin:0}body{margin:0;font-family:Arial}
-      .et{width:75mm;height:50mm;box-sizing:border-box;padding:4mm;display:flex;gap:4mm;align-items:center;page-break-after:always;border-bottom:1px dashed #ccc}
-      .qr{width:34mm;height:34mm;flex-shrink:0}.info{font-size:10pt;line-height:1.5}
-      .info .sku{font-family:monospace;font-weight:bold;font-size:12pt}.info .ot{color:#B85C38;font-weight:bold}
-.modal-bg{position:fixed;inset:0;background:rgba(27,26,23,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
-.modal-bg.show{display:flex}
-.modal{background:var(--surf);border-radius:18px;max-width:760px;width:100%;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-.modal .mh{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.modal .mh .mt{font-size:20px;font-weight:800}
-.modal .mh .ms{font-family:'JetBrains Mono';font-size:12px;color:var(--terra);margin-top:2px}
-.modal .mx{background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1}
-.modal .mb{padding:20px 24px;overflow-y:auto}
-.otc{border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;border-left:4px solid var(--blue)}
-.otc.cerrada{border-left-color:var(--green)} .otc.anulada{border-left-color:var(--red)}
-.otc .oth{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.otc .otn{font-family:'JetBrains Mono';font-weight:700;font-size:15px}
-.otc .est{font-size:9px;font-weight:700;letter-spacing:.5px;padding:3px 8px;border-radius:5px;text-transform:uppercase}
-.mini{display:flex;gap:18px;flex-wrap:wrap}
-.mini div .v{font-family:'JetBrains Mono';font-weight:700;font-size:15px}
-.mini div .k{font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow'}
-</style></head><body>
-      ${units.map(u=>`<div class="et"><div class="qr" id="q_${u.id}"></div>
-        <div class="info"><div class="sku">${esc(u.sku)}</div><div class="ot">${esc(u.ot)}</div>
-        <div>${esc(u.nombre||'')}</div><div style="font-size:8pt;color:#888">${esc(u.id)}</div></div></div>`).join('')}
-      <script>window.onload=function(){${units.map(u=>`new QRCode(document.getElementById('q_${u.id}'),{text:'${esc(u.id)}',width:128,height:128});`).join('')}setTimeout(()=>window.print(),600);}<\/script>
+      <style>
+      @page{size:100mm 100mm;margin:0}
+      body{margin:0;font-family:Arial}
+      .et{width:100mm;height:100mm;box-sizing:border-box;padding:6mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;page-break-after:always}
+      .qr{width:52mm;height:52mm;margin-top:2mm}
+      .qr img,.qr canvas{width:52mm!important;height:52mm!important}
+      .sku{font-family:monospace;font-weight:bold;font-size:17pt;margin-top:3mm;text-align:center;word-break:break-all}
+      .ot{color:#B85C38;font-weight:bold;font-size:20pt;margin-top:1mm}
+      .fechas{margin-top:3mm;width:100%;border-top:1px solid #000;padding-top:2mm;display:flex;justify-content:space-between;font-size:10pt}
+      .fechas .lbl{color:#555;font-size:8pt;text-transform:uppercase}
+      .fechas .val{font-weight:bold;font-size:12pt}
+      .idu{font-size:8pt;color:#888;margin-top:2mm}
+      </style></head><body>
+      ${units.map(u=>{
+        const lanz=u.lanzada_at||new Date().toISOString();
+        const disp=new Date(new Date(lanz).getTime()+madDias*86400000).toISOString();
+        return `<div class="et">
+          <div class="qr" id="q_${u.id}"></div>
+          <div class="sku">${esc(u.sku)}</div>
+          <div class="ot">${esc(u.ot)}</div>
+          <div class="fechas">
+            <div><div class="lbl">Lanzamiento</div><div class="val">${fmt(lanz)}</div></div>
+            <div style="text-align:right"><div class="lbl">Disponible (teórica)</div><div class="val">${fmt(disp)}</div></div>
+          </div>
+          <div class="idu">${esc(u.id)}</div>
+        </div>`;
+      }).join('')}
+      <script>window.onload=function(){${units.map(u=>`new QRCode(document.getElementById('q_${u.id}'),{text:'${esc(u.id)}',width:256,height:256});`).join('')}setTimeout(()=>window.print(),600);}<\/script>
       </body></html>`);
     w.document.close();
   }
@@ -1007,10 +1012,10 @@ const OT = {
   async reimprimir(sel){
     const ots=sel.map(o=>o.ot);
     let uds=[];
-    for(let i=0;i<ots.length;i+=200){ const {data}=await sb.from('unidades').select('id,sku,ot,estado').in('ot',ots.slice(i,i+200)); uds=uds.concat(data||[]); }
+    for(let i=0;i<ots.length;i+=200){ const {data}=await sb.from('unidades').select('id,sku,ot,estado,lanzada_at').in('ot',ots.slice(i,i+200)); uds=uds.concat(data||[]); }
     uds=uds.filter(u=>u.estado==='stock'||u.estado==='pendiente');
     const nombres={}; sel.forEach(o=>nombres[o.ot]=o.nombre);
-    Prod.imprimirEtiquetas(uds.map(u=>({id:u.id,sku:u.sku,ot:u.ot,nombre:nombres[u.ot]||''})));
+    Prod.imprimirEtiquetas(uds.map(u=>({id:u.id,sku:u.sku,ot:u.ot,nombre:nombres[u.ot]||'',lanzada_at:u.lanzada_at})));
   }
 };
 document.getElementById('otSearch').addEventListener('input',()=>OT.paint());
@@ -1421,7 +1426,7 @@ async function open_detalle(sku,nombre){
   abrirModal(nombre||sku, sku);
   try{
     const ords=(await sb.from('ordenes').select('*').eq('sku',sku).order('ot')).data||[];
-    let uds=[]; for(let f=0;;f+=1000){ const {data}=await sb.from('unidades').select('id,ot,estado,fabricada_at').eq('sku',sku).range(f,f+999); uds=uds.concat(data||[]); if(!data||data.length<1000)break; }
+    let uds=[]; for(let f=0;;f+=1000){ const {data}=await sb.from('unidades').select('id,ot,estado,fabricada_at,lanzada_at').eq('sku',sku).range(f,f+999); uds=uds.concat(data||[]); if(!data||data.length<1000)break; }
     const st=uds.filter(u=>u.estado==='stock').length, pe=uds.filter(u=>u.estado==='pendiente').length, co=uds.filter(u=>u.estado==='consumida').length;
     const now=new Date(), mad=CFG.maduracion*86400000;
     // OT activas (con stock o pendiente)
@@ -1491,14 +1496,14 @@ async function open_detalle(sku,nombre){
     const body=$('#modalBody');
     body.querySelectorAll('.qr-ot').forEach(btn=>btn.addEventListener('click',async()=>{
       const ot=btn.dataset.ot;
-      const us=(await sb.from('unidades').select('id,sku,ot,estado').eq('ot',ot)).data||[];
-      const imp=us.filter(u=>u.estado==='stock'||u.estado==='pendiente').map(u=>({id:u.id,sku:u.sku,ot:u.ot,nombre}));
+      const us=(await sb.from('unidades').select('id,sku,ot,estado,lanzada_at').eq('ot',ot)).data||[];
+      const imp=us.filter(u=>u.estado==='stock'||u.estado==='pendiente').map(u=>({id:u.id,sku:u.sku,ot:u.ot,nombre,lanzada_at:u.lanzada_at}));
       if(!imp.length){ toast('No hay unidades imprimibles en esta OT','err'); return; }
       Prod.parteNum=''; Prod.imprimirEtiquetas(imp);
     }));
     const qrAll=body.querySelector('.qr-all');
     if(qrAll)qrAll.addEventListener('click',()=>{
-      const imp=uds.filter(u=>u.estado==='stock'||u.estado==='pendiente').map(u=>({id:u.id,sku,ot:u.ot,nombre}));
+      const imp=uds.filter(u=>u.estado==='stock'||u.estado==='pendiente').map(u=>({id:u.id,sku,ot:u.ot,nombre,lanzada_at:u.lanzada_at}));
       if(!imp.length){ toast('No hay unidades imprimibles','err'); return; }
       Prod.parteNum=''; Prod.imprimirEtiquetas(imp);
     });
