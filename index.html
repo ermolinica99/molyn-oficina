@@ -767,13 +767,13 @@ const Prod = {
   },
 
   async construirPools(nucs){
-    const now=new Date(), mad=CFG.maduracion*86400;
+    const now=new Date(), madMs=CFG.maduracion*86400000, fabMs=(CFG.dias_fabricacion||0)*86400000;
     const pools={};
-    const stock=await selectAll('unidades','sku,ot,estado,fabricada_at');
+    const stock=await selectAll('unidades','sku,ot,estado,fabricada_at,lanzada_at');
     stock.filter(u=>u.estado==='stock').forEach(u=>{
       const p=pools[u.sku]||(pools[u.sku]={disp:{},madur:{},fabri:{}});
       const fab=u.fabricada_at?new Date(u.fabricada_at):null;
-      const madura=fab&&(now-fab)/1000>=mad;
+      const madura=fab&&(now-fab)>=madMs;
       const key=madura?'disp':'madur';
       const g=p[key][u.ot]||(p[key][u.ot]={ot:u.ot,fab:u.fabricada_at,n:0}); g.n++;
     });
@@ -787,15 +787,21 @@ const Prod = {
     for(const sku in pools){ const p=pools[sku];
       out[sku]={
         disp:Object.values(p.disp).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))),
-        madur:Object.values(p.madur).map(g=>({ot:g.ot,n:g.n})).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))),
-        fabri:Object.values(p.fabri).map(g=>({ot:g.ot,n:g.n})).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))),
+        // madurando: disponible = fabricada_at + maduración
+        madur:Object.values(p.madur).map(g=>({ot:g.ot,n:g.n,
+          dispDate:g.fab?new Date(new Date(g.fab).getTime()+madMs).toISOString():null
+        })).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))),
+        // pendiente/fabricando: disponible = lanzada_at + días fabricación + maduración
+        fabri:Object.values(p.fabri).map(g=>({ot:g.ot,n:g.n,
+          dispDate:g.lz?new Date(new Date(g.lz).getTime()+fabMs+madMs).toISOString():null
+        })).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))),
       };
     }
     return out;
   },
   repartirFifo(pools,otByNuc){
     const bA=[],bB=[],bC=[];
-    const espDate=new Date(Date.now()+(CFG.dias_fabricacion||0+CFG.maduracion)*86400000).toISOString();
+    const espDate=new Date(Date.now()+((CFG.dias_fabricacion||0)+CFG.maduracion)*86400000).toISOString();
     this.lineas.forEach(l=>{ if(l.cant<=0)return;
       let rest=l.cant;
       const base={sku_pf:l.sku_pf,desc:l.descParte||l.nombre||'',nucleo:l.sku_nucleo,enrollado:l.enrollado||''};
@@ -1158,22 +1164,29 @@ const Inv = {
       const disp=b?b.disp:0;
       if(n>disp){ toast('No hay tantas unidades disponibles ('+disp+')','err'); return; }
     }
-    if(!confirm(`${signo>0?'Dar de ALTA':'Dar de BAJA'} ${n} uds de ${sku}?`))return;
+    // pedir motivo
+    const opciones=signo>0?'Motivo (alta):\n1 = Recuento / inventario\n2 = Devolución\n3 = Corrección de fabricación\n4 = Otro'
+                          :'Motivo (baja):\n1 = Rotura / defectuoso\n2 = Recuento / inventario\n3 = Corrección de fabricación\n4 = Otro';
+    const mapa=signo>0?{'1':'Recuento','2':'Devolución','3':'Corrección fabricación','4':'Otro'}
+                      :{'1':'Rotura/defectuoso','2':'Recuento','3':'Corrección fabricación','4':'Otro'};
+    const sel=prompt(`${signo>0?'ALTA':'BAJA'} de ${n} uds · ${sku}\n\n${opciones}`,'1');
+    if(sel===null)return; // canceló
+    const motivo=mapa[String(sel).trim()]||'Otro';
     try{
       const now=new Date().toISOString();
       if(signo>0){
         const rows=[]; for(let i=0;i<n;i++)rows.push({id:`AJ-${Date.now()}-${i}`,sku,estado:'stock',fabricada_at:now,lanzada_at:now,ot:'AJUSTE'});
         const {error}=await sb.from('unidades').insert(rows); if(error)throw error;
       }else{
-        // borrar n unidades disponibles (stock, más antiguas)
         const {data}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(n);
         const ids=(data||[]).map(u=>u.id);
         if(ids.length<n){ toast('No hay tantas unidades en stock','err'); return; }
         const {error}=await sb.from('unidades').delete().in('id',ids); if(error)throw error;
       }
-      // registrar ajuste
-      try{ await sb.from('ajustes_inventario').insert({sku,cantidad:signo*n,fecha:now}); }catch(e){}
-      toast('✓ Ajuste aplicado','ok');
+      // registrar ajuste con motivo (defensivo: si la columna 'motivo' no existe, reintenta sin ella)
+      let r=await sb.from('ajustes_inventario').insert({sku,cantidad:signo*n,fecha:now,motivo});
+      if(r.error){ await sb.from('ajustes_inventario').insert({sku,cantidad:signo*n,fecha:now}); }
+      toast(`✓ ${signo>0?'Alta':'Baja'} de ${n} uds · ${motivo}`,'ok');
       MET=await calcularMetricas(); this.paint(); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   }
@@ -1447,6 +1460,33 @@ async function open_detalle(sku,nombre){
         <div style="font-family:'JetBrains Mono';font-size:11px;color:var(--ink2);line-height:1.8;word-break:break-all">${stockU.slice(0,12).map(u=>esc(u.id)).join('  →  ')}${stockU.length>12?' …':''}</div>`; }
     }
     $('#modalBody').innerHTML=html;
+    // ---- histórico de consumo (últimos 14 días) ----
+    (async()=>{
+      try{
+        const desde=new Date(Date.now()-14*86400000).toISOString();
+        let cons=[]; for(let f=0;;f+=1000){ const {data}=await sb.from('unidades').select('consumida_at').eq('sku',sku).eq('estado','consumida').gte('consumida_at',desde).range(f,f+999); cons=cons.concat(data||[]); if(!data||data.length<1000)break; }
+        const porDia={};
+        cons.forEach(u=>{ if(u.consumida_at){ const d=u.consumida_at.slice(0,10); porDia[d]=(porDia[d]||0)+1; } });
+        // últimos 14 días (aunque sean 0)
+        const dias=[]; for(let i=13;i>=0;i--){ const d=new Date(Date.now()-i*86400000).toISOString().slice(0,10); dias.push([d,porDia[d]||0]); }
+        const maxV=Math.max(1,...dias.map(x=>x[1]));
+        const total=cons.length, media=Math.round(total/14*10)/10;
+        const barras=dias.map(([d,v])=>{
+          const h=Math.round(v/maxV*46);
+          const dd=d.slice(8,10)+'/'+d.slice(5,7);
+          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+            <div style="font-size:9px;color:var(--ink2);font-family:'JetBrains Mono';height:12px">${v||''}</div>
+            <div style="width:70%;height:${h}px;min-height:${v?3:0}px;background:${v?'var(--terra)':'transparent'};border-radius:3px 3px 0 0"></div>
+            <div style="font-size:8px;color:var(--muted)">${dd}</div></div>`;
+        }).join('');
+        const cbody=$('#modalBody');
+        if(cbody){
+          cbody.insertAdjacentHTML('beforeend',
+            `<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin:18px 0 8px">CONSUMO ÚLTIMOS 14 DÍAS · ${total} uds · media ${media}/día</div>
+             <div style="display:flex;align-items:flex-end;gap:2px;height:76px;padding:6px 0;border-top:1px solid var(--border)">${barras}</div>`);
+        }
+      }catch(e){}
+    })();
     // conectar botones de etiquetas
     const body=$('#modalBody');
     body.querySelectorAll('.qr-ot').forEach(btn=>btn.addEventListener('click',async()=>{
