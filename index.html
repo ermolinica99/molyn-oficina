@@ -371,29 +371,51 @@ async function selectAll(table,cols){
   }
   return out;
 }
+// paginador con filtro opcional (más rápido: descarga solo lo necesario)
+async function selectWhere(table,cols,filterFn){
+  let out=[],from=0,size=1000;
+  while(true){
+    let q=sb.from(table).select(cols).range(from,from+size-1);
+    if(filterFn)q=filterFn(q);
+    const {data,error}=await q;
+    if(error)throw error;
+    out=out.concat(data||[]);
+    if(!data||data.length<size)break;
+    from+=size;
+  }
+  return out;
+}
+
 async function calcularMetricas(){
   const now=new Date();
   const mad=CFG.maduracion, diasH=CFG.dias_historico, umbral=parseFloat(CFG.umbral_semanal);
-  let prods;
-  try{prods=await selectAll('productos','sku,nombre,descripcion,forzar_diario');}
-  catch(e){prods=await selectAll('productos','sku,nombre,descripcion');}
-  const uds=await selectAll('unidades','sku,estado,fabricada_at,consumida_at');
-  let res=[];try{res=await selectAll('reservas','sku,cantidad,estado');res=res.filter(r=>r.estado==='pendiente'||r.estado==null);}catch(e){}
-  const pend={};res.forEach(r=>{pend[r.sku]=(pend[r.sku]||0)+(r.cantidad||0)});
+  // solo necesitamos el consumo de los últimos ~35 días (no todo el histórico)
+  const cutoff=new Date(now.getTime()-35*86400000).toISOString();
+  // TODAS las consultas en paralelo (mucho más rápido que una tras otra)
+  const pProds=(async()=>{ try{return await selectWhere('productos','sku,nombre,descripcion,forzar_diario');}
+                           catch(e){return await selectWhere('productos','sku,nombre,descripcion');} })();
+  const pActivos=selectWhere('unidades','sku,estado,fabricada_at',q=>q.neq('estado','consumida'));
+  const pConsumo=selectWhere('unidades','sku,consumida_at',q=>q.eq('estado','consumida').gte('consumida_at',cutoff));
+  const pReservas=(async()=>{ try{const r=await selectWhere('reservas','sku,cantidad,estado');return r.filter(x=>x.estado==='pendiente'||x.estado==null);}catch(e){return [];} })();
+  const [prods,activos,consumo,res]=await Promise.all([pProds,pActivos,pConsumo,pReservas]);
 
+  const pend={};res.forEach(r=>{pend[r.sku]=(pend[r.sku]||0)+(r.cantidad||0)});
   const m={};
   prods.forEach(p=>{m[p.sku]={sku:p.sku,nombre:p.nombre||'',prog:progDe(p),stock:0,disp:0,madurando:0,fabricando:0,dias:{},cons28:0,forzado:!!p.forzar_diario};});
-  uds.forEach(u=>{
+  const madMs=mad*86400000;
+  activos.forEach(u=>{
     const b=m[u.sku];if(!b)return;
     if(u.estado==='pendiente')b.fabricando++;
     else if(u.estado==='stock'){b.stock++;
       const fab=u.fabricada_at?new Date(u.fabricada_at):null;
-      if(fab&&(now-fab)/1000>=mad*86400)b.disp++;else b.madurando++;
-    }else if(u.estado==='consumida'&&u.consumida_at){
-      const ca=new Date(u.consumida_at),day=u.consumida_at.slice(0,10);
-      b.dias[day]=(b.dias[day]||0)+1;
-      if((now-ca)/1000<=28*86400)b.cons28++;
+      if(fab&&(now-fab)>=madMs)b.disp++;else b.madurando++;
     }
+  });
+  consumo.forEach(u=>{
+    const b=m[u.sku];if(!b||!u.consumida_at)return;
+    const day=u.consumida_at.slice(0,10);
+    b.dias[day]=(b.dias[day]||0)+1;
+    if((now-new Date(u.consumida_at))/1000<=28*86400)b.cons28++;
   });
   Object.values(m).forEach(b=>{
     const ds=Object.keys(b.dias).sort().reverse().slice(0,diasH);
@@ -659,14 +681,23 @@ const Prod = {
         <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-size:12px;font-weight:700${sinNuc?';color:var(--red)':''}">${esc(l.sku_pf)}</div>
           <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.descParte||l.nombre||'')}</div></div>
         <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono'">${l.sku_nucleo?esc(l.sku_nucleo):'— sin núcleo'}</div>
-        <input type="number" min="0" value="${l.cant}" data-i="${i}" class="mcant" style="width:60px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:center;font-family:inherit">
+        <div style="text-align:center"><div style="font-size:8px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow'">Cant.</div>
+          <input type="number" min="0" value="${l.cant}" data-i="${i}" class="mcant" style="width:56px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:center;font-family:inherit"></div>
+        <div style="text-align:center"><div style="font-size:8px;color:var(--blue);text-transform:uppercase;font-family:'Archivo Narrow'">Enroll.</div>
+          <input type="number" min="0" max="${l.cant}" value="${l.enrollado||''}" placeholder="0" data-i="${i}" class="menr" style="width:56px;padding:6px;border:1px solid #C9DDE5;border-radius:7px;text-align:center;font-family:inherit;background:#F3F8FA"></div>
       </div>`;
     }).join('');
     $('#prodModelos').innerHTML = this.lineas.length?
-      (mrows + `<div style="padding:10px 16px"><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Prod.borrarModelosSel()">Borrar seleccionados</button></div>`)
+      (`<div style="display:flex;gap:10px;padding:8px 16px;background:var(--surf2);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px"><span style="width:16px"></span><span style="flex:1">Modelo</span><span>Núcleo</span><span style="width:56px;text-align:center">Cant.</span><span style="width:56px;text-align:center">Enroll.</span></div>`
+       + mrows + `<div style="padding:10px 16px"><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Prod.borrarModelosSel()">Borrar seleccionados</button></div>`)
       : '<div class="vacio">Sube un parte o añade modelos a mano.</div>';
     $('#prodModelos').querySelectorAll('.mcant').forEach(inp=>inp.addEventListener('change',e=>{
       this.lineas[+e.target.dataset.i].cant=Math.max(0,parseInt(e.target.value)||0); this.recompute();
+    }));
+    $('#prodModelos').querySelectorAll('.menr').forEach(inp=>inp.addEventListener('change',e=>{
+      const i=+e.target.dataset.i, v=Math.max(0,parseInt(e.target.value)||0);
+      this.lineas[i].enrollado = v>0 ? Math.min(v,this.lineas[i].cant) : '';
+      e.target.value=this.lineas[i].enrollado||'';
     }));
 
     // núcleos
@@ -761,7 +792,7 @@ const Prod = {
       this.render();
       toast('✓ '+items.length+' OT lanzadas','ok');
       // refrescar dashboard
-      MET=await calcularMetricas(); render();
+      await refrescarMet(true); render();
     }catch(e){ toast('Error al lanzar: '+(e.message||e),'err'); }
     finally{ $('#btnLanzar').disabled=false; $('#btnLanzar').textContent='Lanzar OT · partes · reservas'; }
   },
@@ -861,14 +892,16 @@ const Prod = {
     const hojaMod=(titulo,sub,arr,conFecha)=>{
       if(!arr.length)return'';
       const t=arr.reduce((s,x)=>s+x.cant,0);
-      const head=`<th>Código</th><th>Descripción</th><th>Núcleo</th><th>OT</th>${conFecha?'<th>Disponible</th>':''}<th class="n">Cant.</th>`;
+      const tEnr=arr.reduce((s,x)=>s+(parseInt(x.enrollado)||0),0);
+      const head=`<th>Código</th><th>Descripción</th><th>Núcleo</th><th>OT</th>${conFecha?'<th>Disponible</th>':''}<th class="n">Cant.</th><th class="n">Enroll.</th>`;
       const rows=arr.map(x=>{
         const dd=conFecha?(x.dispDate?new Date(x.dispDate).toLocaleDateString('es-ES'):'—'):'';
-        return `<tr class="${x.nucleo?'':'falta'}"><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td></tr>`;
+        const enr=parseInt(x.enrollado)||0;
+        return `<tr class="${x.nucleo?'':'falta'}"><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td><td class="n" style="color:#5A7D8C;font-weight:bold">${enr||''}</td></tr>`;
       }).join('');
       const colspan=conFecha?5:4;
-      return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
-        <table><tr>${head}</tr>${rows}<tr class="tot"><td colspan="${colspan}">TOTAL</td><td class="n">${t}</td></tr></table>`;
+      return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b>${tEnr>0?` &nbsp; Enrollados: <b>${tEnr}</b>`:''}</div>
+        <table><tr>${head}</tr>${rows}<tr class="tot"><td colspan="${colspan}">TOTAL</td><td class="n">${t}</td><td class="n">${tEnr||''}</td></tr></table>`;
     };
     const h1=hojaMod('Parte · Modelos con núcleo DISPONIBLE','Se puede fabricar ya (OT indicada).',bA,false);
     const h2=hojaMod('Parte · Modelos EN MADURACIÓN','El núcleo ya está fabricado pero aún no disponible.',bB,true);
@@ -1005,7 +1038,7 @@ const OT = {
         }
       }
       if(tipo==='qr'){ await this.reimprimir(sel); }
-      else{ toast('✓ '+nombres[tipo]+': '+sel.length+' OT','ok'); await this.reload(); MET=await calcularMetricas(); render(); }
+      else{ toast('✓ '+nombres[tipo]+': '+sel.length+' OT','ok'); await this.reload(); await refrescarMet(true); render(); }
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
 
@@ -1086,7 +1119,7 @@ const Conf = {
       filas.forEach(f=>LOTES[f.programa]=f.lote);
       this.raw=cfg;
       toast('✓ Configuración guardada','ok');
-      MET=await calcularMetricas(); render();
+      await refrescarMet(true); render();
     }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
   }
 };
@@ -1192,7 +1225,7 @@ const Inv = {
       let r=await sb.from('ajustes_inventario').insert({sku,cantidad:signo*n,fecha:now,motivo});
       if(r.error){ await sb.from('ajustes_inventario').insert({sku,cantidad:signo*n,fecha:now}); }
       toast(`✓ ${signo>0?'Alta':'Baja'} de ${n} uds · ${motivo}`,'ok');
-      MET=await calcularMetricas(); this.paint(); render();
+      await refrescarMet(true); this.paint(); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   }
 };
@@ -1213,10 +1246,13 @@ const Prodv = {
     $('#prodvLista').innerHTML='<div class="loading">Calculando…</div>';
     try{
       const ini=fecha+'T00:00:00', fin=fecha+'T23:59:59';
-      const ops=(await sb.from('usuarios').select('id,nombre').eq('rol','operario').eq('activo',true)).data||[];
-      let evs=[]; for(let f=0;;f+=1000){ const {data}=await sb.from('fabricacion_eventos').select('unidad_id,ot,sku,usuario_id,tipo,ts').gte('ts',ini).lte('ts',fin).range(f,f+999); evs=evs.concat(data||[]); if(!data||data.length<1000)break; }
-      const pars=(await sb.from('paradas').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin)).data||[];
-      const turs=(await sb.from('turnos').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin)).data||[];
+      // las 4 consultas a la vez (en vez de una tras otra)
+      const [ops,evs,pars,turs]=await Promise.all([
+        sb.from('usuarios').select('id,nombre').eq('rol','operario').eq('activo',true).then(r=>r.data||[]),
+        selectWhere('fabricacion_eventos','unidad_id,ot,sku,usuario_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)),
+        sb.from('paradas').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin).then(r=>r.data||[]),
+        sb.from('turnos').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin).then(r=>r.data||[]),
+      ]);
       const now=new Date();
       const res=ops.map(o=>{
         const evO=evs.filter(e=>e.usuario_id===o.id);
@@ -1313,7 +1349,7 @@ const Apr = {
     try{
       await sb.from('ajustes_inventario').update({estado,resuelto_at:new Date().toISOString()}).eq('id',id);
       toast(estado==='aprobado'?'✓ Aprobado':'Rechazado', estado==='aprobado'?'ok':'');
-      this.reload(); MET=await calcularMetricas(); render();
+      this.reload(); await refrescarMet(true); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   }
 };
@@ -1407,7 +1443,7 @@ const Alta = {
       $('#altaTabla').innerHTML='';$('#altaAviso').innerHTML='';
       btn.textContent='Importar';btn.style.opacity=.5;
       // refrescar métricas y referencias de producción
-      MET=await calcularMetricas(); render(); Prod.refs=false;
+      await refrescarMet(true); render(); Prod.refs=false;
     }catch(e){ toast('Error al importar: '+(e.message||e),'err'); btn.disabled=false; btn.textContent='Importar'; }
   }
 };
@@ -1523,11 +1559,23 @@ async function open_operario(nombre, porSku, hechas, efectivo){
 }
 
 // ---- arranque ----
+let _metLoading=false, _metTs=0;
+async function refrescarMet(force){
+  // evita recargas duplicadas simultáneas; usa caché si es muy reciente (<4s) salvo force
+  if(_metLoading) return MET;
+  if(!force && Date.now()-_metTs<4000 && Object.keys(MET).length) return MET;
+  _metLoading=true;
+  try{ MET=await calcularMetricas(); _metTs=Date.now(); }
+  finally{ _metLoading=false; }
+  return MET;
+}
+
 async function boot(){
   try{
     $('#conn').innerHTML='<b>Cargando…</b>Supabase';
+    // config y métricas arrancan a la vez
     await cargarConfig();
-    MET=await calcularMetricas();
+    MET=await calcularMetricas(); _metTs=Date.now();
     $('#conn').innerHTML='<b>Conectado</b>'+Object.keys(MET).length+' núcleos';
     render();
   }catch(e){
