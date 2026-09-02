@@ -907,6 +907,7 @@ const Prod = {
     const h2=hojaMod('Parte · Modelos EN MADURACIÓN','El núcleo ya está fabricado pero aún no disponible.',bB,true);
     const h3=hojaMod('Parte · Modelos PENDIENTES de fabricar','Se ha lanzado / está en curso la OT indicada.',bC,true);
     const w=window.open('','_blank');
+    if(!w||!w.document){ toast('⚠️ El navegador bloqueó la ventana de impresión del parte. Permite las ventanas emergentes para imprimir.','err'); return; }
     w.document.write(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}
       <script>setTimeout(()=>window.print(),500);<\/script></body></html>`);
     w.document.close();
@@ -918,6 +919,7 @@ const Prod = {
     const madDias=(CFG.dias_fabricacion||0)+(CFG.maduracion||0);
     const fmt=(d)=>{ if(!d)return '—'; const x=new Date(d); return x.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}); };
     const w=window.open('','_blank');
+    if(!w||!w.document){ toast('⚠️ El navegador bloqueó la ventana de etiquetas. Permite las ventanas emergentes para imprimir.','err'); return; }
     w.document.write(`<html><head><title>Etiquetas ${this.parteNum||''}</title>
       <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>
       <style>
@@ -1171,6 +1173,13 @@ const Usr = {
     catch(e){ toast('Error: '+(e.message||e),'err'); } }
 };
 
+
+// OT de ajuste de inventario: OTINV + fecha del día (una por día)
+function otInventario(){
+  const d=new Date();
+  return 'OTINV'+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+}
+
 // ============================================================
 //  INVENTARIO FÍSICO
 // ============================================================
@@ -1213,7 +1222,10 @@ const Inv = {
     try{
       const now=new Date().toISOString();
       if(signo>0){
-        const rows=[]; for(let i=0;i<n;i++)rows.push({id:`AJ-${Date.now()}-${i}`,sku,estado:'stock',fabricada_at:now,lanzada_at:now,ot:'AJUSTE'});
+        // asegurar que existe la orden del día (las unidades necesitan una OT válida)
+        const ot=otInventario();
+        const {error:eo}=await sb.from('ordenes').upsert({ot,sku,nombre:'AJUSTE INVENTARIO ('+motivo+')',cantidad:n,lanzada_at:now,fabricada_at:now,estado:'cerrada',cerrada_at:now},{onConflict:'ot'}); if(eo)throw eo;
+        const rows=[]; for(let i=0;i<n;i++)rows.push({id:`${ot}-${sku.slice(0,6)}-${Date.now()}${i}`,sku,estado:'stock',fabricada_at:now,lanzada_at:now,ot});
         const {error}=await sb.from('unidades').insert(rows); if(error)throw error;
       }else{
         const {data}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(n);
@@ -1347,8 +1359,29 @@ const Apr = {
   },
   async resolver(id,estado){
     try{
+      if(estado==='aprobado'){
+        // traer el ajuste para aplicarlo de verdad al stock
+        const {data:aj}=await sb.from('ajustes_inventario').select('*').eq('id',id).single();
+        if(aj){
+          const sku=aj.sku, cant=Math.abs(aj.cantidad||0), esAlta=(aj.cantidad||0)>0;
+          const now=new Date().toISOString();
+          if(esAlta){
+            // ALTA: crear unidades en stock (con la OT AJUSTE)
+            const ot=otInventario();
+            const {error:eo}=await sb.from('ordenes').upsert({ot,sku,nombre:'AJUSTE INVENTARIO (aprobado)',cantidad:cant,lanzada_at:now,fabricada_at:now,estado:'cerrada',cerrada_at:now},{onConflict:'ot'}); if(eo)throw eo;
+            const rows=[]; for(let i=0;i<cant;i++)rows.push({id:`${ot}-${sku.slice(0,6)}-${Date.now()}${i}`,sku,estado:'stock',fabricada_at:now,lanzada_at:now,ot});
+            const {error}=await sb.from('unidades').insert(rows); if(error)throw error;
+          }else{
+            // BAJA: borrar del stock (FIFO, las más antiguas)
+            const {data}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(cant);
+            const ids=(data||[]).map(u=>u.id);
+            if(ids.length<cant){ toast(`Solo hay ${ids.length} en stock, no se pueden dar de baja ${cant}`,'err'); return; }
+            const {error}=await sb.from('unidades').delete().in('id',ids); if(error)throw error;
+          }
+        }
+      }
       await sb.from('ajustes_inventario').update({estado,resuelto_at:new Date().toISOString()}).eq('id',id);
-      toast(estado==='aprobado'?'✓ Aprobado':'Rechazado', estado==='aprobado'?'ok':'');
+      toast(estado==='aprobado'?'✓ Aprobado y aplicado al stock':'Rechazado', estado==='aprobado'?'ok':'');
       this.reload(); await refrescarMet(true); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   }
