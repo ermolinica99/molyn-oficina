@@ -142,7 +142,23 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
 </head>
 
 <body>
-<div class="app">
+<div id="loginScreen" style="display:none;position:fixed;inset:0;background:linear-gradient(160deg,#211F1B,#2f2a24 55%,#B85C38 170%);z-index:2000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:20px;padding:38px 34px;max-width:400px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+      <img id="loginLogo" src="" style="width:44px;height:44px;border-radius:13px">
+      <div><div style="font-weight:800;font-size:20px;letter-spacing:.5px">MOLYN</div><div style="font-size:10px;color:#9A948A;letter-spacing:1.5px">NÚCLEOS · OFICINA</div></div>
+    </div>
+    <div id="loginTit" style="font-size:15px;font-weight:700;margin:20px 0 4px">Acceso a oficina</div>
+    <div id="loginSub" style="font-size:13px;color:#9A948A;margin-bottom:18px">Introduce tu email y contraseña</div>
+    <input id="loginEmail" type="email" placeholder="Email" autocomplete="username" style="width:100%;padding:12px 14px;border:1px solid #E4E0D8;border-radius:11px;font-size:14px;margin-bottom:10px;font-family:inherit">
+    <input id="loginPass" type="password" placeholder="Contraseña" autocomplete="current-password" style="width:100%;padding:12px 14px;border:1px solid #E4E0D8;border-radius:11px;font-size:14px;margin-bottom:6px;font-family:inherit">
+    <input id="loginNombre" type="text" placeholder="Tu nombre" style="display:none;width:100%;padding:12px 14px;border:1px solid #E4E0D8;border-radius:11px;font-size:14px;margin-bottom:6px;font-family:inherit">
+    <div id="loginErr" style="color:#C0492B;font-size:12px;min-height:16px;margin:4px 0"></div>
+    <button id="loginBtn" onclick="Auth.login()" style="width:100%;background:#B85C38;color:#fff;border:none;padding:13px;border-radius:11px;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit">Entrar</button>
+    <div id="loginFoot" style="text-align:center;margin-top:14px;font-size:12px;color:#9A948A"></div>
+  </div>
+</div>
+<div class="app" id="appMain" style="display:none">
   <aside class="side">
     <div class="brand">
       <img id="logo" src="" alt="MOLYN">
@@ -168,7 +184,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="top">
       <div class="crumb">MOLYN&nbsp;&nbsp;/&nbsp;&nbsp;<b>Dashboard</b></div>
       <div class="search"><input id="search" placeholder="Buscar SKU o nombre…"></div>
-      <div class="user"><div class="av">OF</div><span style="font-size:13px;color:var(--muted)">Oficina</span></div>
+      <div class="user"><div class="av">OF</div><span style="font-size:13px;color:var(--muted)">Oficina</span><button onclick="Auth.logout()" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;margin-left:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button></div>
     </div>
     <div class="content" id="view-dash">
       <div class="h1">Dashboard</div>
@@ -1336,6 +1352,83 @@ const Tsku = {
 };
 
 // ============================================================
+//  AUTENTICACIÓN (login de oficina)
+// ============================================================
+async function hashPass(pass){
+  // SHA-256 con una sal fija de la app (razonable para acceso interno)
+  const data=new TextEncoder().encode('molyn-sal-2026::'+pass);
+  const buf=await crypto.subtle.digest('SHA-256',data);
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+const Auth = {
+  user:null,
+  async init(){
+    $('#loginLogo').src='data:image/png;base64,'+LOGO_B64;
+    // ¿hay sesión guardada?
+    try{
+      const saved=JSON.parse(localStorage.getItem('molyn_oficina_user')||'null');
+      if(saved && saved.email){
+        // revalidar contra la BD (por si lo desactivaron)
+        const {data}=await sb.from('usuarios_oficina').select('*').eq('email',saved.email).eq('activo',true).single();
+        if(data && data.pass_hash===saved.h){ this.entrar(data); return; }
+      }
+    }catch(e){}
+    // ¿existe algún usuario de oficina? si no, modo "primer acceso"
+    try{
+      const {count,error}=await sb.from('usuarios_oficina').select('id',{count:'exact',head:true});
+      if(error && /does not exist|relation/i.test(error.message)){
+        this.mostrar(); $('#loginErr').textContent='Falta crear la tabla. Ejecuta crear_usuarios_oficina.sql en Supabase.'; return;
+      }
+      if(!count){ this.modoPrimero(); return; }
+    }catch(e){}
+    this.mostrar();
+  },
+  mostrar(){ $('#loginScreen').style.display='flex'; $('#appMain').style.display='none'; $('#loginEmail').focus(); },
+  modoPrimero(){
+    this._primero=true;
+    $('#loginTit').textContent='Primer acceso · crear administrador';
+    $('#loginSub').textContent='No hay usuarios de oficina. Crea el primero.';
+    $('#loginNombre').style.display='block';
+    $('#loginBtn').textContent='Crear y entrar';
+    this.mostrar();
+  },
+  async login(){
+    const email=$('#loginEmail').value.trim().toLowerCase();
+    const pass=$('#loginPass').value;
+    $('#loginErr').textContent='';
+    if(!email||!pass){ $('#loginErr').textContent='Rellena email y contraseña'; return; }
+    $('#loginBtn').disabled=true;
+    try{
+      const h=await hashPass(pass);
+      if(this._primero){
+        const nombre=$('#loginNombre').value.trim()||email;
+        if(pass.length<4){ $('#loginErr').textContent='La contraseña debe tener al menos 4 caracteres'; $('#loginBtn').disabled=false; return; }
+        const {data,error}=await sb.from('usuarios_oficina').insert({email,nombre,pass_hash:h,activo:true}).select().single();
+        if(error)throw error;
+        this.guardar(data); this.entrar(data); return;
+      }
+      const {data,error}=await sb.from('usuarios_oficina').select('*').eq('email',email).eq('activo',true).single();
+      if(error||!data){ $('#loginErr').textContent='Email no encontrado o inactivo'; $('#loginBtn').disabled=false; return; }
+      if(data.pass_hash!==h){ $('#loginErr').textContent='Contraseña incorrecta'; $('#loginBtn').disabled=false; return; }
+      this.guardar(data); this.entrar(data);
+    }catch(e){ $('#loginErr').textContent='Error: '+(e.message||e); $('#loginBtn').disabled=false; }
+  },
+  guardar(u){ try{ localStorage.setItem('molyn_oficina_user',JSON.stringify({email:u.email,nombre:u.nombre,h:u.pass_hash})); }catch(e){} },
+  entrar(u){
+    this.user=u;
+    $('#loginScreen').style.display='none';
+    $('#appMain').style.display='flex';
+    // mostrar nombre en la barra superior
+    const av=document.querySelector('.top .user .av'), nm=document.querySelector('.top .user span');
+    if(av)av.textContent=(u.nombre||u.email||'OF').slice(0,2).toUpperCase();
+    if(nm)nm.textContent=u.nombre||u.email;
+    boot(); // arranca la app
+  },
+  logout(){ localStorage.removeItem('molyn_oficina_user'); location.reload(); }
+};
+
+// ============================================================
 //  APROBACIONES
 // ============================================================
 const Apr = {
@@ -1620,6 +1713,6 @@ $('#search').addEventListener('input',render);
 if($('#invSearch'))$('#invSearch').addEventListener('input',()=>Inv.paint());
 if($('#tskuSearch'))$('#tskuSearch').addEventListener('input',()=>Tsku.paint());
 $('#logo').src='data:image/png;base64,'+LOGO_B64;
-boot();
+Auth.init();  // pide login; si hay sesión guardada, entra directo y llama a boot()
 </script>
 </body></html>
