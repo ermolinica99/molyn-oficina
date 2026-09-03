@@ -1431,7 +1431,7 @@ const Prodv = {
         safe(sb.from('turnos').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[])
       ]);
-      const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.segundos||t.mediana||0)||0; });
+      const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.mediana_seg||t.segundos||t.mediana||0)||0; });
       const now=new Date();
       this.alerts=[];
       this.hourly=Array.from({length:24},()=>({uds:0,efectivo:0,pausas:0}));
@@ -1826,8 +1826,8 @@ const Tsku = {
       <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
       ${rs.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono';font-weight:700">${esc(t.sku)}</td>
         <td style="padding:9px 14px;color:var(--muted)">${esc(medida(t.sku)||'')}</td>
-        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${fmtDur(t.segundos||t.mediana||0)}</td>
-        <td style="padding:9px 14px;text-align:right;color:var(--muted)">${t.muestras||t.n||'—'}</td></tr>`).join('')}
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${fmtDur(t.mediana_seg||t.segundos||t.mediana||0)}</td>
+        <td style="padding:9px 14px;text-align:right;color:var(--muted)">${t.n_unidades||t.muestras||t.n||'—'}</td></tr>`).join('')}
       </tbody></table>`;
   }
 };
