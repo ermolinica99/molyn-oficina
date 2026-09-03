@@ -175,6 +175,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempo por núcleo</span></button>
     <button class="nav" id="navApr" onclick="nav('apr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span>Aprobaciones</span></button>
     <div class="grp">Ajustes</div>
+    <button class="nav" id="navPers" onclick="nav('pers')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg><span>Personalización</span></button>
     <button class="nav" id="navAlta" onclick="nav('alta')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Alta masiva</span></button>
     <button class="nav" id="navConf" onclick="nav('conf')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configuración</span></button>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
@@ -213,10 +214,10 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         </div>
       </div>
       <div id="prodAviso"></div>
-      <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:8px">
-        <div class="card">
-          <div class="ch"><div class="t">Modelos del parte</div></div>
-          <div id="prodModelos" style="max-height:60vh;overflow:auto"></div>
+      <div style="margin-top:8px">
+        <div class="card" style="margin-bottom:16px">
+          <div class="ch"><div class="t">Modelos del parte</div><div class="s">Divide cada línea por configuración (etiquetas, asas…) con el botón ⚙</div></div>
+          <div id="prodModelos"></div>
           <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px">
             <input id="addModelo" placeholder="Añadir modelo (SKU)…" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
             <input id="addModeloN" type="number" min="1" value="1" style="width:70px;padding:9px;border:1px solid var(--border);border-radius:9px;text-align:center;font-family:inherit">
@@ -225,7 +226,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         </div>
         <div class="card">
           <div class="ch"><div class="t">Núcleos a fabricar</div><div class="s" id="prodTotal">Total: 0</div></div>
-          <div id="prodNucleos" style="max-height:52vh;overflow:auto"></div>
+          <div id="prodNucleos"></div>
           <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px">
             <input id="addNuc" placeholder="Añadir núcleo (SKU)…" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
             <input id="addNucN" type="number" min="1" value="1" style="width:70px;padding:9px;border:1px solid var(--border);border-radius:9px;text-align:center;font-family:inherit">
@@ -336,6 +337,19 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div id="altaAviso"></div>
       <div class="card"><div id="altaTabla" style="max-height:55vh;overflow:auto"></div></div>
       <button id="btnImportar" class="chip" style="padding:13px 28px;font-size:15px;margin-top:14px;opacity:.5" disabled onclick="Alta.importar()">Importar</button>
+    </div>
+
+    <div class="content" id="view-pers" style="display:none">
+      <div class="h1">Personalización de colchones</div>
+      <div class="h1sub">Categorías (etiquetas, asas, enrollado…) que se aplican al dividir las líneas en Producción</div>
+      <div class="card" style="margin-bottom:16px">
+        <div style="padding:16px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nueva categoría</div>
+            <input id="catNom" placeholder="Ej: Etiquetas, Asas…" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:220px"></div>
+          <button class="chip" onclick="Pers.crearCat()">Añadir categoría</button>
+        </div>
+      </div>
+      <div id="persLista"></div>
     </div>
   </div>
 </div>
@@ -589,9 +603,9 @@ function go2(){nav('ot')}
 //  PRODUCCIÓN
 // ============================================================
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva'};
-  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta'};
-  ['dash','prod','ot','conf','usr','inv','prodv','tsku','apr','alta'].forEach(k=>{
+  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+  ['dash','prod','ot','conf','usr','inv','prodv','tsku','apr','alta','pers'].forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
   });
@@ -599,6 +613,7 @@ function nav(v){
   if(v==='prod') Prod.init();
   if(v==='ot') OT.reload();
   if(v==='conf') Conf.load();
+  if(v==='pers') Pers.load();
   if(v==='usr') Usr.reload();
   if(v==='inv') Inv.paint();
   if(v==='prodv') Prodv.reload();
@@ -617,6 +632,7 @@ const Prod = {
       this.modelosMap = {}; modelos.forEach(m=>this.modelosMap[m.sku_pf]=m);
       const prods = await selectAll('productos','sku,nombre');
       this.prodMap = {}; prods.forEach(p=>this.prodMap[p.sku]=p.nombre||p.sku);
+      await Pers.load(); // cargar categorías de personalización
       this.refs = true;
     }catch(e){ toast('Error cargando referencias: '+(e.message||e),'err'); }
   },
@@ -650,8 +666,9 @@ const Prod = {
       // mapear núcleo
       this.parteNum=num;
       this.lineas=filas.map(f=>{ const m=this.modelosMap[f.sku_pf];
-        return {sku_pf:f.sku_pf, cant:f.cant, descParte:f.descParte,
-          nombre:m?m.nombre:'', medida:m?m.medida:'', sku_nucleo:m?m.sku_nucleo:null};});
+        const desc=f.descParte||(m?m.nombre:'')||'';
+        return {sku_pf:f.sku_pf, cant:f.cant, descParte:desc, descBase:desc,
+          nombre:m?m.nombre:'', medida:m?m.medida:'', sku_nucleo:m?m.sku_nucleo:null, configs:[]};});
       $('#prodSub').textContent = num?('Parte '+num+' · '+this.lineas.length+' líneas'):(this.lineas.length+' líneas');
       const faltan=[...new Set(this.lineas.filter(l=>!l.sku_nucleo).map(l=>l.sku_pf))];
       $('#prodAviso').innerHTML = faltan.length?
@@ -692,28 +709,26 @@ const Prod = {
     // modelos
     const mrows=this.lineas.map((l,i)=>{
       const sinNuc=!l.sku_nucleo;
+      // descripción con las configuraciones aplicadas
+      const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
+      const desc=(l.descBase||l.descParte||l.nombre||'')+cfgTxt;
       return `<div style="display:flex;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);align-items:center;${sinNuc?'background:#FDF6EF':''}">
         <input type="checkbox" class="mchk" data-i="${i}" style="width:16px;height:16px;accent-color:var(--terra)">
         <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-size:12px;font-weight:700${sinNuc?';color:var(--red)':''}">${esc(l.sku_pf)}</div>
-          <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.descParte||l.nombre||'')}</div></div>
+          <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(desc)}">${esc(desc)}</div></div>
         <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono'">${l.sku_nucleo?esc(l.sku_nucleo):'— sin núcleo'}</div>
         <div style="text-align:center"><div style="font-size:8px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow'">Cant.</div>
           <input type="number" min="0" value="${l.cant}" data-i="${i}" class="mcant" style="width:56px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:center;font-family:inherit"></div>
-        <div style="text-align:center"><div style="font-size:8px;color:var(--blue);text-transform:uppercase;font-family:'Archivo Narrow'">Enroll.</div>
-          <input type="number" min="0" max="${l.cant}" value="${l.enrollado||''}" placeholder="0" data-i="${i}" class="menr" style="width:56px;padding:6px;border:1px solid #C9DDE5;border-radius:7px;text-align:center;font-family:inherit;background:#F3F8FA"></div>
+        <button class="chip" style="background:#EEE4F2;color:#7A3E8C;padding:8px 10px" title="Dividir por configuración" onclick="Prod.abrirConfig(${i})">⚙</button>
       </div>`;
     }).join('');
     $('#prodModelos').innerHTML = this.lineas.length?
-      (`<div style="display:flex;gap:10px;padding:8px 16px;background:var(--surf2);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px"><span style="width:16px"></span><span style="flex:1">Modelo</span><span>Núcleo</span><span style="width:56px;text-align:center">Cant.</span><span style="width:56px;text-align:center">Enroll.</span></div>`
-       + mrows + `<div style="padding:10px 16px"><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Prod.borrarModelosSel()">Borrar seleccionados</button></div>`)
+      (`<div style="max-height:48vh;overflow:auto">`
+       + `<div style="display:flex;gap:10px;padding:8px 16px;background:var(--surf2);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0"><span style="width:16px"></span><span style="flex:1">Modelo</span><span>Núcleo</span><span style="width:56px;text-align:center">Cant.</span><span style="width:40px"></span></div>`
+       + mrows + `</div><div style="padding:10px 16px"><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Prod.borrarModelosSel()">Borrar seleccionados</button></div>`)
       : '<div class="vacio">Sube un parte o añade modelos a mano.</div>';
     $('#prodModelos').querySelectorAll('.mcant').forEach(inp=>inp.addEventListener('change',e=>{
       this.lineas[+e.target.dataset.i].cant=Math.max(0,parseInt(e.target.value)||0); this.recompute();
-    }));
-    $('#prodModelos').querySelectorAll('.menr').forEach(inp=>inp.addEventListener('change',e=>{
-      const i=+e.target.dataset.i, v=Math.max(0,parseInt(e.target.value)||0);
-      this.lineas[i].enrollado = v>0 ? Math.min(v,this.lineas[i].cant) : '';
-      e.target.value=this.lineas[i].enrollado||'';
     }));
 
     // núcleos
@@ -746,8 +761,59 @@ const Prod = {
     const m=this.modelosMap[sku];
     if(!m){ toast('Ese modelo no existe','err'); return; }
     const n=Math.max(1,parseInt($('#addModeloN').value)||1);
-    this.lineas.push({sku_pf:sku,cant:n,descParte:m.nombre||'',nombre:m.nombre||'',medida:m.medida||'',sku_nucleo:m.sku_nucleo});
+    this.lineas.push({sku_pf:sku,cant:n,descParte:m.nombre||'',descBase:m.nombre||'',nombre:m.nombre||'',medida:m.medida||'',sku_nucleo:m.sku_nucleo,configs:[]});
     $('#addModelo').value='';$('#addModeloN').value=1; this.recompute();
+  },
+
+  // ---- dividir una línea por configuración (etiquetas, asas, enrollado…) ----
+  abrirConfig(i){
+    const l=this.lineas[i];
+    if(!Pers.cats||!Pers.cats.length){ toast('Primero crea categorías en Personalización','err'); return; }
+    // qué categorías ya tiene aplicadas esta línea (para ofrecer la siguiente en orden)
+    const usadas=new Set((l.configs||[]).map(c=>c.categoria_id));
+    const disponibles=Pers.cats.filter(c=>!usadas.has(c.id));
+    if(!disponibles.length){ toast('Esta línea ya tiene todas las configuraciones','err'); return; }
+    abrirModal('Configurar línea', l.sku_pf+' · '+l.cant+' uds');
+    const cat=disponibles[0];
+    const ops=Pers.opsDe(cat.id);
+    if(!ops.length){ $('#modalBody').innerHTML='<div class="vacio">La categoría "'+esc(cat.nombre)+'" no tiene opciones. Añádelas en Personalización.</div>'; return; }
+    $('#modalBody').innerHTML=`
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Categoría: <b style="color:var(--ink)">${esc(cat.nombre)}</b> · quedan <b id="cfgRestan">${l.cant}</b> uds por asignar</div>
+      ${ops.map(o=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;font-weight:600">${esc(o.nombre)}</div>
+        <input type="number" min="0" value="0" class="cfgOp" data-op="${esc(o.nombre)}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit">
+      </div>`).join('')}
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="chip" style="flex:1;padding:12px" onclick="Prod.aplicarConfig(${i},${cat.id},'${esc(cat.nombre)}')">Aplicar división</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:10px">Se crearán líneas nuevas con las unidades que asignes, restándolas de esta línea. Lo que no asignes se queda sin esa configuración.</div>`;
+    // actualizar el contador de restantes
+    $('#modalBody').addEventListener('input',()=>{
+      const asignado=[...document.querySelectorAll('#modalBody .cfgOp')].reduce((s,x)=>s+(parseInt(x.value)||0),0);
+      const rest=l.cant-asignado;
+      const el=$('#cfgRestan'); if(el){ el.textContent=rest; el.style.color=rest<0?'var(--red)':'var(--ink)'; }
+    });
+  },
+  aplicarConfig(i,catId,catNom){
+    const l=this.lineas[i];
+    const asigs=[...document.querySelectorAll('#modalBody .cfgOp')]
+      .map(x=>({opcion:x.dataset.op,n:parseInt(x.value)||0})).filter(x=>x.n>0);
+    const total=asigs.reduce((s,x)=>s+x.n,0);
+    if(total===0){ toast('Asigna al menos una unidad','err'); return; }
+    if(total>l.cant){ toast('Has asignado más unidades ('+total+') que las de la línea ('+l.cant+')','err'); return; }
+    // crear una línea nueva por cada opción asignada
+    asigs.forEach(a=>{
+      const nueva=JSON.parse(JSON.stringify(l));
+      nueva.cant=a.n;
+      nueva.configs=[...(l.configs||[]),{categoria_id:catId,categoria:catNom,opcion:a.opcion}];
+      this.lineas.push(nueva);
+    });
+    // restar de la original
+    l.cant=l.cant-total;
+    if(l.cant<=0){ this.lineas.splice(i,1); }
+    cerrarModal();
+    this.recompute();
+    toast('✓ Línea dividida','ok');
   },
   addNuc(){
     const sku=$('#addNuc').value.trim().toUpperCase(); if(!sku)return;
@@ -851,7 +917,8 @@ const Prod = {
     const espDate=new Date(Date.now()+((CFG.dias_fabricacion||0)+CFG.maduracion)*86400000).toISOString();
     this.lineas.forEach(l=>{ if(l.cant<=0)return;
       let rest=l.cant;
-      const base={sku_pf:l.sku_pf,desc:l.descParte||l.nombre||'',nucleo:l.sku_nucleo,enrollado:l.enrollado||''};
+      const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
+      const base={sku_pf:l.sku_pf,desc:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,nucleo:l.sku_nucleo};
       const p=(l.sku_nucleo&&pools[l.sku_nucleo])?pools[l.sku_nucleo]:{disp:[],madur:[],fabri:[]};
       while(rest>0&&p.disp.length){ const g=p.disp[0],t=Math.min(rest,g.n); bA.push({...base,ot:g.ot,cant:t}); g.n-=t;rest-=t; if(g.n<=0)p.disp.shift(); }
       while(rest>0&&p.madur.length){ const g=p.madur[0],t=Math.min(rest,g.n); bB.push({...base,ot:g.ot,cant:t,dispDate:g.dispDate}); g.n-=t;rest-=t; if(g.n<=0)p.madur.shift(); }
@@ -908,16 +975,14 @@ const Prod = {
     const hojaMod=(titulo,sub,arr,conFecha)=>{
       if(!arr.length)return'';
       const t=arr.reduce((s,x)=>s+x.cant,0);
-      const tEnr=arr.reduce((s,x)=>s+(parseInt(x.enrollado)||0),0);
-      const head=`<th>Código</th><th>Descripción</th><th>Núcleo</th><th>OT</th>${conFecha?'<th>Disponible</th>':''}<th class="n">Cant.</th><th class="n">Enroll.</th>`;
+      const head=`<th>Código</th><th>Descripción</th><th>Núcleo</th><th>OT</th>${conFecha?'<th>Disponible</th>':''}<th class="n">Cant.</th>`;
       const rows=arr.map(x=>{
         const dd=conFecha?(x.dispDate?new Date(x.dispDate).toLocaleDateString('es-ES'):'—'):'';
-        const enr=parseInt(x.enrollado)||0;
-        return `<tr class="${x.nucleo?'':'falta'}"><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td><td class="n" style="color:#5A7D8C;font-weight:bold">${enr||''}</td></tr>`;
+        return `<tr class="${x.nucleo?'':'falta'}"><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td></tr>`;
       }).join('');
       const colspan=conFecha?5:4;
-      return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b>${tEnr>0?` &nbsp; Enrollados: <b>${tEnr}</b>`:''}</div>
-        <table><tr>${head}</tr>${rows}<tr class="tot"><td colspan="${colspan}">TOTAL</td><td class="n">${t}</td><td class="n">${tEnr||''}</td></tr></table>`;
+      return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
+        <table><tr>${head}</tr>${rows}<tr class="tot"><td colspan="${colspan}">TOTAL</td><td class="n">${t}</td></tr></table>`;
     };
     const h1=hojaMod('Parte · Modelos con núcleo DISPONIBLE','Se puede fabricar ya (OT indicada).',bA,false);
     const h2=hojaMod('Parte · Modelos EN MADURACIÓN','El núcleo ya está fabricado pero aún no disponible.',bB,true);
@@ -1742,6 +1807,65 @@ async function open_operario(nombre, porSku, hechas, efectivo){
       <div style="text-align:right"><div style="font-family:'JetBrains Mono';font-size:17px;font-weight:700;color:var(--terra)">${fmtDur(s.mediana)}</div><div style="font-size:10px;color:var(--muted)">mediana · ${s.n}×</div></div>
     </div>`).join('');
 }
+
+
+// ============================================================
+//  PERSONALIZACIÓN DE COLCHONES (categorías y opciones)
+// ============================================================
+const Pers = {
+  cats:[], ops:[],
+  async load(){
+    try{
+      const [c,o]=await Promise.all([
+        sb.from('config_categorias').select('*').eq('activo',true).order('orden'),
+        sb.from('config_opciones').select('*').eq('activo',true).order('orden')
+      ]);
+      this.cats=c.data||[]; this.ops=o.data||[];
+      this.render();
+    }catch(e){ $('#persLista').innerHTML='<div class="vacio">Falta crear las tablas. Ejecuta crear_personalizacion.sql en Supabase.<br><br>'+esc(e.message||'')+'</div>'; }
+  },
+  opsDe(catId){ return this.ops.filter(o=>o.categoria_id===catId).sort((a,b)=>a.orden-b.orden); },
+  render(){
+    if(!this.cats.length){ $('#persLista').innerHTML='<div class="vacio">Aún no hay categorías. Crea la primera arriba (ej. "Etiquetas").</div>'; return; }
+    $('#persLista').innerHTML=this.cats.map((c,i)=>`
+      <div class="card" style="margin-bottom:14px">
+        <div class="ch" style="display:flex;align-items:center;gap:10px">
+          <span style="font-family:'JetBrains Mono';font-weight:700;color:var(--terra)">${i+1}</span>
+          <div class="t" style="flex:1">${esc(c.nombre)}</div>
+          <button class="chip" style="background:var(--surf2);color:var(--ink);padding:6px 10px" onclick="Pers.subir(${c.id})" ${i===0?'disabled style="opacity:.4"':''}>↑</button>
+          <button class="chip" style="background:var(--surf2);color:var(--ink);padding:6px 10px" onclick="Pers.bajar(${c.id})" ${i===this.cats.length-1?'disabled style="opacity:.4"':''}>↓</button>
+          <button class="chip" style="background:var(--red);padding:6px 10px" onclick="Pers.borrarCat(${c.id},'${esc(c.nombre)}')">Borrar</button>
+        </div>
+        <div style="padding:12px 16px">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            ${this.opsDe(c.id).map(o=>`<span style="display:inline-flex;align-items:center;gap:6px;background:#F5E7DF;color:var(--terra-d);padding:6px 10px;border-radius:8px;font-size:13px;font-weight:600">${esc(o.nombre)}<a href="#" onclick="event.preventDefault();Pers.borrarOp(${o.id})" style="color:var(--terra-d);text-decoration:none;font-weight:700">×</a></span>`).join('')||'<span style="color:var(--muted);font-size:13px">Sin opciones aún</span>'}
+          </div>
+          <div style="display:flex;gap:8px">
+            <input id="op_${c.id}" placeholder="Añadir opción (ej. FAMA, LOSBU…)" style="flex:1;max-width:280px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit" onkeydown="if(event.key==='Enter')Pers.crearOp(${c.id})">
+            <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Pers.crearOp(${c.id})">Añadir opción</button>
+          </div>
+        </div>
+      </div>`).join('');
+  },
+  async crearCat(){
+    const nombre=$('#catNom').value.trim(); if(!nombre)return;
+    const orden=(this.cats.length?Math.max(...this.cats.map(c=>c.orden)):0)+1;
+    try{ await sb.from('config_categorias').insert({nombre,orden,activo:true}); $('#catNom').value=''; toast('✓ Categoría creada','ok'); this.load(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async crearOp(catId){
+    const inp=document.getElementById('op_'+catId); const nombre=(inp.value||'').trim(); if(!nombre)return;
+    const orden=this.opsDe(catId).length+1;
+    try{ await sb.from('config_opciones').insert({categoria_id:catId,nombre,orden,activo:true}); inp.value=''; toast('✓ Opción añadida','ok'); this.load(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async borrarCat(id,nom){ if(!confirm('¿Borrar la categoría "'+nom+'" y todas sus opciones?'))return;
+    try{ await sb.from('config_categorias').delete().eq('id',id); toast('Categoría borrada','ok'); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  async borrarOp(id){ try{ await sb.from('config_opciones').delete().eq('id',id); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  async subir(id){ const i=this.cats.findIndex(c=>c.id===id); if(i<=0)return; await this._swap(this.cats[i],this.cats[i-1]); },
+  async bajar(id){ const i=this.cats.findIndex(c=>c.id===id); if(i<0||i>=this.cats.length-1)return; await this._swap(this.cats[i],this.cats[i+1]); },
+  async _swap(a,b){ try{ await Promise.all([sb.from('config_categorias').update({orden:b.orden}).eq('id',a.id),sb.from('config_categorias').update({orden:a.orden}).eq('id',b.id)]); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } }
+};
 
 // ---- arranque ----
 let _metLoading=false, _metTs=0;
