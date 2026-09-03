@@ -512,14 +512,67 @@ function ring(disp,madur,fab,size){
   </svg>`;
 }
 
+// ---- layout responsivo del dashboard ----
+function layoutDash(){
+  const w=window.innerWidth, k=$('#kpis'), r2=document.getElementById('dashRow2');
+  if(k){
+    k.style.display='grid';
+    k.style.gridTemplateColumns = w>=1320 ? 'minmax(250px,290px) repeat(4,minmax(0,1fr))'
+      : w>=980 ? 'repeat(3,minmax(0,1fr))' : 'repeat(2,minmax(0,1fr))';
+    const hero=k.firstElementChild;
+    if(hero) hero.style.gridColumn = w>=1320 ? '' : (w>=980 ? 'span 3' : 'span 2');
+  }
+  if(r2) r2.style.gridTemplateColumns = w>=1180 ? '1fr 340px' : '1fr';
+}
+if(!window._dashResize){ window._dashResize=true; window.addEventListener('resize',()=>{ if(typeof layoutDash==='function') layoutDash(); }); }
+
 // ---- render ----
 function render(){
   const arr=Object.values(MET);
   const disp=arr.reduce((s,b)=>s+b.disp,0),madur=arr.reduce((s,b)=>s+b.madurando,0),fab=arr.reduce((s,b)=>s+b.fabricando,0);
   const bajo=arr.filter(b=>b.bajoMin),negs=arr.filter(b=>b.saldo<0);
   const stock=disp+madur,defi=negs.reduce((s,b)=>s+b.saldo,0);
+  const nRef=Math.max(arr.length,1);
+  const refsFab=arr.filter(b=>b.fabricando>0).length;
+  const ok=arr.filter(b=>!b.bajoMin&&b.saldo>=0).length;
+  const salud=ok/nRef;
 
-  // KPIs
+  // cobertura en días (saldo / consumo diario)
+  const cob=arr.filter(b=>Number(b.D)>0).map(b=>({b,d:b.saldo/Number(b.D)}));
+  const cobOrd=[...cob].sort((x,y)=>x.d-y.d);
+  const medCob=cob.length?[...cob].sort((x,y)=>x.d-y.d)[Math.floor(cob.length/2)].d:null;
+  const criticas=cobOrd.filter(x=>x.d<7).length;
+
+  const C={terra:'var(--terra)',blue:'var(--blue)',green:'var(--green)',red:'var(--red)',pur:'var(--pur)'};
+  const pct=v=>Math.max(0,Math.min(100,v*100));
+  const dias=d=>d<0?'0':(d<10?d.toFixed(1):Math.round(d));
+  const colCob=d=>d<3?'var(--red)':d<7?'#C9862B':'var(--terra)';
+
+  // ---------- fila 1: salud + KPIs ----------
+  const R=42,CIRC=2*Math.PI*R;
+  const barrita=(k,v,w,c)=>`<div><div style="display:flex;justify-content:space-between;font-size:11px;color:#C9C4BA;margin-bottom:4px"><span>${k}</span><span class="mono" style="color:#F4F2ED;font-weight:700">${v}</span></div>
+    <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden"><div style="width:${pct(w)}%;height:100%;background:${c}"></div></div></div>`;
+  const hero=`<div style="background:#211F1B;border-radius:14px;padding:16px 18px;color:#F4F2ED;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#C9C4BA">Salud del stock</div>
+      <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#8F8A80">${arr.length} ref</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;margin-top:10px">
+      <svg width="100" height="100" viewBox="0 0 104 104">
+        <circle cx="52" cy="52" r="${R}" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="11"/>
+        <circle cx="52" cy="52" r="${R}" fill="none" stroke="var(--terra)" stroke-width="11" stroke-linecap="round" transform="rotate(-90 52 52)" stroke-dasharray="${(salud*CIRC).toFixed(1)} ${CIRC.toFixed(1)}"/>
+        <text x="52" y="50" text-anchor="middle" fill="#F4F2ED" font-family="JetBrains Mono, monospace" font-size="25" font-weight="700">${Math.round(salud*100)}%</text>
+        <text x="52" y="66" text-anchor="middle" fill="#8F8A80" font-family="Archivo Narrow, sans-serif" font-size="9" letter-spacing="1">CORRECTO</text>
+      </svg>
+      <div style="display:flex;flex-direction:column;gap:8px;flex:1;min-width:0">
+        ${barrita('Bajo mínimo',bajo.length,bajo.length/nRef,'#D9A78F')}
+        ${barrita('Saldo negativo',negs.length,negs.length/nRef,'var(--red)')}
+        ${barrita('Cobertura &lt; 7 días',criticas,criticas/nRef,'#C9862B')}
+      </div>
+    </div>
+    <div style="margin-top:auto;padding-top:12px;font-size:11px;color:#8F8A80">${medCob!=null?'Cobertura mediana '+dias(medCob)+' días de consumo':'Sin consumo histórico para calcular cobertura'}</div>
+  </div>`;
+
   const kpi=(id,ic,tint,col,tit,val,unit,sub,delta,bars,vcol)=>`
     <div class="kpi ${KPI===id?'on':''}" onclick="${id==='fab'?`nav('ot')`:`setKpi('${id}')`}">
       <div class="kh"><div class="ki" style="background:${tint}">${ic}</div>
@@ -527,23 +580,102 @@ function render(){
       <div class="kv" style="${vcol?'color:'+vcol:''}">${val} <small>${unit}</small></div>
       <div class="kbar">${bars}</div><div class="ksub">${sub}</div>
     </div>`;
-  const bar=(f,c)=>`<div style="width:${Math.min(f*100,100)}%;background:${c}"></div>`;
-  $('#kpis').innerHTML=
-    kpi('stock',svgIco('box','var(--terra)'),'#F5E7DF','var(--terra)','En stock',stock,'uds',`${disp} disponibles · ${madur} madurando`,arr.length+' ref',bar(disp/Math.max(stock,1),'var(--terra)')+bar(madur/Math.max(stock,1),'var(--blue)'))+
-    kpi('fab',svgIco('gear','var(--green)'),'#E4EDE6','var(--green)','En fabricación',fab,'uds','Pendientes en OT abiertas','OT',bar(.5,'var(--green)'))+
-    kpi('bajo',svgIco('warn','var(--red)'),'#F7E1DC','var(--red)','Bajo mínimo',bajo.length,'núcleos',`De ${arr.length} referencias activas`,'reponer',bar(bajo.length/Math.max(arr.length,1),'var(--red)'),'var(--red)')+
-    kpi('neg',svgIco('down','var(--pur)'),'#EEE4F2','var(--pur)','Saldo negativo',defi,'uds de déficit',`Repartido en ${negs.length} núcleos`,negs.length+' ref',bar(.34,'var(--pur)'),'var(--pur)');
+  const bar=(f,c)=>`<div style="width:${pct(f)}%;background:${c}"></div>`;
 
-  // programas
+  layoutDash();
+  $('#kpis').innerHTML= hero +
+    kpi('stock',svgIco('box','var(--terra)'),'#F5E7DF','var(--terra)','En stock',stock,'uds',`${disp} disponibles · ${madur} madurando`,Math.round(disp/Math.max(stock,1)*100)+'% listo',bar(disp/Math.max(stock,1),'var(--terra)')+bar(madur/Math.max(stock,1),'var(--blue)'))+
+    kpi('fab',svgIco('gear','var(--green)'),'#E4EDE6','var(--green)','En fabricación',fab,'uds',`${refsFab} referencia${refsFab===1?'':'s'} en curso · ver OT`,'OT',bar(fab/Math.max(stock+fab,1),'var(--green)'))+
+    kpi('bajo',svgIco('warn','var(--red)'),'#F7E1DC','var(--red)','Bajo mínimo',bajo.length,'núcleos',`${Math.round(bajo.length/nRef*100)}% de ${arr.length} referencias activas`,'reponer',bar(bajo.length/nRef,'var(--red)'),'var(--red)')+
+    kpi('neg',svgIco('down','var(--pur)'),'#EEE4F2','var(--pur)','Saldo negativo',defi,'uds de déficit',`Repartido en ${negs.length} núcleo${negs.length===1?'':'s'}`,negs.length+' ref',bar(negs.length/nRef,'var(--pur)'),'var(--pur)');
+
+  // ---------- fila 2: cobertura + reposición ----------
+  const peores=cobOrd.slice(0,8);
+  const maxD=Math.max(10,...peores.map(x=>x.d));
+  const cobCard=`<div class="card" style="margin-bottom:0">
+    <div class="ch" style="display:flex;align-items:center;gap:14px">
+      <div><div class="t">Cobertura más corta</div><div class="s">Días de consumo que aguanta el saldo actual</div></div>
+      <div style="margin-left:auto;display:flex;gap:12px">
+        <div class="leg"><i style="background:var(--red)"></i>&lt;3 días</div>
+        <div class="leg"><i style="background:#C9862B"></i>&lt;7 días</div>
+        <div class="leg"><i style="background:var(--terra)"></i>OK</div>
+      </div>
+    </div>
+    <div style="padding:12px 16px 14px;display:flex;flex-direction:column;gap:11px">
+      ${peores.length?peores.map(x=>{
+        const b=x.b,c=colCob(x.d);
+        return `<div style="cursor:pointer" onclick="open_detalle('${esc(b.sku).replace(/'/g,"")}')">
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+            <span class="mono" style="font-size:12px;font-weight:700">${esc(b.sku)}</span>
+            <span style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(medida(b.sku)||b.nombre||'')}</span>
+            <span class="mono" style="margin-left:auto;font-size:13px;font-weight:700;color:${c}">${dias(x.d)} d</span>
+          </div>
+          <div style="height:7px;background:#EDEAE2;overflow:hidden;border-radius:2px"><div style="width:${pct(Math.max(x.d,0)/maxD)}%;height:100%;background:${c}"></div></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">saldo ${b.saldo} uds · ${b.D} uds/día${b.personalizado?' · personalizado':''}</div>
+        </div>`;
+      }).join(''):'<div class="vacio" style="padding:6px 0">Sin datos de consumo diario todavía.</div>'}
+    </div></div>`;
+
+  const repo=[...negs].sort((a,b)=>a.saldo-b.saldo).slice(0,7);
+  const totalRepo=Math.abs(defi);
+  const repoCard=`<div class="card" style="margin-bottom:0;display:flex;flex-direction:column">
+    <div class="ch"><div class="t">Reposición pendiente</div><div class="s">Núcleos con saldo negativo, mayor déficit primero</div></div>
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:8px">
+      <span class="mono" style="font-size:30px;font-weight:800;letter-spacing:-1px;color:var(--pur)">${totalRepo}</span>
+      <span style="font-size:12px;color:var(--muted)">uds por lanzar en ${negs.length} referencia${negs.length===1?'':'s'}</span>
+    </div>
+    <div style="padding:4px 0">
+      ${repo.length?repo.map(b=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #EDEAE2;cursor:pointer" onclick="open_detalle('${esc(b.sku).replace(/'/g,"")}')">
+        <div style="min-width:0;flex:1">
+          <div class="mono" style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.sku)}</div>
+          <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(medida(b.sku)||b.nombre||'')}</div>
+        </div>
+        <div class="mono" style="font-size:15px;font-weight:700;color:var(--pur)">${Math.abs(b.saldo)}</div>
+      </div>`).join(''):'<div class="vacio" style="padding:14px 16px">Ningún núcleo en negativo. Todo cubierto.</div>'}
+    </div>
+    <div style="margin-top:auto;padding:12px 16px">
+      <button class="chip" style="width:100%;padding:11px;background:var(--ink)" onclick="nav('prod')">Ir a Producción</button>
+    </div></div>`;
+
+  // ---------- programas ----------
   const pg={};
-  arr.forEach(b=>{const g=pg[b.prog]||(pg[b.prog]={prog:b.prog,n:0,disp:0,madur:0,fab:0,bajo:0});g.n++;g.disp+=b.disp;g.madur+=b.madurando;g.fab+=b.fabricando;g.bajo+=b.bajoMin?1:0;});
+  arr.forEach(b=>{const g=pg[b.prog]||(pg[b.prog]={prog:b.prog,n:0,disp:0,madur:0,fab:0,bajo:0,neg:0});g.n++;g.disp+=b.disp;g.madur+=b.madurando;g.fab+=b.fabricando;g.bajo+=b.bajoMin?1:0;g.neg+=b.saldo<0?1:0;});
   const progList=Object.values(pg).sort((a,b)=>a.prog.localeCompare(b.prog));
-  $('#progs').innerHTML=`<div class="card"><div class="ch"><div class="t">Programas</div><div class="s">Stock por familia de núcleo · toca para filtrar</div></div>
-    ${progList.map(g=>`<div class="prow" onclick="setProg('${g.prog}')">
-      ${ring(g.disp,g.madur,g.fab,44)}
-      <div><div><span class="pc"><b>${g.prog[0]}</b>${g.prog.slice(1)}</span><span class="pn">${esc(PROG_DESC[g.prog]||'')}</span></div>
-      <div class="pmeta">${g.n} ref · ${g.disp} disp · ${g.fab} fab</div></div>
-      <span class="badge ${g.bajo?'bad':'ok'}">${g.bajo?g.bajo+' bajo mín.':'Correcto'}</span></div>`).join('')}</div>`;
+  const maxProg=Math.max(1,...progList.map(g=>g.disp+g.madur+g.fab));
+  const progsCard=`<div class="card" style="margin-bottom:0">
+    <div class="ch" style="display:flex;align-items:center;gap:14px">
+      <div><div class="t">Programas</div><div class="s">Stock por familia de núcleo · pulsa para filtrar la rejilla</div></div>
+      <div style="margin-left:auto;display:flex;gap:12px">
+        <div class="leg"><i style="background:var(--terra)"></i>Disponible</div>
+        <div class="leg"><i style="background:var(--blue)"></i>Madurando</div>
+        <div class="leg"><i style="background:#C4BDB0"></i>Fabricando</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr))">
+      ${progList.map(g=>{
+        const tot=g.disp+g.madur+g.fab;
+        const on=PROG===g.prog;
+        return `<div onclick="setProg('${g.prog}')" style="padding:13px 16px;border-right:1px solid #EDEAE2;border-bottom:1px solid #EDEAE2;cursor:pointer;background:${on?'#FBF8F4':'transparent'};border-left:3px solid ${on?'var(--terra)':'transparent'}">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span class="pc"><b>${g.prog[0]}</b>${g.prog.slice(1)}</span>
+            <span class="pn" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(PROG_DESC[g.prog]||'')}</span>
+            <span class="mono" style="margin-left:auto;font-size:15px;font-weight:700">${tot}</span>
+          </div>
+          <div style="display:flex;height:7px;margin-top:8px;background:#EDEAE2;overflow:hidden;border-radius:2px;width:${pct(tot/maxProg)}%;min-width:12px">
+            <div style="width:${pct(g.disp/Math.max(tot,1))}%;background:var(--terra)"></div>
+            <div style="width:${pct(g.madur/Math.max(tot,1))}%;background:var(--blue)"></div>
+            <div style="width:${pct(g.fab/Math.max(tot,1))}%;background:#C4BDB0"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:7px">
+            <span class="pmeta">${g.n} ref · ${g.disp} disp · ${g.fab} fab</span>
+            <span class="badge ${g.bajo?'bad':'ok'}" style="margin-left:auto">${g.bajo?g.bajo+' bajo mín.':'Correcto'}</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div></div>`;
+
+  $('#progs').innerHTML=`<div id="dashRow2" style="display:grid;gap:12px;margin-bottom:12px">${cobCard}${repoCard}</div>${progsCard}`;
+  layoutDash();
 
   // grid header
   let titulo='Núcleos';
@@ -568,7 +700,6 @@ function render(){
     });
   }
 }
-
 function cardN(b){
   const forz=b.forzado;
   const cls=forz?'forz':(b.personalizado?'':'diario');
