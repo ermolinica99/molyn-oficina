@@ -305,6 +305,10 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
           <button class="chip" onclick="Prodv.reload()" style="background:var(--surf2);color:var(--ink)">Ver</button>
         </div>
       </div>
+      <div class="seg" style="margin-top:8px">
+        <button id="prodvTabLive" class="on" onclick="Prodv.setMode('live')">En vivo</button>
+        <button id="prodvTabTurno" onclick="Prodv.setMode('turno')">Turno</button>
+      </div>
       <div id="prodvLista" style="margin-top:12px"></div>
     </div>
 
@@ -602,9 +606,15 @@ function go2(){nav('ot')}
 // ============================================================
 //  PRODUCCIÓN
 // ============================================================
+const ADMIN_VIEWS = new Set(['conf','usr','apr','alta','pers']);
+
 function nav(v){
   const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
   const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+  if(ADMIN_VIEWS.has(v) && !Auth.esAdmin()){
+    toast('No tienes permisos para abrir esta sección','err');
+    v='dash';
+  }
   ['dash','prod','ot','conf','usr','inv','prodv','tsku','apr','alta','pers'].forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
@@ -1378,6 +1388,146 @@ function medianaJs(arr){ if(!arr.length)return 0; const s=[...arr].sort((a,b)=>a
 //  PRODUCTIVIDAD
 // ============================================================
 const Prodv = {
+  mode:'live',
+  rows:[],
+  alerts:[],
+  setMode(m){
+    this.mode=m;
+    const a=$('#prodvTabLive'),b=$('#prodvTabTurno');
+    if(a)a.classList.toggle('on',m==='live');
+    if(b)b.classList.toggle('on',m==='turno');
+    this.paint();
+  },
+  async reload(){
+    const fecha=$('#prodvFecha').value || new Date().toISOString().slice(0,10);
+    $('#prodvFecha').value=fecha;
+    $('#prodvLista').innerHTML='<div class="loading">Calculando panel en vivo...</div>';
+    try{
+      const ini=fecha+'T00:00:00', fin=fecha+'T23:59:59';
+      const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
+      const [ops,evs,pars,turs,tsku]=await Promise.all([
+        safe(sb.from('usuarios').select('id,nombre').eq('rol','operario').eq('activo',true).order('nombre'),[]),
+        selectWhere('fabricacion_eventos','unidad_id,ot,sku,usuario_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
+        safe(sb.from('paradas').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
+        safe(sb.from('turnos').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
+        safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[])
+      ]);
+      const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.segundos||t.mediana||0)||0; });
+      const now=new Date();
+      this.alerts=[];
+      this.rows=ops.map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
+      this.rows.sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
+      this.paint();
+    }catch(e){ $('#prodvLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  buildOperario(o,evs,pars,turs,hist,now){
+    const oid=String(o.id);
+    const evO=evs.filter(e=>String(e.usuario_id)===oid).sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+    const parO=pars.filter(p=>String(p.usuario_id)===oid).sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
+    const turO=turs.filter(t=>String(t.usuario_id)===oid).sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
+    const byU={}; evO.forEach(e=>{ if(e.unidad_id)(byU[e.unidad_id]=byU[e.unidad_id]||[]).push(e); });
+
+    let efectivo=0, hechas=0; const porSku={}; let abierta=null;
+    Object.values(byU).forEach(arr=>{
+      arr.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+      const inis=arr.filter(x=>x.tipo==='inicio'), fins=arr.filter(x=>x.tipo==='fin');
+      fins.forEach((f,i)=>{ if(i<inis.length){ const d=(new Date(f.ts)-new Date(inis[i].ts))/1000;
+        if(d>0&&d<86400){ efectivo+=d; hechas++; const sk=f.sku||inis[i].sku||'';
+          const s=porSku[sk]=porSku[sk]||{sku:sk,n:0,durs:[],total:0,hist:hist[sk]||0};
+          s.n++; s.durs.push(d); s.total+=d;
+        }
+      }});
+      const last=arr[arr.length-1];
+      if(last && last.tipo==='inicio' && inis.length>fins.length){
+        const cand={unidad_id:last.unidad_id,ot:last.ot,sku:last.sku,ts:last.ts};
+        if(!abierta || new Date(cand.ts)>new Date(abierta.ts)) abierta=cand;
+      }
+    });
+    Object.values(porSku).forEach(s=>{ s.mediana=medianaJs(s.durs); });
+
+    let turno=0, inTurno=false;
+    turO.forEach(t=>{ const i=new Date(t.inicio), f=t.fin?new Date(t.fin):now; turno+=Math.max(0,(f-i)/1000); if(!t.fin)inTurno=true; });
+    let paradas=0,npar=0,pausa=null;
+    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; paradas+=Math.max(0,(f-i)/1000); npar++; if(!p.fin)pausa=p; });
+    const disp=Math.max(0,turno-paradas);
+    const lastTimes=[...evO.map(e=>e.ts),...parO.map(p=>p.fin||p.inicio),...turO.map(t=>t.fin||t.inicio)].filter(Boolean).map(x=>new Date(x));
+    const lastTs=lastTimes.length?new Date(Math.max(...lastTimes.map(d=>d.getTime()))):null;
+    const idle=lastTs?Math.max(0,(now-lastTs)/1000):null;
+    const currentSecs=pausa?Math.max(0,(now-new Date(pausa.inicio))/1000):(abierta?Math.max(0,(now-new Date(abierta.ts))/1000):(idle||0));
+
+    let estado='Fuera de turno', color='var(--muted)', tint='var(--surf2)', sort=4, detalle='Sin turno abierto';
+    if(pausa){ estado='En pausa'; color='var(--red)'; tint='#F7E1DC'; sort=1; detalle='Pausa abierta'; }
+    else if(abierta){ estado='Trabajando'; color='var(--green)'; tint='#E4EDE6'; sort=0; detalle=(abierta.ot||'OT')+' · '+(abierta.sku||''); }
+    else if(inTurno||turno>0){ estado='Sin actividad'; color='var(--blue)'; tint='#E4EDF0'; sort=2; detalle=idle==null?'Sin eventos hoy':'Último movimiento hace '+fmtDur(idle); }
+
+    const ritmo=efectivo>0?hechas/(efectivo/3600):0;
+    const ocup=turno>0?disp/turno:0, rend=disp>0?efectivo/disp:0, media=hechas?efectivo/hechas:0;
+    const refs=Object.values(porSku).sort((a,b)=>b.total-a.total);
+    let eficiencia=null;
+    const ponder=refs.filter(s=>s.hist>0&&s.n>0).reduce((acc,s)=>{ acc.real+=s.mediana*s.n; acc.hist+=s.hist*s.n; return acc; },{real:0,hist:0});
+    if(ponder.real>0&&ponder.hist>0) eficiencia=ponder.hist/ponder.real;
+
+    if(pausa && currentSecs>30*60)this.alerts.push({tipo:'Pausa larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en pausa',sev:'bad'});
+    if(!pausa && !abierta && (inTurno||turno>0) && idle!=null && idle>15*60)this.alerts.push({tipo:'Sin actividad',msg:o.nombre+' lleva '+fmtDur(idle)+' sin registrar avance',sev:'warn'});
+    if(abierta && currentSecs>45*60)this.alerts.push({tipo:'Tarea larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en '+(abierta.sku||abierta.ot||'una tarea'),sev:'warn'});
+
+    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,porSku:refs};
+  },
+  paint(){
+    const rows=this.rows||[];
+    if(!rows.length){ $('#prodvLista').innerHTML='<div class="vacio">No hay operarios activos o no hay datos de productividad.</div>'; return; }
+    const active=rows.filter(r=>r.estado==='Trabajando').length, pausa=rows.filter(r=>r.estado==='En pausa').length;
+    const hechas=rows.reduce((s,r)=>s+r.hechas,0), efectivo=rows.reduce((s,r)=>s+r.efectivo,0), disp=rows.reduce((s,r)=>s+r.disp,0);
+    const ritmo=efectivo>0?hechas/(efectivo/3600):0, rend=disp>0?efectivo/disp:0;
+    const k=(tit,val,sub,col)=>`<div class="kpi" style="cursor:default"><div class="kt" style="color:${col};margin-bottom:8px">${tit}</div><div class="kv" style="color:${col}">${val}</div><div class="ksub">${sub}</div></div>`;
+    const top=`<div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+      ${k('Activos ahora',active,'operarios trabajando','var(--green)')}
+      ${k('Unidades hoy',hechas,'fabricadas en el turno','var(--terra)')}
+      ${k('Ritmo turno',ritmo.toFixed(1), 'uds/hora efectiva','var(--blue)')}
+      ${k('Rendimiento',Math.round(rend*100)+'%', 'efectivo sobre disponible','var(--pur)')}
+    </div>`;
+    const alerts=this.alerts.length?`<div class="card" style="border-left:4px solid var(--red)"><div class="ch"><div class="t">Atención</div><div class="s">${this.alerts.length} avisos del turno</div></div>
+      ${this.alerts.map(a=>`<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center"><span class="badge ${a.sev==='bad'?'bad':'ok'}" style="${a.sev==='warn'?'background:#F7EDDF;color:#8a5a1e':''}">${esc(a.tipo)}</span><span style="font-size:13px">${esc(a.msg)}</span></div>`).join('')}</div>`:'';
+    $('#prodvLista').innerHTML=top+alerts+(this.mode==='turno'?this.paintTurno(rows):this.paintLive(rows));
+  },
+  paintLive(rows){
+    const pct=(v)=>Math.round((v||0)*100);
+    return `<div class="ngrid">${rows.map(r=>`
+      <div class="nc ${r.estado==='Trabajando'?'diario':''}" style="border-left-color:${r.color}">
+        <div class="nh"><div><div class="sku" style="font-family:'Archivo';font-size:15px">${esc(r.nombre)}</div><div class="med">${esc(r.detalle)}</div></div><span class="tag" style="background:${r.tint};color:${r.color}">${esc(r.estado)}</span></div>
+        <div class="nb">
+          <div class="saldo"><span class="big" style="color:${r.color}">${r.estado==='Trabajando'||r.estado==='En pausa'?fmtDur(r.currentSecs):r.hechas}</span><span class="sl">${r.estado==='Trabajando'||r.estado==='En pausa'?'TIEMPO<br>actual':'UDS<br>hoy'}</span></div>
+          <div class="cells">
+            <div class="cell disp"><div class="cv">${r.hechas}</div><div class="ck">Uds</div></div>
+            <div class="cell"><div class="cv">${r.ritmo.toFixed(1)}</div><div class="ck">U/h</div></div>
+            <div class="cell"><div class="cv">${pct(r.rend)}%</div><div class="ck">Rend</div></div>
+            <div class="cell pend"><div class="cv">${r.eficiencia?Math.round(r.eficiencia*100)+'%':'--'}</div><div class="ck">Vs hist</div></div>
+          </div>
+          <div class="plan">
+            <div><div class="pv">${fmtDur(r.efectivo)}</div><div class="pk">Efectivo</div></div>
+            <div><div class="pv">${fmtDur(r.paradas)}</div><div class="pk">Pausas</div></div>
+          </div>
+          <button class="lanzar" style="background:var(--surf2);color:var(--ink)" onclick='open_operario(${JSON.stringify(r.nombre)},${JSON.stringify(r.porSku)},${r.hechas},${r.efectivo})'>Ver detalle</button>
+        </div>
+      </div>`).join('')}</div>`;
+  },
+  paintTurno(rows){
+    return `<div class="card"><div class="ch"><div class="t">Resumen del turno</div><div class="s">Ordenado por unidades fabricadas</div></div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Operario</th><th style="padding:11px 14px">Estado</th><th style="padding:11px 14px;text-align:right">Uds</th><th style="padding:11px 14px;text-align:right">Efectivo</th><th style="padding:11px 14px;text-align:right">Pausas</th><th style="padding:11px 14px;text-align:right">Uds/h</th><th style="padding:11px 14px;text-align:right">Vs hist.</th></tr></thead>
+        <tbody>${[...rows].sort((a,b)=>b.hechas-a.hechas).map(r=>`<tr style="border-bottom:1px solid var(--border);cursor:pointer" onclick='open_operario(${JSON.stringify(r.nombre)},${JSON.stringify(r.porSku)},${r.hechas},${r.efectivo})'>
+          <td style="padding:10px 14px;font-weight:700">${esc(r.nombre)}</td><td style="padding:10px 14px"><span class="tag" style="background:${r.tint};color:${r.color}">${esc(r.estado)}</span></td>
+          <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700;color:var(--terra)">${r.hechas}</td>
+          <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono'">${fmtDur(r.efectivo)}</td>
+          <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono'">${fmtDur(r.paradas)}</td>
+          <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono'">${r.ritmo.toFixed(1)}</td>
+          <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono'">${r.eficiencia?Math.round(r.eficiencia*100)+'%':'--'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }
+};
+
+const ProdvOld = {
   async reload(){
     const fecha=$('#prodvFecha').value || new Date().toISOString().slice(0,10);
     $('#prodvFecha').value=fecha;
@@ -1475,21 +1625,12 @@ const Auth = {
   user:null,
   async init(){
     $('#loginLogo').src='data:image/png;base64,'+LOGO_B64;
-    // ¿hay sesión guardada?
-    try{
-      const saved=JSON.parse(localStorage.getItem('molyn_oficina_user')||'null');
-      if(saved && saved.email){
-        const {data}=await sb.from('usuarios_oficina').select('*').eq('email',saved.email).single();
-        if(data && data.pass_hash===saved.h && data.activo && data.estado==='aprobado'){ this.entrar(data); return; }
-        localStorage.removeItem('molyn_oficina_user');
-      }
-    }catch(e){}
     // enlace para solicitar acceso
     $('#loginFoot').innerHTML='¿No tienes cuenta? <a href="#" onclick="event.preventDefault();Auth.modoRegistro()" style="color:#B85C38;font-weight:600">Solicitar acceso</a>';
     this.mostrar();
   },
   mostrar(){ $('#loginScreen').style.display='flex'; $('#appMain').style.display='none'; $('#loginEmail').focus(); },
-  guardar(u){ try{ localStorage.setItem('molyn_oficina_user',JSON.stringify({email:u.email,nombre:u.nombre,h:u.pass_hash})); }catch(e){} },
+  guardar(u){ return u; },
   esAdmin(){ return this.user && this.user.rol==='administrador'; },
   async login(){
     const email=$('#loginEmail').value.trim().toLowerCase();
@@ -1502,7 +1643,7 @@ const Auth = {
       if(this._registro){
         // REGISTRO de nuevo usuario → queda PENDIENTE de aprobación
         const nombre=$('#loginNombre').value.trim()||email;
-        if(pass.length<4){ $('#loginErr').textContent='La contraseña debe tener al menos 4 caracteres'; $('#loginBtn').disabled=false; return; }
+        if(pass.length<8){ $('#loginErr').textContent='La contraseña debe tener al menos 8 caracteres'; $('#loginBtn').disabled=false; return; }
         const ya=await sb.from('usuarios_oficina').select('email').eq('email',email).single();
         if(ya.data){ $('#loginErr').textContent='Ese email ya está registrado'; $('#loginBtn').disabled=false; return; }
         const {error}=await sb.from('usuarios_oficina').insert({email,nombre,pass_hash:h,rol:'oficina',estado:'pendiente',activo:true});
@@ -1520,7 +1661,7 @@ const Auth = {
       if(data.pass_hash!==h){ $('#loginErr').textContent='Contraseña incorrecta'; $('#loginBtn').disabled=false; return; }
       if(!data.activo || data.estado==='rechazado'){ $('#loginErr').textContent='Tu cuenta está desactivada'; $('#loginBtn').disabled=false; return; }
       if(data.estado==='pendiente'){ $('#loginErr').textContent='Tu cuenta aún está pendiente de aprobación por un administrador'; $('#loginBtn').disabled=false; return; }
-      this.guardar(data); this.entrar(data);
+      this.entrar(data);
     }catch(e){ $('#loginErr').textContent='Error: '+(e.message||e); $('#loginBtn').disabled=false; }
   },
   modoRegistro(){
@@ -1547,9 +1688,13 @@ const Auth = {
     const av=document.querySelector('.top .user .av'), nm=document.querySelector('.top .user span');
     if(av)av.textContent=(u.nombre||u.email||'OF').slice(0,2).toUpperCase();
     if(nm)nm.textContent=(u.nombre||u.email)+(u.rol==='administrador'?' · Admin':'');
+    ['navUsr','navConf','navApr','navAlta','navPers'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el)el.style.display=this.esAdmin()?'flex':'none';
+    });
     boot(); // arranca la app
   },
-  logout(){ localStorage.removeItem('molyn_oficina_user'); location.reload(); }
+  logout(){ localStorage.removeItem('molyn_oficina_user'); sessionStorage.removeItem('molyn_oficina_user'); location.reload(); }
 };
 
 // ============================================================
@@ -1896,6 +2041,6 @@ $('#search').addEventListener('input',render);
 if($('#invSearch'))$('#invSearch').addEventListener('input',()=>Inv.paint());
 if($('#tskuSearch'))$('#tskuSearch').addEventListener('input',()=>Tsku.paint());
 $('#logo').src='data:image/png;base64,'+LOGO_B64;
-Auth.init();  // pide login; si hay sesión guardada, entra directo y llama a boot()
+Auth.init();  // pide login y arranca la app al entrar
 </script>
 </body></html>
