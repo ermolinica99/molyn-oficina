@@ -626,7 +626,8 @@ function nav(v){
   if(v==='pers') Pers.load();
   if(v==='usr') Usr.reload();
   if(v==='inv') Inv.paint();
-  if(v==='prodv') Prodv.reload();
+  if(v==='prodv') Prodv.startAuto();
+  else if(window.Prodv && Prodv.stopAuto) Prodv.stopAuto();
   if(v==='tsku') Tsku.reload();
   if(v==='apr') Apr.reload();
 }
@@ -1391,6 +1392,18 @@ const Prodv = {
   mode:'live',
   rows:[],
   alerts:[],
+  selectedId:null,
+  timer:null,
+  loading:false,
+  autoMs:30000,
+  startAuto(){
+    this.stopAuto();
+    this.reload();
+    this.timer=setInterval(()=>this.reload(true),this.autoMs);
+  },
+  stopAuto(){
+    if(this.timer){ clearInterval(this.timer); this.timer=null; }
+  },
   setMode(m){
     this.mode=m;
     const a=$('#prodvTabLive'),b=$('#prodvTabTurno');
@@ -1398,10 +1411,16 @@ const Prodv = {
     if(b)b.classList.toggle('on',m==='turno');
     this.paint();
   },
-  async reload(){
+  selectOperario(id){
+    this.selectedId=this.selectedId===id?null:id;
+    this.paint();
+  },
+  async reload(silent){
+    if(this.loading) return;
+    this.loading=true;
     const fecha=$('#prodvFecha').value || new Date().toISOString().slice(0,10);
     $('#prodvFecha').value=fecha;
-    $('#prodvLista').innerHTML='<div class="loading">Calculando panel en vivo...</div>';
+    if(!silent || !this.rows.length) $('#prodvLista').innerHTML='<div class="loading">Calculando panel en vivo...</div>';
     try{
       const ini=fecha+'T00:00:00', fin=fecha+'T23:59:59';
       const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
@@ -1417,8 +1436,10 @@ const Prodv = {
       this.alerts=[];
       this.rows=ops.map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
       this.rows.sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
+      this.lastUpdate=now;
       this.paint();
     }catch(e){ $('#prodvLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+    finally{ this.loading=false; }
   },
   buildOperario(o,evs,pars,turs,hist,now){
     const oid=String(o.id);
@@ -1480,7 +1501,9 @@ const Prodv = {
     const hechas=rows.reduce((s,r)=>s+r.hechas,0), efectivo=rows.reduce((s,r)=>s+r.efectivo,0), disp=rows.reduce((s,r)=>s+r.disp,0);
     const ritmo=efectivo>0?hechas/(efectivo/3600):0, rend=disp>0?efectivo/disp:0;
     const k=(tit,val,sub,col)=>`<div class="kpi" style="cursor:default"><div class="kt" style="color:${col};margin-bottom:8px">${tit}</div><div class="kv" style="color:${col}">${val}</div><div class="ksub">${sub}</div></div>`;
-    const top=`<div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    const stamp=this.lastUpdate?this.lastUpdate.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'--:--';
+    const top=`<div style="display:flex;justify-content:flex-end;margin:-4px 0 8px;color:var(--muted);font-size:12px">AutoactualizaciÃ³n cada ${Math.round(this.autoMs/1000)}s Â· Ãšltima: ${stamp}</div>
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
       ${k('Activos ahora',active,'operarios trabajando','var(--green)')}
       ${k('Unidades hoy',hechas,'fabricadas en el turno','var(--terra)')}
       ${k('Ritmo turno',ritmo.toFixed(1), 'uds/hora efectiva','var(--blue)')}
