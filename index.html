@@ -1147,13 +1147,55 @@ const Conf = {
 //  USUARIOS
 // ============================================================
 const Usr = {
-  data:[],
+  data:[], ofi:[],
   async reload(){
     $('#usrLista').innerHTML='<div class="loading">Cargando usuarios…</div>';
-    try{ const {data}=await sb.from('usuarios').select('id,nombre,pin,rol,activo').order('nombre');
-      this.data=data||[]; this.paint();
+    try{
+      const {data}=await sb.from('usuarios').select('id,nombre,pin,rol,activo').order('nombre');
+      this.data=data||[];
+      // usuarios de oficina (solo si soy admin)
+      this.ofi=[];
+      if(Auth.esAdmin()){
+        try{ const {data:o}=await sb.from('usuarios_oficina').select('*').order('created_at'); this.ofi=o||[]; }catch(e){}
+      }
+      this.paint();
     }catch(e){ $('#usrLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
   },
+  paintOficina(){
+    if(!Auth.esAdmin()) return '';
+    const pend=this.ofi.filter(u=>u.estado==='pendiente');
+    const activos=this.ofi.filter(u=>u.estado==='aprobado');
+    const oc=(u)=>{
+      const admin=u.rol==='administrador';
+      return `<div class="card" style="margin-bottom:8px;border-left:4px solid ${admin?'var(--pur)':'var(--terra)'}">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px">
+          <div style="flex:1"><div style="font-weight:700">${esc(u.nombre||u.email)} ${admin?'<span style="font-size:10px;color:var(--pur);font-weight:700">· ADMIN</span>':''}</div>
+            <div style="font-size:12px;color:var(--muted)">${esc(u.email)} · ${esc(u.estado)}</div></div>
+          ${u.estado==='pendiente'?`<button class="chip" style="background:var(--green)" onclick="Usr.aprobarOfi(${u.id},'aprobado')">Aprobar</button>
+            <button class="chip" style="background:var(--red)" onclick="Usr.aprobarOfi(${u.id},'rechazado')">Rechazar</button>`
+            :`${!admin?`<button class="chip" style="background:var(--pur)" onclick="Usr.hacerAdmin(${u.id})">Hacer admin</button>`:''}
+              ${u.email!==Auth.user.email?`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.bajaOfi(${u.id})">Quitar acceso</button>`:'<span style="font-size:11px;color:var(--muted)">tú</span>'}`}
+        </div></div>`;
+    };
+    return `<div style="margin-bottom:24px">
+      <div style="font-size:16px;font-weight:800;margin-bottom:4px">Accesos de oficina (web)</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Aprueba o gestiona quién puede entrar a esta web</div>
+      ${pend.length?`<div style="font-size:11px;font-weight:700;color:var(--red);letter-spacing:.5px;margin-bottom:6px">⏳ PENDIENTES DE APROBAR (${pend.length})</div>`+pend.map(oc).join(''):''}
+      <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin:12px 0 6px">CON ACCESO (${activos.length})</div>
+      ${activos.map(oc).join('')}
+    </div><div style="height:1px;background:var(--border);margin-bottom:24px"></div>`;
+  },
+  async aprobarOfi(id,estado){
+    try{ await sb.from('usuarios_oficina').update({estado,activo:estado==='aprobado'}).eq('id',id);
+      toast(estado==='aprobado'?'✓ Usuario aprobado':'Usuario rechazado', estado==='aprobado'?'ok':''); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async hacerAdmin(id){ if(!confirm('¿Dar permisos de administrador a este usuario?'))return;
+    try{ await sb.from('usuarios_oficina').update({rol:'administrador'}).eq('id',id); toast('✓ Ahora es administrador','ok'); this.reload(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  async bajaOfi(id){ if(!confirm('¿Quitar el acceso a este usuario?'))return;
+    try{ await sb.from('usuarios_oficina').update({activo:false,estado:'rechazado'}).eq('id',id); toast('Acceso retirado','ok'); this.reload(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); } },
   paint(){
     const act=this.data.filter(u=>u.activo), baj=this.data.filter(u=>!u.activo);
     const card=(u)=>{
@@ -1168,6 +1210,9 @@ const Usr = {
         </div></div>`;
     };
     $('#usrLista').innerHTML=
+      this.paintOficina()+
+      `<div style="font-size:16px;font-weight:800;margin-bottom:4px">Operarios y encargados (planta)</div>
+       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Fichan con PIN en la app de planta</div>`+
       `<div style="font-size:11px;font-weight:700;color:var(--terra);letter-spacing:.8px;margin:4px 0 8px">ACTIVOS (${act.length})</div>`+
       (act.length?act.map(card).join(''):'<div class="vacio">Aún no hay usuarios. Añade el primero arriba.</div>')+
       (baj.length?`<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin:16px 0 8px">DE BAJA (${baj.length})</div>`+baj.map(card).join(''):'');
@@ -1369,30 +1414,18 @@ const Auth = {
     try{
       const saved=JSON.parse(localStorage.getItem('molyn_oficina_user')||'null');
       if(saved && saved.email){
-        // revalidar contra la BD (por si lo desactivaron)
-        const {data}=await sb.from('usuarios_oficina').select('*').eq('email',saved.email).eq('activo',true).single();
-        if(data && data.pass_hash===saved.h){ this.entrar(data); return; }
+        const {data}=await sb.from('usuarios_oficina').select('*').eq('email',saved.email).single();
+        if(data && data.pass_hash===saved.h && data.activo && data.estado==='aprobado'){ this.entrar(data); return; }
+        localStorage.removeItem('molyn_oficina_user');
       }
     }catch(e){}
-    // ¿existe algún usuario de oficina? si no, modo "primer acceso"
-    try{
-      const {count,error}=await sb.from('usuarios_oficina').select('id',{count:'exact',head:true});
-      if(error && /does not exist|relation/i.test(error.message)){
-        this.mostrar(); $('#loginErr').textContent='Falta crear la tabla. Ejecuta crear_usuarios_oficina.sql en Supabase.'; return;
-      }
-      if(!count){ this.modoPrimero(); return; }
-    }catch(e){}
+    // enlace para solicitar acceso
+    $('#loginFoot').innerHTML='¿No tienes cuenta? <a href="#" onclick="event.preventDefault();Auth.modoRegistro()" style="color:#B85C38;font-weight:600">Solicitar acceso</a>';
     this.mostrar();
   },
   mostrar(){ $('#loginScreen').style.display='flex'; $('#appMain').style.display='none'; $('#loginEmail').focus(); },
-  modoPrimero(){
-    this._primero=true;
-    $('#loginTit').textContent='Primer acceso · crear administrador';
-    $('#loginSub').textContent='No hay usuarios de oficina. Crea el primero.';
-    $('#loginNombre').style.display='block';
-    $('#loginBtn').textContent='Crear y entrar';
-    this.mostrar();
-  },
+  guardar(u){ try{ localStorage.setItem('molyn_oficina_user',JSON.stringify({email:u.email,nombre:u.nombre,h:u.pass_hash})); }catch(e){} },
+  esAdmin(){ return this.user && this.user.rol==='administrador'; },
   async login(){
     const email=$('#loginEmail').value.trim().toLowerCase();
     const pass=$('#loginPass').value;
@@ -1401,28 +1434,54 @@ const Auth = {
     $('#loginBtn').disabled=true;
     try{
       const h=await hashPass(pass);
-      if(this._primero){
+      if(this._registro){
+        // REGISTRO de nuevo usuario → queda PENDIENTE de aprobación
         const nombre=$('#loginNombre').value.trim()||email;
         if(pass.length<4){ $('#loginErr').textContent='La contraseña debe tener al menos 4 caracteres'; $('#loginBtn').disabled=false; return; }
-        const {data,error}=await sb.from('usuarios_oficina').insert({email,nombre,pass_hash:h,activo:true}).select().single();
+        const ya=await sb.from('usuarios_oficina').select('email').eq('email',email).single();
+        if(ya.data){ $('#loginErr').textContent='Ese email ya está registrado'; $('#loginBtn').disabled=false; return; }
+        const {error}=await sb.from('usuarios_oficina').insert({email,nombre,pass_hash:h,rol:'oficina',estado:'pendiente',activo:true});
         if(error)throw error;
-        this.guardar(data); this.entrar(data); return;
+        this._registro=false;
+        $('#loginNombre').style.display='none';
+        $('#loginTit').textContent='Solicitud enviada';
+        $('#loginSub').textContent='Tu cuenta está pendiente de que un administrador la apruebe. Vuelve a intentar entrar cuando te avisen.';
+        $('#loginBtn').textContent='Volver'; $('#loginBtn').onclick=()=>location.reload();
+        $('#loginBtn').disabled=false; $('#loginFoot').innerHTML='';
+        return;
       }
-      const {data,error}=await sb.from('usuarios_oficina').select('*').eq('email',email).eq('activo',true).single();
-      if(error||!data){ $('#loginErr').textContent='Email no encontrado o inactivo'; $('#loginBtn').disabled=false; return; }
+      const {data,error}=await sb.from('usuarios_oficina').select('*').eq('email',email).single();
+      if(error||!data){ $('#loginErr').textContent='Email no encontrado'; $('#loginBtn').disabled=false; return; }
       if(data.pass_hash!==h){ $('#loginErr').textContent='Contraseña incorrecta'; $('#loginBtn').disabled=false; return; }
+      if(!data.activo || data.estado==='rechazado'){ $('#loginErr').textContent='Tu cuenta está desactivada'; $('#loginBtn').disabled=false; return; }
+      if(data.estado==='pendiente'){ $('#loginErr').textContent='Tu cuenta aún está pendiente de aprobación por un administrador'; $('#loginBtn').disabled=false; return; }
       this.guardar(data); this.entrar(data);
     }catch(e){ $('#loginErr').textContent='Error: '+(e.message||e); $('#loginBtn').disabled=false; }
   },
-  guardar(u){ try{ localStorage.setItem('molyn_oficina_user',JSON.stringify({email:u.email,nombre:u.nombre,h:u.pass_hash})); }catch(e){} },
+  modoRegistro(){
+    this._registro=true;
+    $('#loginTit').textContent='Solicitar acceso';
+    $('#loginSub').textContent='Crea tu cuenta. Un administrador deberá aprobarla antes de poder entrar.';
+    $('#loginNombre').style.display='block';
+    $('#loginBtn').textContent='Solicitar acceso';
+    $('#loginErr').textContent='';
+  },
+  modoLogin(){
+    this._registro=false;
+    $('#loginTit').textContent='Acceso a oficina';
+    $('#loginSub').textContent='Introduce tu email y contraseña';
+    $('#loginNombre').style.display='none';
+    $('#loginBtn').textContent='Entrar';
+    $('#loginErr').textContent='';
+  },
   entrar(u){
     this.user=u;
     $('#loginScreen').style.display='none';
     $('#appMain').style.display='flex';
-    // mostrar nombre en la barra superior
+    // mostrar nombre y rol en la barra superior
     const av=document.querySelector('.top .user .av'), nm=document.querySelector('.top .user span');
     if(av)av.textContent=(u.nombre||u.email||'OF').slice(0,2).toUpperCase();
-    if(nm)nm.textContent=u.nombre||u.email;
+    if(nm)nm.textContent=(u.nombre||u.email)+(u.rol==='administrador'?' · Admin':'');
     boot(); // arranca la app
   },
   logout(){ localStorage.removeItem('molyn_oficina_user'); location.reload(); }
