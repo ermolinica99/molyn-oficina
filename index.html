@@ -1412,7 +1412,7 @@ const Prodv = {
     this.paint();
   },
   selectOperario(id){
-    this.selectedId=this.selectedId===id?null:id;
+    this.selectedId=id;
     this.paint();
   },
   async reload(silent){
@@ -1434,6 +1434,7 @@ const Prodv = {
       const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.segundos||t.mediana||0)||0; });
       const now=new Date();
       this.alerts=[];
+      this.hourly=Array.from({length:24},()=>({uds:0,efectivo:0,pausas:0}));
       this.rows=ops.map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
       this.rows.sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
       this.lastUpdate=now;
@@ -1453,7 +1454,7 @@ const Prodv = {
       arr.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
       const inis=arr.filter(x=>x.tipo==='inicio'), fins=arr.filter(x=>x.tipo==='fin');
       fins.forEach((f,i)=>{ if(i<inis.length){ const d=(new Date(f.ts)-new Date(inis[i].ts))/1000;
-        if(d>0&&d<86400){ efectivo+=d; hechas++; const sk=f.sku||inis[i].sku||'';
+        if(d>0&&d<86400){ efectivo+=d; hechas++; const _hb=this.hourly&&this.hourly[new Date(f.ts).getHours()]; if(_hb){_hb.uds++;_hb.efectivo+=d;} const sk=f.sku||inis[i].sku||'';
           const s=porSku[sk]=porSku[sk]||{sku:sk,n:0,durs:[],total:0,hist:hist[sk]||0};
           s.n++; s.durs.push(d); s.total+=d;
         }
@@ -1469,7 +1470,7 @@ const Prodv = {
     let turno=0, inTurno=false;
     turO.forEach(t=>{ const i=new Date(t.inicio), f=t.fin?new Date(t.fin):now; turno+=Math.max(0,(f-i)/1000); if(!t.fin)inTurno=true; });
     let paradas=0,npar=0,pausa=null;
-    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; paradas+=Math.max(0,(f-i)/1000); npar++; if(!p.fin)pausa=p; });
+    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000); paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[i.getHours()]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p; });
     const disp=Math.max(0,turno-paradas);
     const lastTimes=[...evO.map(e=>e.ts),...parO.map(p=>p.fin||p.inicio),...turO.map(t=>t.fin||t.inicio)].filter(Boolean).map(x=>new Date(x));
     const lastTs=lastTimes.length?new Date(Math.max(...lastTimes.map(d=>d.getTime()))):null;
@@ -1494,45 +1495,242 @@ const Prodv = {
 
     return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,porSku:refs};
   },
+  fmtUd(s){ s=Math.round(s||0); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); },
+  spark(vals,w,h,col,soft){
+    if(!vals.length||vals.every(v=>!v)) return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}"><line x1="0" y1="${h-2}" x2="${w}" y2="${h-2}" stroke="${col}" stroke-width="1.5" opacity=".3"/></svg>`;
+    const max=Math.max.apply(null,vals), min=Math.min.apply(null,vals), sp=Math.max(1e-6,max-min);
+    const n=Math.max(1,vals.length-1);
+    const pts=vals.map((v,i)=>[i*(w/n), h-2-((v-min)/sp)*(h-6)]);
+    const line='M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L');
+    return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <path d="${line} L${w} ${h} L0 ${h} Z" fill="${soft}"></path>
+      <path d="${line}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></path></svg>`;
+  },
+  horasActivas(){
+    const H=this.hourly||[];
+    let ini=null, fin=null;
+    H.forEach((h,i)=>{ if(h && (h.uds||h.pausas||h.efectivo)){ if(ini==null)ini=i; fin=i; } });
+    if(ini==null){ const c=new Date().getHours(); ini=Math.max(0,c-7); fin=c; }
+    fin=Math.max(fin,new Date().getHours());
+    if(fin-ini<7) ini=Math.max(0,fin-7);
+    const out=[]; for(let i=ini;i<=fin;i++) out.push(i);
+    return out;
+  },
+  kpiCard(o){
+    return `<div class="kpi" style="cursor:default;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">
+        <div class="kt" style="color:var(--ink2)">${o.tit}</div>
+        <div class="mono" style="margin-left:auto;font-size:11px;font-weight:700;color:${o.deltaCol||'var(--muted)'}">${o.delta||''}</div>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:5px">
+        <span class="mono" style="font-size:32px;font-weight:800;letter-spacing:-1px;line-height:1">${o.val}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--muted)">${o.unit||''}</span>
+      </div>
+      <div style="margin-top:12px">${o.chart}</div>
+      <div class="ksub" style="margin-top:6px">${o.sub}</div>
+    </div>`;
+  },
+  paintHead(rows,stamp){
+    const sum=k=>rows.reduce((a,r)=>a+(r[k]||0),0);
+    const uds=sum('hechas'), efectivo=sum('efectivo'), turno=sum('turno'), paradas=sum('paradas'), disp=sum('disp');
+    const dispG=turno?disp/turno:0, rendG=disp?efectivo/disp:0;
+    const efs=rows.filter(r=>r.eficiencia);
+    const efG=efs.length?efs.reduce((a,r)=>a+r.eficiencia*r.hechas,0)/Math.max(1,efs.reduce((a,r)=>a+r.hechas,0)):0;
+    const oee=dispG*rendG*(efG||1);
+    const ritmoG=efectivo?uds/(efectivo/3600):0;
+    const hs=this.horasActivas(), H=this.hourly||[];
+    const serieUds=hs.map(h=>(H[h]&&H[h].uds)||0);
+    let acc=0; const serieAcc=serieUds.map(v=>acc+=v);
+    const serieRitmo=hs.map(h=>{ const b=H[h]||{}; return b.efectivo?b.uds/(b.efectivo/3600):0; });
+    const serieMedia=hs.map(h=>{ const b=H[h]||{}; return b.uds?b.efectivo/b.uds:0; });
+    const ultRitmo=serieRitmo[serieRitmo.length-1]||0;
+    const proy=Math.round(uds+ritmoG*Math.max(0,(this.metaHoras||8)-(efectivo/3600/Math.max(1,rows.length))));
+    const R=42, C=2*Math.PI*R;
+    const barra=(k,v,w,col)=>`<div><div style="display:flex;justify-content:space-between;font-size:11px;color:#C9C4BA;margin-bottom:4px"><span>${k}</span><span class="mono" style="color:#F4F2ED;font-weight:700">${v}</span></div>
+      <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden"><div style="width:${Math.min(100,w)}%;height:100%;background:${col}"></div></div></div>`;
+    const oeeCard=`<div style="background:var(--sidebar);border-radius:16px;padding:18px 20px;color:#F4F2ED;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="kt" style="color:#C9C4BA">OEE del turno</div>
+        <div style="font-size:9px;font-family:'Archivo Narrow';letter-spacing:1px;text-transform:uppercase;color:#8F8A80">acumulado</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:18px;margin-top:12px">
+        <svg width="104" height="104" viewBox="0 0 104 104">
+          <circle cx="52" cy="52" r="${R}" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="11"></circle>
+          <circle cx="52" cy="52" r="${R}" fill="none" stroke="var(--terra)" stroke-width="11" stroke-linecap="round" transform="rotate(-90 52 52)" stroke-dasharray="${(Math.min(1,oee)*C).toFixed(1)} ${C.toFixed(1)}"></circle>
+          <text x="52" y="50" text-anchor="middle" fill="#F4F2ED" font-family="JetBrains Mono, monospace" font-size="26" font-weight="700">${Math.round(oee*100)}%</text>
+          <text x="52" y="66" text-anchor="middle" fill="#8F8A80" font-family="Archivo Narrow, sans-serif" font-size="10" letter-spacing="1">OEE</text>
+        </svg>
+        <div style="display:flex;flex-direction:column;gap:9px;flex:1">
+          ${barra('Disponibilidad',Math.round(dispG*100)+'%',dispG*100,'#F0EFEB')}
+          ${barra('Rendimiento',Math.round(rendG*100)+'%',rendG*100,'#D9A78F')}
+          ${barra('Vs histórico',efG?Math.round(efG*100)+'%':'--',efG*100,'#4C9A5E')}
+        </div>
+      </div>
+      <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento × ritmo vs histórico</div>
+    </div>`;
+    const kpis=[
+      this.kpiCard({tit:'Unidades hoy',val:uds,unit:'uds',delta:'',sub:'proyección a cierre · '+proy+' uds',
+        chart:this.spark(serieAcc,160,34,'var(--terra)','#F5E7DF')}),
+      this.kpiCard({tit:'Ritmo en vivo',val:ritmoG.toFixed(1),unit:'uds/h',
+        delta:ultRitmo?(ultRitmo>=ritmoG?'+':'')+(ultRitmo-ritmoG).toFixed(1):'',
+        deltaCol:ultRitmo>=ritmoG?'var(--green)':'var(--red)',
+        sub:'sobre hora efectiva · última hora '+ultRitmo.toFixed(1),
+        chart:this.spark(serieRitmo,160,34,'var(--blue)','#E4EDF0')}),
+      this.kpiCard({tit:'Vs histórico',val:efG?Math.round(efG*100)+'%':'--',unit:'',
+        delta:efG?(efG>=1?'+':'')+Math.round((efG-1)*100)+'%':'',deltaCol:efG>=1?'var(--green)':'var(--red)',
+        sub:'tiempo histórico / real por SKU',
+        chart:`<div style="display:flex;align-items:flex-end;gap:3px;height:34px">${rows.map(r=>{
+          const v=r.eficiencia||0, h=Math.max(3,Math.min(34,v*24));
+          return `<div title="${esc(r.nombre)}" style="flex:1;height:${h}px;background:${v>=1?'var(--green)':v>=0.9?'var(--terra)':'var(--red)'};opacity:${v?1:.25}"></div>`;
+        }).join('')}</div>`}),
+      this.kpiCard({tit:'Tiempo medio',val:uds?this.fmtUd(efectivo/uds):'--',unit:'min/ud',delta:'',
+        sub:'por unidad cerrada en el turno',
+        chart:this.spark(serieMedia.map(v=>v?-v:0),160,34,'var(--ink2)','#EDEAE2')})
+    ].join('');
+    return `<div style="display:flex;justify-content:flex-end;margin:-4px 0 10px;color:var(--muted);font-size:12px">
+        <span style="display:inline-flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:var(--green)"></span>
+        En vivo · autoactualización cada ${Math.round(this.autoMs/1000)}s · última ${stamp}</span></div>
+      <div style="display:grid;grid-template-columns:280px repeat(4,1fr);gap:14px;margin-bottom:14px">${oeeCard}${kpis}</div>`;
+  },
+  paintTrend(rows){
+    const hs=this.horasActivas(), H=this.hourly||[];
+    const uds=hs.map(h=>(H[h]&&H[h].uds)||0);
+    const paus=hs.map(h=>(H[h]&&H[h].pausas)||0);
+    const ritmo=hs.map(h=>{ const b=H[h]||{}; return b.efectivo?b.uds/(b.efectivo/3600):0; });
+    const maxU=Math.max(1,...uds), maxP=Math.max(1,...paus), maxR=Math.max(1,...ritmo)*1.25;
+    const CW=700, CH=212, bw=CW/hs.length;
+    const barsU=uds.map((v,i)=>{ const h=(v/maxU)*(CH-40); return `<rect x="${(i*bw+bw*0.3).toFixed(1)}" y="${(CH-h).toFixed(1)}" width="${(bw*0.4).toFixed(1)}" height="${h.toFixed(1)}" fill="${i===uds.length-1?'#D9A78F':'var(--terra)'}"></rect>`; }).join('');
+    const barsP=paus.map((v,i)=>{ const h=(v/maxP)*54; return `<rect x="${(i*bw+bw*0.3).toFixed(1)}" y="${(CH-h).toFixed(1)}" width="${(bw*0.4).toFixed(1)}" height="${h.toFixed(1)}" fill="#E3D5CE"></rect>`; }).join('');
+    const pts=ritmo.map((v,i)=>[(i*bw+bw*0.5),(CH-40-(v/maxR)*(CH-90))]);
+    const line=pts.length>1?`<path d="M${pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L')}" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>`:'';
+    const dots=pts.map(p=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="#fff" stroke="var(--blue)" stroke-width="2"></circle>`).join('');
+    const grid=[0,1,2,3].map(i=>{ const y=32+i*45; return `<line x1="0" x2="700" y1="${y}" y2="${y}" stroke="#EDEAE2" stroke-width="1"></line><text x="2" y="${y-4}" fill="#BDB8AE" font-family="JetBrains Mono, monospace" font-size="9">${Math.round(maxU*(1-i/3.4))} u</text>`; }).join('');
+    const best=uds.indexOf(Math.max(...uds));
+    const npar=rows.reduce((a,r)=>a+(r.npar||0),0), parS=rows.reduce((a,r)=>a+(r.paradas||0),0);
+    const disp=rows.reduce((a,r)=>a+r.disp,0), turno=rows.reduce((a,r)=>a+r.turno,0);
+    const foot=[['Mejor hora',(String(hs[best]||0).padStart(2,'0'))+':00 · '+(uds[best]||0)+' u'],['Pausas del turno',npar+' · '+fmtDur(parS)],
+      ['Hora en curso',(uds[uds.length-1]||0)+' u'],['Disponibilidad',(turno?Math.round(disp/turno*100):0)+'%']]
+      .map(f=>`<div style="padding:12px 20px;border-right:1px solid var(--border)"><div class="mono" style="font-size:16px;font-weight:700">${f[1]}</div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.5px">${f[0]}</div></div>`).join('');
+    const leg=(c,t)=>`<div class="leg"><i style="background:${c}"></i>${t}</div>`;
+    const trend=`<div class="card" style="margin-bottom:0">
+      <div class="ch" style="display:flex;align-items:center;gap:14px">
+        <div><div class="t">Tendencia del día</div><div class="s">Unidades cerradas y tiempo en pausa por hora</div></div>
+        <div style="margin-left:auto;display:flex;gap:14px">${leg('var(--terra)','Unidades')}${leg('var(--blue)','Ritmo uds/h')}${leg('#E3D5CE','Pausas')}</div>
+      </div>
+      <div style="padding:18px 20px 14px">
+        <svg width="100%" height="212" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none">${grid}${barsP}${barsU}${line}${dots}</svg>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;padding:0 2px">${hs.map(h=>`<span class="mono" style="font-size:10px;color:var(--muted)">${String(h).padStart(2,'0')}:00</span>`).join('')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--border)">${foot}</div>
+    </div>`;
+
+    const agg={};
+    rows.forEach(r=>(r.porSku||[]).forEach(s=>{ const m=agg[s.sku]=agg[s.sku]||{sku:s.sku,n:0,real:0,hist:0};
+      m.n+=s.n; m.real+=(s.mediana||0)*s.n; m.hist+=(s.hist||0)*s.n; }));
+    const mix=Object.values(agg).sort((a,b)=>b.n-a.n).slice(0,6);
+    const maxN=Math.max(1,...mix.map(m=>m.n));
+    const mixCard=`<div class="card" style="margin-bottom:0">
+      <div class="ch"><div class="t">Mix de referencias</div><div class="s">Unidades y desvío sobre tiempo histórico</div></div>
+      <div style="padding:14px 20px;display:flex;flex-direction:column;gap:14px">
+        ${mix.length?mix.map(m=>{
+          const d=m.hist&&m.real?(m.hist/m.real-1)*100:null;
+          const col=d==null?'var(--muted)':d>=2?'var(--green)':d<=-5?'var(--red)':'var(--terra)';
+          return `<div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+              <span class="mono" style="font-size:12px;font-weight:700">${esc(m.sku||'—')}</span>
+              <span class="mono" style="margin-left:auto;font-size:13px;font-weight:700">${m.n}</span>
+              <span style="font-size:10px;color:var(--muted);font-family:'Archivo Narrow';text-transform:uppercase">uds</span>
+              <span class="mono" style="font-size:11px;font-weight:700;color:${col};min-width:46px;text-align:right">${d==null?'--':(d>=0?'+':'')+d.toFixed(0)+'%'}</span>
+            </div>
+            <div style="height:8px;background:var(--surf2);overflow:hidden"><div style="width:${Math.round(m.n/maxN*100)}%;height:100%;background:var(--ink)"></div></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">${this.fmtUd(m.real/m.n)}/ud real${m.hist?' · '+this.fmtUd(m.hist/m.n)+' histórico':''}</div>
+          </div>`;
+        }).join(''):'<div class="vacio" style="padding:20px">Sin referencias cerradas hoy</div>'}
+      </div></div>`;
+    return `<div style="display:grid;grid-template-columns:1fr 360px;gap:14px;margin-bottom:14px">${trend}${mixCard}</div>`;
+  },
+  paintBottom(rows,sel){
+    const ord=[...rows].sort((a,b)=>(b.eficiencia||0)-(a.eficiencia||0)||b.hechas-a.hechas);
+    const activos=rows.filter(r=>r.estado==='Trabajando').length, pausa=rows.filter(r=>r.estado==='En pausa').length;
+    const cols='1fr 96px 74px 74px 96px 84px';
+    const head=`<div style="display:grid;grid-template-columns:${cols};padding:9px 20px;background:#F7F5F0;border-bottom:1px solid var(--border);font-size:9px;font-family:'Archivo Narrow';letter-spacing:.6px;text-transform:uppercase;color:var(--muted)">
+      <div>Operario</div><div>Estado</div><div style="text-align:right">Uds</div><div style="text-align:right">Uds/h</div><div style="text-align:right">Vs hist.</div><div style="text-align:right">Efectivo</div></div>`;
+    const filas=ord.map(r=>{
+      const on=String(r.id)===String(sel.id);
+      const ef=r.eficiencia||0, efCol=ef>=1?'var(--green)':ef>=0.9?'var(--terra)':ef?'var(--red)':'var(--muted)';
+      const ini=(r.nombre||'').split(' ').map(x=>x[0]||'').join('').slice(0,2).toUpperCase();
+      return `<div onclick="Prodv.selectOperario('${String(r.id).replace(/'/g,"")}')" style="display:grid;grid-template-columns:${cols};align-items:center;padding:11px 20px;border-bottom:1px solid var(--surf2);cursor:pointer;background:${on?'#FBF8F4':'var(--surf)'};border-left:3px solid ${on?'var(--terra)':'transparent'}">
+        <div style="min-width:0;display:flex;align-items:center;gap:10px">
+          <div style="width:28px;height:28px;border-radius:50%;background:${r.tint};color:${r.color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0">${esc(ini)}</div>
+          <div style="min-width:0"><div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nombre)}</div>
+          <div class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.detalle)}</div></div>
+        </div>
+        <div><span class="tag" style="border-radius:100px;background:${r.tint};color:${r.color}">${esc(r.estado)}</span></div>
+        <div class="mono" style="text-align:right;font-size:14px;font-weight:700">${r.hechas}</div>
+        <div class="mono" style="text-align:right;font-size:13px">${r.ritmo.toFixed(1)}</div>
+        <div style="text-align:right"><div class="mono" style="font-size:13px;font-weight:700;color:${efCol}">${ef?Math.round(ef*100)+'%':'--'}</div>
+          <div style="height:4px;background:var(--surf2);margin-top:4px;display:flex;justify-content:flex-end;overflow:hidden"><div style="width:${Math.min(100,ef*72).toFixed(0)}%;height:100%;background:${efCol}"></div></div></div>
+        <div class="mono" style="text-align:right;font-size:12px">${fmtDur(r.efectivo)}</div>
+      </div>`;
+    }).join('');
+    const lista=`<div class="card" style="margin-bottom:0">
+      <div class="ch" style="display:flex;align-items:center;gap:12px">
+        <div><div class="t">Operarios del turno</div><div class="s">Ordenado por rendimiento vs histórico · pulsa una fila para el detalle</div></div>
+        <div class="mono" style="margin-left:auto;font-size:12px;color:var(--muted)">${activos} trabajando · ${pausa} en pausa · ${rows.length} en turno</div>
+      </div>${head}${filas}</div>`;
+
+    const crono=sel.estado==='Trabajando'||sel.estado==='En pausa';
+    const ocio=Math.max(0,sel.disp-sel.efectivo), tot=Math.max(1,sel.efectivo+ocio+sel.paradas);
+    const rep=[['Efectivo',sel.efectivo,'var(--terra)'],['Ocio',ocio,'#C4BDB0'],['Pausas',sel.paradas,'var(--red)']];
+    const cells=[['Uds',sel.hechas,'var(--terra)'],['Uds/h',sel.ritmo.toFixed(1),'var(--ink)'],['Min/ud',sel.hechas?this.fmtUd(sel.media):'--','var(--ink)'],
+      ['Rend',Math.round(sel.rend*100)+'%','var(--ink)'],['Vs hist.',sel.eficiencia?Math.round(sel.eficiencia*100)+'%':'--',sel.eficiencia>=1?'var(--green)':'var(--red)'],
+      ['Pausas',sel.npar+' · '+fmtDur(sel.paradas),'var(--blue)']]
+      .map(c=>`<div style="padding:12px 14px;border-right:1px solid var(--surf2);border-bottom:1px solid var(--surf2)"><div class="mono" style="font-size:17px;font-weight:700;color:${c[2]}">${c[1]}</div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.5px;margin-top:1px">${c[0]}</div></div>`).join('');
+    const refs=(sel.porSku||[]).slice(0,6).map(s=>{
+      const d=s.hist&&s.mediana?(s.hist/s.mediana-1)*100:null;
+      const col=d==null?'var(--muted)':d>=2?'var(--green)':d<=-5?'var(--red)':'var(--terra)';
+      return `<div><div style="display:flex;align-items:baseline;gap:8px;font-size:12px">
+        <span class="mono" style="font-weight:700">${esc(s.sku||'—')}</span>
+        <span style="color:var(--muted);font-size:11px">${s.n} uds · ${this.fmtUd(s.mediana)}/ud</span>
+        <span class="mono" style="margin-left:auto;font-weight:700;color:${col}">${d==null?'--':(d>=0?'+':'')+d.toFixed(0)+'%'}</span></div>
+        <div style="height:6px;background:var(--surf2);margin-top:5px;overflow:hidden"><div style="width:${s.hist?Math.min(100,(s.hist/s.mediana)*72).toFixed(0):0}%;height:100%;background:${col}"></div></div>
+        <div class="mono" style="font-size:10px;color:#BDB8AE;margin-top:3px">${s.hist?'histórico '+this.fmtUd(s.hist)+'/ud':'sin tiempo histórico'}</div></div>`;
+    }).join('');
+    const panel=`<div class="card" style="margin-bottom:0;align-self:start">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;background:${sel.tint}">
+        <div><div style="font-size:20px;font-weight:800;letter-spacing:-.3px">${esc(sel.nombre)}</div>
+          <div class="mono" style="font-size:12px;color:${sel.color};margin-top:2px">${esc(sel.detalle)}</div></div>
+        <span class="tag" style="margin-left:auto;border-radius:100px;background:var(--surf);color:${sel.color}">${esc(sel.estado)}</span>
+      </div>
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="mono" style="font-size:32px;font-weight:800;letter-spacing:-1px;color:${sel.color}">${crono?fmtDur(sel.currentSecs):sel.hechas}</span>
+          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:1px">${crono?(sel.estado==='En pausa'?'en pausa':'en la unidad'):'uds hoy'}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">${sel.actual?'OT '+esc(sel.actual.ot||'')+' · '+esc(sel.actual.sku||''):'sin unidad abierta'}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--border)">${cells}</div>
+      <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.8px;margin-bottom:9px">Reparto del turno</div>
+        <div style="display:flex;height:14px;overflow:hidden;background:var(--surf2)">${rep.map(p=>`<div style="width:${(p[1]/tot*100).toFixed(1)}%;height:100%;background:${p[2]}"></div>`).join('')}</div>
+        <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">${rep.map(p=>`<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink2)"><i style="width:8px;height:8px;background:${p[2]};display:inline-block"></i>${p[0]} <b class="mono">${fmtDur(p[1])}</b></div>`).join('')}</div>
+      </div>
+      <div style="padding:14px 20px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.8px;margin-bottom:10px">Referencias trabajadas</div>
+        <div style="display:flex;flex-direction:column;gap:11px">${refs||'<div style="font-size:12px;color:var(--muted)">Sin unidades cerradas</div>'}</div>
+      </div>
+      <div style="padding:0 20px 18px">
+        <button class="lanzar" style="background:var(--ink)" onclick='open_operario(${JSON.stringify(sel.nombre)},${JSON.stringify(sel.porSku)},${sel.hechas},${sel.efectivo})'>Ver eventos de fabricación</button>
+      </div></div>`;
+    return `<div style="display:grid;grid-template-columns:1fr 400px;gap:14px">${lista}${panel}</div>`;
+  },
   paint(){
     const rows=this.rows||[];
     if(!rows.length){ $('#prodvLista').innerHTML='<div class="vacio">No hay operarios activos o no hay datos de productividad.</div>'; return; }
-    const active=rows.filter(r=>r.estado==='Trabajando').length, pausa=rows.filter(r=>r.estado==='En pausa').length;
-    const hechas=rows.reduce((s,r)=>s+r.hechas,0), efectivo=rows.reduce((s,r)=>s+r.efectivo,0), disp=rows.reduce((s,r)=>s+r.disp,0);
-    const ritmo=efectivo>0?hechas/(efectivo/3600):0, rend=disp>0?efectivo/disp:0;
-    const k=(tit,val,sub,col)=>`<div class="kpi" style="cursor:default"><div class="kt" style="color:${col};margin-bottom:8px">${tit}</div><div class="kv" style="color:${col}">${val}</div><div class="ksub">${sub}</div></div>`;
+    if(this.selectedId==null||!rows.some(r=>String(r.id)===String(this.selectedId))) this.selectedId=rows[0].id;
+    const sel=rows.find(r=>String(r.id)===String(this.selectedId))||rows[0];
     const stamp=this.lastUpdate?this.lastUpdate.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'--:--';
-    const top=`<div style="display:flex;justify-content:flex-end;margin:-4px 0 8px;color:var(--muted);font-size:12px">AutoactualizaciÃ³n cada ${Math.round(this.autoMs/1000)}s Â· Ãšltima: ${stamp}</div>
-    <div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
-      ${k('Activos ahora',active,'operarios trabajando','var(--green)')}
-      ${k('Unidades hoy',hechas,'fabricadas en el turno','var(--terra)')}
-      ${k('Ritmo turno',ritmo.toFixed(1), 'uds/hora efectiva','var(--blue)')}
-      ${k('Rendimiento',Math.round(rend*100)+'%', 'efectivo sobre disponible','var(--pur)')}
-    </div>`;
-    const alerts=this.alerts.length?`<div class="card" style="border-left:4px solid var(--red)"><div class="ch"><div class="t">Atención</div><div class="s">${this.alerts.length} avisos del turno</div></div>
-      ${this.alerts.map(a=>`<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center"><span class="badge ${a.sev==='bad'?'bad':'ok'}" style="${a.sev==='warn'?'background:#F7EDDF;color:#8a5a1e':''}">${esc(a.tipo)}</span><span style="font-size:13px">${esc(a.msg)}</span></div>`).join('')}</div>`:'';
-    $('#prodvLista').innerHTML=top+alerts+(this.mode==='turno'?this.paintTurno(rows):this.paintLive(rows));
-  },
-  paintLive(rows){
-    const pct=(v)=>Math.round((v||0)*100);
-    return `<div class="ngrid">${rows.map(r=>`
-      <div class="nc ${r.estado==='Trabajando'?'diario':''}" style="border-left-color:${r.color}">
-        <div class="nh"><div><div class="sku" style="font-family:'Archivo';font-size:15px">${esc(r.nombre)}</div><div class="med">${esc(r.detalle)}</div></div><span class="tag" style="background:${r.tint};color:${r.color}">${esc(r.estado)}</span></div>
-        <div class="nb">
-          <div class="saldo"><span class="big" style="color:${r.color}">${r.estado==='Trabajando'||r.estado==='En pausa'?fmtDur(r.currentSecs):r.hechas}</span><span class="sl">${r.estado==='Trabajando'||r.estado==='En pausa'?'TIEMPO<br>actual':'UDS<br>hoy'}</span></div>
-          <div class="cells">
-            <div class="cell disp"><div class="cv">${r.hechas}</div><div class="ck">Uds</div></div>
-            <div class="cell"><div class="cv">${r.ritmo.toFixed(1)}</div><div class="ck">U/h</div></div>
-            <div class="cell"><div class="cv">${pct(r.rend)}%</div><div class="ck">Rend</div></div>
-            <div class="cell pend"><div class="cv">${r.eficiencia?Math.round(r.eficiencia*100)+'%':'--'}</div><div class="ck">Vs hist</div></div>
-          </div>
-          <div class="plan">
-            <div><div class="pv">${fmtDur(r.efectivo)}</div><div class="pk">Efectivo</div></div>
-            <div><div class="pv">${fmtDur(r.paradas)}</div><div class="pk">Pausas</div></div>
-          </div>
-          <button class="lanzar" style="background:var(--surf2);color:var(--ink)" onclick='open_operario(${JSON.stringify(r.nombre)},${JSON.stringify(r.porSku)},${r.hechas},${r.efectivo})'>Ver detalle</button>
-        </div>
-      </div>`).join('')}</div>`;
+    $('#prodvLista').innerHTML=this.paintHead(rows,stamp)+(this.mode==='turno'?this.paintTurno(rows):this.paintTrend(rows)+this.paintBottom(rows,sel));
   },
   paintTurno(rows){
     return `<div class="card"><div class="ch"><div class="t">Resumen del turno</div><div class="s">Ordenado por unidades fabricadas</div></div>
