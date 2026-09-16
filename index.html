@@ -241,16 +241,39 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
 
     <div class="content" id="view-ot" style="display:none">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
-        <div><div class="h1">Órdenes de trabajo</div><div class="h1sub">Órdenes abiertas · fabricar, cerrar o anular</div></div>
+        <div><div class="h1">Órdenes de trabajo</div><div class="h1sub" id="otSub">Gestiona las órdenes: fabricar, cerrar, reimprimir o anular</div></div>
         <button class="chip" onclick="OT.reload()" style="background:var(--surf2);color:var(--ink)">↻ Actualizar</button>
       </div>
-      <div style="display:flex;gap:10px;margin:12px 0">
-        <input id="otSearch" placeholder="Buscar OT, SKU o núcleo…" style="flex:1;max-width:360px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+
+      <!-- KPIs -->
+      <div id="otKpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0"></div>
+
+      <!-- pestañas de estado -->
+      <div class="seg" id="otTabs" style="margin-bottom:12px">
+        <button class="on" onclick="OT.setEstado('abierta')">Abiertas</button>
+        <button onclick="OT.setEstado('cerrada')">Cerradas</button>
+        <button onclick="OT.setEstado('anulada')">Anuladas</button>
+        <button onclick="OT.setEstado('todas')">Todas</button>
+      </div>
+
+      <!-- filtros -->
+      <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <input id="otSearch" placeholder="Buscar OT, SKU o núcleo…" style="flex:1;min-width:220px;max-width:320px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+        <select id="otProg" onchange="OT.paint()" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit"><option value="">Todos los programas</option></select>
+        <input id="otFecha" type="date" onchange="OT.paint()" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+        <button class="chip" style="background:var(--surf2);color:var(--ink);padding:9px 12px" onclick="OT.limpiarFiltros()">Limpiar</button>
+      </div>
+
+      <!-- barra de acciones (solo cuando hay selección) -->
+      <div id="otAcciones" style="display:none;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center;background:#F5E7DF;border-radius:11px;padding:10px 14px">
+        <span id="otSelCount" style="font-weight:700;font-size:14px;color:var(--terra-d)"></span>
+        <div style="flex:1"></div>
         <button class="chip" style="background:var(--green)" onclick="OT.accion('fabricar')">Fabricar</button>
         <button class="chip" style="background:var(--ink)" onclick="OT.accion('cerrar')">Cerrar</button>
         <button class="chip" style="background:var(--blue)" onclick="OT.accion('qr')">Reimprimir QR</button>
         <button class="chip" style="background:var(--red)" onclick="OT.accion('anular')">Anular</button>
       </div>
+
       <div class="card">
         <div id="otTabla"></div>
       </div>
@@ -1184,61 +1207,132 @@ document.getElementById('fileParte').addEventListener('change',e=>{ if(e.target.
 //  ÓRDENES DE TRABAJO
 // ============================================================
 const OT = {
-  rows:[], sel:new Set(),
+  rows:[], sel:new Set(), estado:'abierta',
 
   async reload(){
     $('#otTabla').innerHTML='<div class="loading">Cargando órdenes…</div>';
     try{
       const ords=await selectAll('ordenes','*');
-      const abiertas=ords.filter(o=>o.estado==='abierta').sort((a,b)=>String(a.ot).localeCompare(String(b.ot)));
-      const ots=abiertas.map(o=>o.ot);
+      // traer el conteo de unidades de TODAS las OT (para saber pendientes/stock reales)
+      const ots=ords.map(o=>o.ot);
       let uds=[];
-      if(ots.length){
-        // traer unidades de esas OT (en bloques para no pasar de la URL)
-        for(let i=0;i<ots.length;i+=200){
-          const chunk=ots.slice(i,i+200);
-          const {data}=await sb.from('unidades').select('ot,estado').in('ot',chunk);
-          uds=uds.concat(data||[]);
-        }
+      for(let i=0;i<ots.length;i+=200){
+        const chunk=ots.slice(i,i+200);
+        const {data}=await sb.from('unidades').select('ot,estado').in('ot',chunk);
+        uds=uds.concat(data||[]);
       }
       const cont={};
-      uds.forEach(u=>{const c=cont[u.ot]||(cont[u.ot]={pend:0,stock:0});if(u.estado==='pendiente')c.pend++;else if(u.estado==='stock')c.stock++;});
-      this.rows=abiertas.map(o=>({ot:o.ot,sku:o.sku,nombre:o.nombre,cant:o.cantidad,
-        pend:(cont[o.ot]||{}).pend||0,stock:(cont[o.ot]||{}).stock||0,lanzada:o.lanzada_at}));
+      uds.forEach(u=>{const c=cont[u.ot]||(cont[u.ot]={pend:0,stock:0,cons:0});
+        if(u.estado==='pendiente')c.pend++;else if(u.estado==='stock')c.stock++;else if(u.estado==='consumida')c.cons++;});
+      this.rows=ords.map(o=>({ot:o.ot,sku:o.sku,nombre:o.nombre,cant:o.cantidad,
+        estado:o.estado||'abierta',
+        pend:(cont[o.ot]||{}).pend||0,stock:(cont[o.ot]||{}).stock||0,cons:(cont[o.ot]||{}).cons||0,
+        prog:(String(o.sku||'').match(/^N\d{3}/)||[''])[0],
+        lanzada:o.lanzada_at,cerrada:o.cerrada_at}));
+      // rellenar el selector de programas
+      const progs=[...new Set(this.rows.map(r=>r.prog).filter(Boolean))].sort();
+      const selP=$('#otProg');
+      if(selP){ const cur=selP.value; selP.innerHTML='<option value="">Todos los programas</option>'+
+        progs.map(p=>`<option value="${p}">${p}${PROG_DESC[p]?' · '+esc(PROG_DESC[p]):''}</option>`).join(''); selP.value=cur; }
       this.sel.clear();
       this.paint();
     }catch(e){ $('#otTabla').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
   },
 
-  paint(){
+  setEstado(est){
+    this.estado=est;
+    document.querySelectorAll('#otTabs button').forEach((b,i)=>{
+      b.classList.toggle('on', ['abierta','cerrada','anulada','todas'][i]===est);
+    });
+    this.sel.clear();
+    this.paint();
+  },
+  limpiarFiltros(){
+    $('#otSearch').value=''; $('#otProg').value=''; $('#otFecha').value='';
+    this.paint();
+  },
+
+  // filtra las filas según estado + buscador + programa + fecha
+  filtradas(){
     const q=($('#otSearch').value||'').toLowerCase().trim();
+    const prog=$('#otProg').value||'';
+    const fecha=$('#otFecha').value||'';
     let rs=this.rows;
+    // estado (las abiertas ocultan las que ya no tienen pendientes)
+    if(this.estado==='abierta') rs=rs.filter(r=>r.estado==='abierta' && r.pend>0);
+    else if(this.estado!=='todas') rs=rs.filter(r=>r.estado===this.estado);
     if(q)rs=rs.filter(r=>String(r.ot).toLowerCase().includes(q)||(r.sku||'').toLowerCase().includes(q)||(r.nombre||'').toLowerCase().includes(q));
-    if(!rs.length){ $('#otTabla').innerHTML='<div class="vacio">No hay órdenes abiertas.</div>'; return; }
-    const fecha=ts=>{ if(!ts)return'—'; const d=new Date(ts); return d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}); };
+    if(prog)rs=rs.filter(r=>r.prog===prog);
+    if(fecha)rs=rs.filter(r=>{ const d=r.lanzada||r.cerrada; return d && String(d).slice(0,10)===fecha; });
+    return rs.sort((a,b)=>String(b.ot).localeCompare(String(a.ot)));
+  },
+
+  paint(){
+    const rs=this.filtradas();
+
+    // ---- KPIs (sobre el estado actual, sin filtros de búsqueda) ----
+    const base=this.estado==='abierta'?this.rows.filter(r=>r.estado==='abierta'&&r.pend>0)
+      :this.estado==='todas'?this.rows:this.rows.filter(r=>r.estado===this.estado);
+    const nOT=base.length;
+    const udsPend=base.reduce((s,r)=>s+r.pend,0);
+    const udsFab=base.reduce((s,r)=>s+r.stock,0);
+    const kpi=(v,l,c)=>`<div class="card" style="margin:0;padding:16px 18px"><div style="font-family:'JetBrains Mono';font-size:28px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${l}</div></div>`;
+    $('#otKpis').innerHTML=
+      kpi(nOT,'Órdenes '+({abierta:'abiertas',cerrada:'cerradas',anulada:'anuladas',todas:'en total'}[this.estado]),'var(--ink)')+
+      kpi(udsPend,'Unidades pendientes','var(--blue)')+
+      kpi(udsFab,'Unidades en stock','var(--green)')+
+      kpi(rs.length,'Mostradas con los filtros','var(--terra)');
+
+    // ---- barra de acciones según selección ----
+    const nSel=this.sel.size;
+    const barra=$('#otAcciones');
+    barra.style.display = nSel>0 ? 'flex' : 'none';
+    $('#otSelCount').textContent = nSel+' OT seleccionada'+(nSel===1?'':'s');
+
+    if(!rs.length){
+      $('#otTabla').innerHTML='<div class="vacio">No hay órdenes que cumplan estos filtros.</div>';
+      return;
+    }
+    const fmtF=ts=>{ if(!ts)return'—'; const d=new Date(ts); return d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}); };
+    const estBadge=e=>{ const m={abierta:['#E4EDF0','var(--blue)','Abierta'],cerrada:['#E4EDE6','var(--green)','Cerrada'],anulada:['#F7E1DC','var(--red)','Anulada']}[e]||['#EDEAE2','var(--muted)',e];
+      return `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${m[0]};color:${m[1]};text-transform:uppercase;letter-spacing:.3px">${m[2]}</span>`; };
+    // ¿mostrar checkbox? solo en abiertas (las cerradas/anuladas no se accionan)
+    const conSel=(this.estado==='abierta');
+    const visibles=rs.map(r=>r.ot);
+    const todasMarcadas=conSel && visibles.length>0 && visibles.every(ot=>this.sel.has(ot));
+
     $('#otTabla').innerHTML=`
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:640px">
         <thead><tr style="background:var(--surf2);text-align:left">
-          <th style="padding:11px 14px;width:36px"><input type="checkbox" id="otAll" onchange="OT.toggleAll(this.checked)" style="width:16px;height:16px;accent-color:var(--terra)"></th>
+          ${conSel?`<th style="padding:11px 14px;width:36px"><input type="checkbox" id="otAll" ${todasMarcadas?'checked':''} onchange="OT.toggleAll(this.checked)" style="width:16px;height:16px;accent-color:var(--terra)"></th>`:'<th style="width:8px"></th>'}
           <th style="padding:11px 14px">OT</th><th style="padding:11px 14px">Núcleo</th>
-          <th style="padding:11px 14px;text-align:center">Fabricadas</th><th style="padding:11px 14px;text-align:center">Pendientes</th>
+          <th style="padding:11px 14px;text-align:center">Estado</th>
+          <th style="padding:11px 14px;text-align:center">Fabr.</th><th style="padding:11px 14px;text-align:center">Pend.</th>
+          <th style="padding:11px 14px;text-align:center">Total</th>
           <th style="padding:11px 14px">Lanzada</th>
         </tr></thead><tbody>
-        ${rs.map(r=>`<tr style="border-bottom:1px solid var(--border);${this.sel.has(r.ot)?'background:#F5E7DF':''}" onclick="OT.rowClick(event,'${esc(r.ot)}')">
-          <td style="padding:9px 14px"><input type="checkbox" class="otchk" data-ot="${esc(r.ot)}" ${this.sel.has(r.ot)?'checked':''} onclick="event.stopPropagation();OT.toggle('${esc(r.ot)}',this.checked)" style="width:16px;height:16px;accent-color:var(--terra)"></td>
+        ${rs.map(r=>{
+          const marcada=this.sel.has(r.ot);
+          return `<tr style="border-bottom:1px solid var(--border);${marcada?'background:#F5E7DF':''};cursor:${conSel?'pointer':'default'}" ${conSel?`onclick="OT.rowClick(event,'${esc(r.ot)}')"`:''}>
+          ${conSel?`<td style="padding:9px 14px"><input type="checkbox" class="otchk" ${marcada?'checked':''} onclick="event.stopPropagation();OT.toggle('${esc(r.ot)}',this.checked)" style="width:16px;height:16px;accent-color:var(--terra)"></td>`:'<td></td>'}
           <td style="padding:9px 14px;font-family:'JetBrains Mono';font-weight:700">${esc(r.ot)}</td>
           <td style="padding:9px 14px"><div style="font-family:'JetBrains Mono';font-size:12px">${esc(r.sku)}</div><div style="font-size:11px;color:var(--muted)">${esc(r.nombre||'')}</div></td>
+          <td style="padding:9px 14px;text-align:center">${estBadge(r.estado)}</td>
           <td style="padding:9px 14px;text-align:center;font-family:'JetBrains Mono';color:var(--green);font-weight:700">${r.stock}</td>
           <td style="padding:9px 14px;text-align:center;font-family:'JetBrains Mono';color:var(--blue);font-weight:700">${r.pend}</td>
-          <td style="padding:9px 14px;color:var(--muted);font-size:12px">${fecha(r.lanzada)}</td>
-        </tr>`).join('')}
-        </tbody></table>`;
+          <td style="padding:9px 14px;text-align:center;font-family:'JetBrains Mono';color:var(--muted)">${r.cant}</td>
+          <td style="padding:9px 14px;color:var(--muted);font-size:12px">${fmtF(r.lanzada)}</td>
+        </tr>`;}).join('')}
+        </tbody></table></div>`;
   },
   rowClick(e,ot){ this.toggle(ot, !this.sel.has(ot)); },
   toggle(ot,on){ if(on)this.sel.add(ot);else this.sel.delete(ot); this.paint(); },
-  toggleAll(on){ const q=($('#otSearch').value||'').toLowerCase().trim();
-    this.rows.filter(r=>!q||String(r.ot).toLowerCase().includes(q)||(r.sku||'').toLowerCase().includes(q)).forEach(r=>{ if(on)this.sel.add(r.ot);else this.sel.delete(r.ot); });
-    this.paint(); },
+  toggleAll(on){
+    // marca/desmarca solo las OT visibles con los filtros actuales
+    const visibles=this.filtradas().map(r=>r.ot);
+    visibles.forEach(ot=>{ if(on)this.sel.add(ot); else this.sel.delete(ot); });
+    this.paint();
+  },
 
   selected(){ return this.rows.filter(r=>this.sel.has(r.ot)); },
 
@@ -1259,11 +1353,11 @@ const OT = {
         }else if(tipo==='anular'){
           await sb.from('reservas').delete().eq('ot',o.ot);
           await sb.from('unidades').delete().eq('ot',o.ot);
-          await sb.from('ordenes').delete().eq('ot',o.ot);
+          await sb.from('ordenes').update({estado:'anulada',cerrada_at:now}).eq('ot',o.ot);
         }
       }
       if(tipo==='qr'){ await this.reimprimir(sel); }
-      else{ toast('✓ '+nombres[tipo]+': '+sel.length+' OT','ok'); await this.reload(); await refrescarMet(true); render(); }
+      else{ toast('✓ '+nombres[tipo]+': '+sel.length+' OT','ok'); this.sel.clear(); await this.reload(); await refrescarMet(true); render(); }
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
 
