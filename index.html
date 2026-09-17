@@ -815,6 +815,7 @@ const Prod = {
   // ---- leer parte Excel (réplica de leer_parte) ----
   async subirParte(file){
     await this.init();
+    await refrescarMet(true); // stock/saldo al día: si no, puede lanzar OT de más para núcleos ya fabricados/en maduración
     try{
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf,{type:'array'});
