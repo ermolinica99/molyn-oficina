@@ -167,6 +167,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="grp">Operación</div>
     <button class="nav on" id="navDash" onclick="nav('dash')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Dashboard</span></button>
     <button class="nav" id="navProd" onclick="nav('prod')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span>Producción</span></button>
+    <button class="nav" id="navPartes" onclick="nav('partes')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Partes lanzados</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
     <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
     <button class="nav" id="navUsr" onclick="nav('usr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Usuarios</span></button>
@@ -238,10 +239,16 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
           </div>
         </div>
 
-        <div class="card" style="margin-top:16px">
-          <div class="ch"><div class="t">Partes de producción lanzados</div><div class="s">Historial de partes ya lanzados: revisa, anula reservas u OT, o anula el parte completo</div></div>
-          <div id="prodPartes"><div class="loading">Cargando…</div></div>
-        </div>
+      </div>
+    </div>
+
+    <div class="content" id="view-partes" style="display:none">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+        <div><div class="h1">Partes lanzados</div><div class="h1sub">Historial de partes de producción lanzados: revisa, anula reservas u OT, o anula el parte completo</div></div>
+        <button class="chip" onclick="Partes.reload()" style="background:var(--surf2);color:var(--ink)">↻ Actualizar</button>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div id="prodPartes"><div class="loading">Cargando…</div></div>
       </div>
     </div>
 
@@ -769,18 +776,19 @@ function go2(){nav('ot')}
 const ADMIN_VIEWS = new Set(['conf','usr','apr','alta','pers']);
 
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',prod:'navProd',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+  const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if(ADMIN_VIEWS.has(v) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  ['dash','prod','ot','conf','usr','inv','prodv','tsku','apr','alta','pers'].forEach(k=>{
+  ['dash','prod','partes','ot','conf','usr','inv','prodv','tsku','apr','alta','pers'].forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
   });
   $('.crumb').innerHTML='MOLYN&nbsp;&nbsp;/&nbsp;&nbsp;<b>'+titulos[v]+'</b>';
   if(v==='prod') Prod.init();
+  if(v==='partes') Partes.reload();
   if(v==='ot') OT.reload();
   if(v==='conf') Conf.load();
   if(v==='pers') Pers.load();
@@ -797,7 +805,6 @@ const Prod = {
   modelosMap:{}, prodMap:{}, tiempos:{}, refs:false,
 
   async init(){
-    if(window.Partes) Partes.reload();
     if(this.refs) return;
     try{
       const modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo');
@@ -1089,7 +1096,7 @@ const Prod = {
       toast('✓ '+items.length+' OT lanzadas','ok');
       // refrescar dashboard
       await refrescarMet(true); render();
-      if(window.Partes) Partes.reload();
+      Partes.reload();
     }catch(e){ toast('Error al lanzar: '+(e.message||e),'err'); }
     finally{ $('#btnLanzar').disabled=false; $('#btnLanzar').textContent='Lanzar OT · partes · reservas'; }
   },
@@ -1334,7 +1341,7 @@ const Partes = {
     try{
       await anularOTPorNumero(ot);
       toast('✓ OT '+ot+' anulada','ok');
-      await this.reload(); await refrescarMet(true); if(window.OT)OT.reload(); render();
+      await this.reload(); await refrescarMet(true); OT.reload(); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
 
@@ -1358,7 +1365,7 @@ const Partes = {
       const {error:e1}=await sb.from('reservas').delete().eq('parte_ref',parte_ref);
       if(e1)throw e1;
       toast('✓ Parte '+parte_ref+' anulado','ok');
-      await this.reload(); await refrescarMet(true); if(window.OT)OT.reload(); render();
+      await this.reload(); await refrescarMet(true); OT.reload(); render();
     }catch(e){ toast('Error al anular el parte: '+(e.message||e)+' (¿ejecutaste el ALTER TABLE ordenes ADD COLUMN parte_ref?)','err'); }
   }
 };
@@ -1516,7 +1523,7 @@ const OT = {
         }
       }
       if(tipo==='qr'){ await this.reimprimir(sel); }
-      else{ toast('✓ '+nombres[tipo]+': '+sel.length+' OT','ok'); this.sel.clear(); await this.reload(); await refrescarMet(true); render(); if(window.Partes)Partes.reload(); }
+      else{ toast('✓ '+nombres[tipo]+': '+sel.length+' OT','ok'); this.sel.clear(); await this.reload(); await refrescarMet(true); render(); Partes.reload(); }
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
 
