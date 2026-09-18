@@ -1,0 +1,32 @@
+name: Backup base de datos MOLYN
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # todos los días a las 03:00 UTC
+  workflow_dispatch: {}    # también se puede lanzar a mano desde la pestaña Actions
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar cliente de PostgreSQL
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Volcar base de datos de Supabase
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "Falta el secreto SUPABASE_DB_URL en la configuración del repositorio." >&2
+            exit 1
+          fi
+          mkdir -p backups
+          fecha=$(date +%Y-%m-%d)
+          pg_dump "$DB_URL" --no-owner --no-privileges -F c -f "backups/molyn-$fecha.dump"
+
+      - name: Subir backup como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: molyn-backup-${{ github.run_id }}
+          path: backups/*.dump
+          retention-days: 90
