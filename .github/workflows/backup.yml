@@ -29,7 +29,7 @@ jobs:
           fi
           mkdir -p backups
           fecha=$(date +%Y-%m-%d)
-          pg_dump "$DB_URL" --no-owner --no-privileges -F c -f "backups/molyn-$fecha.dump"
+          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" --no-owner --no-privileges -F c -f "backups/molyn-$fecha.dump"
 
       - name: Subir backup como artefacto
         uses: actions/upload-artifact@v4
