@@ -1,0 +1,32 @@
+name: Cierre automático de turnos y paradas abandonados
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'   # cada 20 minutos
+  workflow_dispatch: {}       # también se puede lanzar a mano desde la pestaña Actions
+
+jobs:
+  cerrar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cliente de PostgreSQL 17 (igual que el servidor de Supabase)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Cerrar turnos y paradas sin actividad reciente
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "Falta el secreto SUPABASE_DB_URL en la configuración del repositorio." >&2
+            exit 1
+          fi
+          /usr/lib/postgresql/17/bin/psql "$DB_URL" -v ON_ERROR_STOP=1 -f cierre_turnos.sql
