@@ -1,26 +1,20 @@
--- Cierre automático de turnos y paradas abandonados.
+-- Cierre de turnos que quedaron abiertos de un día para otro.
 -- Pensado para ejecutarse cada 20 min desde GitHub Actions
 -- (.github/workflows/cierre_turnos.yml), como respaldo de servidor para
 -- cuando el operario se va sin pulsar "Finalizar turno" y el móvil deja
 -- de ejecutar la app (pantalla bloqueada, sin batería, etc.): en ese caso
 -- la app no puede auto-cerrar nada porque su JS ya no corre.
 --
--- Sin esto, un turno que queda abierto (fin IS NULL) se sigue contando
--- hasta "ahora" cada vez que alguien mira el panel de Oficina, e infla
+-- Regla: si al llegar la medianoche (hora de España) un turno sigue
+-- abierto, se cierra 10 minutos después del último evento de producción
+-- de esa persona — no a medianoche exacta, ni en el momento en que corre
+-- este job. Es idempotente: no pasa nada si se ejecuta varias veces
+-- después de medianoche, solo actúa una vez por turno.
+--
+-- Sin esto, un turno abandonado se sigue contando hasta "ahora" cada vez
+-- que alguien mira el panel de Productividad en Oficina, e infla
 -- artificialmente la disponibilidad y hunde el OEE del operario.
 
--- 1) Paradas abiertas hace más de 2 horas: se cierran a las 2 horas
---    exactas desde que empezaron (evita que una pausa olvidada crezca
---    sin límite mientras nadie revisa el panel).
-update paradas
-set fin = inicio + interval '2 hours'
-where fin is null
-  and inicio < now() - interval '2 hours';
-
--- 2) Turnos abiertos sin ninguna actividad (fabricación o parada) en las
---    últimas 2 horas: se cierran en el momento del último movimiento
---    real de esa persona, no en "ahora", para que la duración del turno
---    refleje el tiempo que trabajó de verdad.
 with ultima_actividad as (
   select t.id as turno_id,
          greatest(
@@ -32,9 +26,21 @@ with ultima_actividad as (
          ) as ultimo_ts
   from turnos t
   where t.fin is null
+    -- el turno empezó un día natural (España) anterior al de hoy
+    and (t.inicio at time zone 'Europe/Madrid')::date < (now() at time zone 'Europe/Madrid')::date
 )
 update turnos t
-set fin = ua.ultimo_ts
+set fin = ua.ultimo_ts + interval '10 minutes'
 from ultima_actividad ua
-where t.id = ua.turno_id
-  and ua.ultimo_ts < now() - interval '2 hours';
+where t.id = ua.turno_id;
+
+-- Cierra también cualquier parada que hubiera quedado abierta dentro de
+-- esos turnos, con el mismo fin, para que no siga corriendo sin límite.
+update paradas p
+set fin = t.fin
+from turnos t
+where p.fin is null
+  and t.fin is not null
+  and p.usuario_id = t.usuario_id
+  and p.inicio >= t.inicio
+  and p.inicio <= t.fin;
