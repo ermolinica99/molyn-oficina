@@ -1785,6 +1785,11 @@ function fmtDur(seg){ seg=Math.round(seg); const h=Math.floor(seg/3600),m=Math.f
   if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+s+'s'; return s+'s'; }
 function medianaJs(arr){ if(!arr.length)return 0; const s=[...arr].sort((a,b)=>a-b),m=Math.floor(s.length/2);
   return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function solaparSeg(iniMs,finMs,intervalos){
+  let t=0;
+  for(const [a,b] of intervalos){ const lo=Math.max(iniMs,a), hi=Math.min(finMs,b); if(hi>lo) t+=(hi-lo)/1000; }
+  return t;
+}
 
 // ============================================================
 //  PRODUCTIVIDAD
@@ -1828,7 +1833,7 @@ const Prodv = {
       const [ops,evs,pars,turs,tsku]=await Promise.all([
         safe(sb.from('usuarios').select('id,nombre').eq('rol','operario').eq('activo',true).order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,usuario_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
-        safe(sb.from('paradas').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
+        safe(sb.from('paradas').select('usuario_id,motivo,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('turnos').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[])
       ]);
@@ -1849,13 +1854,17 @@ const Prodv = {
     const parO=pars.filter(p=>String(p.usuario_id)===oid).sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
     const turO=turs.filter(t=>String(t.usuario_id)===oid).sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
     const byU={}; evO.forEach(e=>{ if(e.unidad_id)(byU[e.unidad_id]=byU[e.unidad_id]||[]).push(e); });
+    const retraIntervalos=parO.filter(p=>p.motivo==='Retrabajo'&&p.fin).map(p=>[new Date(p.inicio).getTime(),new Date(p.fin).getTime()]);
 
-    let efectivo=0, hechas=0; const porSku={}; let abierta=null;
+    let efectivo=0, hechas=0, retrabajos=0; const porSku={}; let abierta=null;
     Object.values(byU).forEach(arr=>{
       arr.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
       const inis=arr.filter(x=>x.tipo==='inicio'), fins=arr.filter(x=>x.tipo==='fin');
-      fins.forEach((f,i)=>{ if(i<inis.length){ const d=(new Date(f.ts)-new Date(inis[i].ts))/1000;
-        if(d>0&&d<86400){ efectivo+=d; hechas++; const _hb=this.hourly&&this.hourly[new Date(f.ts).getHours()]; if(_hb){_hb.uds++;_hb.efectivo+=d;} const sk=f.sku||inis[i].sku||'';
+      fins.forEach((f,i)=>{ if(i<inis.length){
+        const iniMs=new Date(inis[i].ts).getTime(), finMs=new Date(f.ts).getTime();
+        const solape=solaparSeg(iniMs,finMs,retraIntervalos);
+        const d=(finMs-iniMs)/1000-solape;
+        if(d>0&&d<86400){ if(solape>0)retrabajos++; efectivo+=d; hechas++; const _hb=this.hourly&&this.hourly[new Date(f.ts).getHours()]; if(_hb){_hb.uds++;_hb.efectivo+=d;} const sk=f.sku||inis[i].sku||'';
           const s=porSku[sk]=porSku[sk]||{sku:sk,n:0,durs:[],total:0,hist:hist[sk]||0};
           s.n++; s.durs.push(d); s.total+=d;
         }
@@ -1889,12 +1898,13 @@ const Prodv = {
     let eficiencia=null;
     const ponder=refs.filter(s=>s.hist>0&&s.n>0).reduce((acc,s)=>{ acc.real+=s.mediana*s.n; acc.hist+=s.hist*s.n; return acc; },{real:0,hist:0});
     if(ponder.real>0&&ponder.hist>0) eficiencia=ponder.hist/ponder.real;
+    const calidad=hechas>0?Math.max(0,(hechas-retrabajos)/hechas):1;
 
     if(pausa && currentSecs>30*60)this.alerts.push({tipo:'Pausa larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en pausa',sev:'bad'});
     if(!pausa && !abierta && (inTurno||turno>0) && idle!=null && idle>15*60)this.alerts.push({tipo:'Sin actividad',msg:o.nombre+' lleva '+fmtDur(idle)+' sin registrar avance',sev:'warn'});
     if(abierta && currentSecs>45*60)this.alerts.push({tipo:'Tarea larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en '+(abierta.sku||abierta.ot||'una tarea'),sev:'warn'});
 
-    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,porSku:refs};
+    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs};
   },
   fmtUd(s){ s=Math.round(s||0); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); },
   spark(vals,w,h,col,soft){
@@ -1937,7 +1947,9 @@ const Prodv = {
     const dispG=turno?disp/turno:0, rendG=disp?efectivo/disp:0;
     const efs=rows.filter(r=>r.eficiencia);
     const efG=efs.length?efs.reduce((a,r)=>a+r.eficiencia*r.hechas,0)/Math.max(1,efs.reduce((a,r)=>a+r.hechas,0)):0;
-    const oee=dispG*rendG*(efG||1);
+    const retrabajosG=sum('retrabajos');
+    const calidadG=uds>0?Math.max(0,(uds-retrabajosG)/uds):1;
+    const oee=dispG*(efG||1)*calidadG;
     const ritmoG=efectivo?uds/(efectivo/3600):0;
     const hs=this.horasActivas(), H=this.hourly||[];
     const serieUds=hs.map(h=>(H[h]&&H[h].uds)||0);
@@ -1963,11 +1975,11 @@ const Prodv = {
         </svg>
         <div style="display:flex;flex-direction:column;gap:9px;flex:1">
           ${barra('Disponibilidad',Math.round(dispG*100)+'%',dispG*100,'#F0EFEB')}
-          ${barra('Rendimiento',Math.round(rendG*100)+'%',rendG*100,'#D9A78F')}
-          ${barra('Vs histórico',efG?Math.round(efG*100)+'%':'--',efG*100,'#4C9A5E')}
+          ${barra('Rendimiento',efG?Math.round(efG*100)+'%':'--',efG*100,'#D9A78F')}
+          ${barra('Calidad',Math.round(calidadG*100)+'%'+(retrabajosG?' · '+retrabajosG+' retrab.':''),calidadG*100,retrabajosG?'#C24A2E':'#4C9A5E')}
         </div>
       </div>
-      <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento × ritmo vs histórico</div>
+      <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento (vs histórico) × calidad</div>
     </div>`;
     const kpis=[
       this.kpiCard({tit:'Unidades hoy',val:uds,unit:'uds',delta:'',sub:'proyección a cierre · '+proy+' uds',
@@ -2085,7 +2097,8 @@ const Prodv = {
     const rep=[['Efectivo',sel.efectivo,'var(--terra)'],['Ocio',ocio,'#C4BDB0'],['Pausas',sel.paradas,'var(--red)']];
     const cells=[['Uds',sel.hechas,'var(--terra)'],['Uds/h',sel.ritmo.toFixed(1),'var(--ink)'],['Min/ud',sel.hechas?this.fmtUd(sel.media):'--','var(--ink)'],
       ['Rend',Math.round(sel.rend*100)+'%','var(--ink)'],['Vs hist.',sel.eficiencia?Math.round(sel.eficiencia*100)+'%':'--',sel.eficiencia>=1?'var(--green)':'var(--red)'],
-      ['Pausas',sel.npar+' · '+fmtDur(sel.paradas),'var(--blue)']]
+      ['Pausas',sel.npar+' · '+fmtDur(sel.paradas),'var(--blue)'],
+      ['Calidad',Math.round(sel.calidad*100)+'%',sel.retrabajos?'var(--red)':'var(--green)'],['Retrabajos',sel.retrabajos||0,sel.retrabajos?'var(--red)':'var(--muted)']]
       .map(c=>`<div style="padding:12px 14px;border-right:1px solid var(--surf2);border-bottom:1px solid var(--surf2)"><div class="mono" style="font-size:17px;font-weight:700;color:${c[2]}">${c[1]}</div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.5px;margin-top:1px">${c[0]}</div></div>`).join('');
     const refs=(sel.porSku||[]).slice(0,6).map(s=>{
       const d=s.hist&&s.mediana?(s.hist/s.mediana-1)*100:null;
