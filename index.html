@@ -417,7 +417,7 @@ const PROG_DESC={N001:'Extra Firm',N002:'040',N003:'030',N004:'V50',N005:'Medium
 function progDe(p){const m=(p.descripcion||p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
 function medida(sku){const rest=String(sku||'').replace(/^N\d{3}/,'');const m=rest.match(/(\d{2,3})\s*[xX]\s*(\d{3})/);return m?`Medida ${m[1]} × ${m[2]}`:''}
 
-let CFG={dias_historico:5,umbral_semanal:2.0,maduracion:2};
+let CFG={dias_historico:5,umbral_semanal:2.0,maduracion:2,coste_hora_operario:0};
 let LOTES={}; let LOTE_DFLT=10;
 let MET={};        // sku -> métrica
 let FILTRO='todos';
@@ -427,7 +427,7 @@ let PROG=null;
 // ---- carga de datos ----
 async function cargarConfig(){
   try{const {data}=await sb.from('config').select('*').eq('id',1).single();
-    if(data){CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;LOTE_DFLT=data.lote??10;}}catch(e){}
+    if(data){CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;LOTE_DFLT=data.lote??10;CFG.coste_hora_operario=parseFloat(data.coste_hora_operario||0)||0;}}catch(e){}
   try{const {data:lt}=await sb.from('lotes_programa').select('programa,lote');(lt||[]).forEach(r=>LOTES[r.programa]=r.lote);}catch(e){}
 }
 async function selectAll(table,cols){
@@ -802,15 +802,15 @@ function nav(v){
 
 const Prod = {
   lineas:[], cant:{}, tipo:{}, manual:{}, manualTipo:{}, parteNum:'',
-  modelosMap:{}, prodMap:{}, tiempos:{}, refs:false,
+  modelosMap:{}, prodMap:{}, costeMat:{}, tiempos:{}, refs:false,
 
   async init(){
     if(this.refs) return;
     try{
       const modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo');
       this.modelosMap = {}; modelos.forEach(m=>this.modelosMap[m.sku_pf]=m);
-      const prods = await selectAll('productos','sku,nombre');
-      this.prodMap = {}; prods.forEach(p=>this.prodMap[p.sku]=p.nombre||p.sku);
+      const prods = await selectAll('productos','sku,nombre,coste_material');
+      this.prodMap = {}; this.costeMat={}; prods.forEach(p=>{ this.prodMap[p.sku]=p.nombre||p.sku; this.costeMat[p.sku]=Number(p.coste_material||0)||0; });
       const tsku = await selectWhere('tiempos_sku','sku,mediana_seg,n_unidades',q=>q.eq('vigente',true));
       this.tiempos = {}; tsku.forEach(t=>{ this.tiempos[t.sku]={seg:Number(t.mediana_seg||0)||0, n:Number(t.n_unidades||0)||0}; });
       await Pers.load(); // cargar categorías de personalización
@@ -825,6 +825,9 @@ const Prod = {
 
   // minutos estimados para fabricar n uds de un núcleo
   minutosDe(sku,n){ return Math.round(this.segPorUdDe(sku)*n/60); },
+
+  // coste estimado (mano de obra + material) para fabricar n uds de un núcleo
+  costeDe(sku,n){ const mo=this.segPorUdDe(sku)*(CFG.coste_hora_operario||0)/3600; return (mo+(this.costeMat[sku]||0))*n; },
 
   // ---- leer parte Excel (réplica de leer_parte) ----
   async subirParte(file){
@@ -959,10 +962,15 @@ const Prod = {
     $('#prodTotal').textContent='Total: '+uds+' uds'+(minsTot!=null?' · ≈ '+fmtDur(minsTot*60)+' de fabricación':'');
     const kpi=(v,l,c)=>`<div class="card" style="margin:0;padding:16px 18px"><div style="font-family:'JetBrains Mono';font-size:26px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${l}</div></div>`;
     const kEl=$('#prodKpis');
-    if(kEl) kEl.innerHTML=
-      kpi(this.lineas.length,'Líneas de modelo en el parte','var(--ink)')+
-      kpi(uds,'Uds de núcleo a fabricar','var(--terra)')+
-      kpi(minsTot!=null?fmtDur(minsTot*60):'—','⏱ Tiempo estimado de fabricación','var(--blue)');
+    const esAdmin=Auth.esAdmin();
+    if(kEl){
+      kEl.style.gridTemplateColumns=esAdmin?'repeat(4,1fr)':'repeat(3,1fr)';
+      kEl.innerHTML=
+        kpi(this.lineas.length,'Líneas de modelo en el parte','var(--ink)')+
+        kpi(uds,'Uds de núcleo a fabricar','var(--terra)')+
+        kpi(minsTot!=null?fmtDur(minsTot*60):'—','⏱ Tiempo estimado de fabricación','var(--blue)')+
+        (esAdmin?kpi(ent.reduce((s,[sku,n])=>s+this.costeDe(sku,n),0).toFixed(2)+'€','💰 Coste estimado (M.O. + material)','var(--pur)'):'');
+    }
   },
 
   addModelo(){
@@ -1568,7 +1576,8 @@ const Conf = {
       f('cf_fab','Días de fabricación (de lanzar a fabricado)',c.dias_fabricacion??0,'1','')+
       f('cf_ini','Horario · hora de inicio',c.hora_inicio||'06:00','','h')+
       f('cf_fin','Horario · hora de fin',c.hora_fin||'15:00','','h')+
-      f('cf_desc','Descanso de la jornada',c.descanso_min??30,'1','min');
+      f('cf_desc','Descanso de la jornada',c.descanso_min??30,'1','min')+
+      f('cf_coste','Coste hora operario',c.coste_hora_operario??0,'0.01','€/h');
     // lotes en 2 columnas
     const progs=Object.keys(PROG_DESC).sort();
     $('#confLotes').innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px">'+
@@ -1589,6 +1598,7 @@ const Conf = {
         hora_inicio:val('cf_ini')||'06:00',
         hora_fin:val('cf_fin')||'15:00',
         descanso_min:parseInt(val('cf_desc'))||30,
+        coste_hora_operario:parseFloat(val('cf_coste'))||0,
         lote:this.raw.lote??10,
         updated_at:new Date().toISOString()
       };
@@ -1600,7 +1610,7 @@ const Conf = {
       const {error:e2}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
       if(e2)throw e2;
       // actualizar en memoria y recalcular dashboard
-      CFG.dias_historico=cfg.dias_historico;CFG.umbral_semanal=cfg.umbral_semanal;CFG.maduracion=cfg.maduracion;LOTE_DFLT=cfg.lote;
+      CFG.dias_historico=cfg.dias_historico;CFG.umbral_semanal=cfg.umbral_semanal;CFG.maduracion=cfg.maduracion;LOTE_DFLT=cfg.lote;CFG.coste_hora_operario=cfg.coste_hora_operario;
       filas.forEach(f=>LOTES[f.programa]=f.lote);
       this.raw=cfg;
       toast('✓ Configuración guardada','ok');
@@ -2476,6 +2486,27 @@ async function open_detalle(sku,nombre){
     const udByOt={}; uds.forEach(u=>{(udByOt[u.ot]=udByOt[u.ot]||[]).push(u);});
     const activas=ords.filter(o=>{ const us=udByOt[o.ot]||[]; return us.some(u=>u.estado==='stock'||u.estado==='pendiente'); });
     const abiertas=activas.filter(o=>o.estado==='abierta'), otras=activas.filter(o=>o.estado!=='abierta');
+    // ---- coste estimado (mano de obra + material) · solo visible para administración ----
+    let costeHtml='';
+    if(Auth.esAdmin()){
+      let costeMat=0, segUd=(window.Prod&&Prod.TIEMPO_DEFAULT_SEG)||270;
+      try{
+        const [{data:prodRow},{data:tRow}]=await Promise.all([
+          sb.from('productos').select('coste_material').eq('sku',sku).maybeSingle(),
+          sb.from('tiempos_sku').select('mediana_seg,n_unidades').eq('sku',sku).eq('vigente',true).maybeSingle()
+        ]);
+        costeMat=Number(prodRow&&prodRow.coste_material||0)||0;
+        const minUds=(window.Prod&&Prod.TIEMPO_MIN_UDS)||7;
+        if(tRow && Number(tRow.n_unidades||0)>=minUds && Number(tRow.mediana_seg||0)>0) segUd=Number(tRow.mediana_seg);
+      }catch(e){}
+      const costeMO=segUd*(CFG.coste_hora_operario||0)/3600;
+      costeHtml=`<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:16px;padding:12px 14px;background:var(--surf2);border-radius:10px">
+        <div style="font-size:11px;color:var(--muted)">Mano de obra<br><b style="font-size:15px;color:var(--ink)">${costeMO.toFixed(2)}€/ud</b></div>
+        <div style="font-size:11px;color:var(--muted)">Material<br><span style="display:flex;align-items:center;gap:4px"><input id="costeMatInp" type="number" min="0" step="0.01" value="${costeMat}" style="width:80px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:right;font-family:inherit">€/ud</span></div>
+        <div style="font-size:11px;color:var(--muted)">Total<br><b id="costeTotalLbl" style="font-size:16px;color:var(--terra)">${(costeMO+costeMat).toFixed(2)}€/ud</b></div>
+        <button class="chip" style="background:var(--ink);padding:8px 12px;font-size:12px" onclick="guardarCosteMaterial('${sku.replace(/'/g,"\\'")}',${costeMO})">Guardar material</button>
+      </div>`;
+    }
     const otCard=(o)=>{
       const us=udByOt[o.ot]||[]; let disp=0,madur=0;
       us.forEach(u=>{ if(u.estado==='stock'){ const f=u.fabricada_at?new Date(u.fabricada_at):null; if(f&&(now-f)>=mad)disp++;else madur++; } });
@@ -2492,7 +2523,7 @@ async function open_detalle(sku,nombre){
         ${(disp+madur+pend)>0?`<button class="chip qr-ot" data-ot="${esc(o.ot)}" style="background:var(--blue);margin-top:10px;font-size:12px;padding:7px 12px">🏷️ Etiquetas QR de esta OT</button>`:''}
         </div>`;
     };
-    let html=`<div style="display:flex;gap:22px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+    let html=costeHtml+`<div style="display:flex;gap:22px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)">
       <div><span style="font-size:22px;font-weight:800;color:var(--terra)">${st}</span> <span style="color:var(--muted);font-size:13px">en stock</span></div>
       <div><span style="font-size:22px;font-weight:800;color:var(--blue)">${pe}</span> <span style="color:var(--muted);font-size:13px">en fabricación</span></div>
       <div><span style="font-size:22px;font-weight:800;color:var(--muted)">${co}</span> <span style="color:var(--muted);font-size:13px">consumidas</span></div></div>`;
@@ -2623,6 +2654,19 @@ const Pers = {
   async bajar(id){ const i=this.cats.findIndex(c=>c.id===id); if(i<0||i>=this.cats.length-1)return; await this._swap(this.cats[i],this.cats[i+1]); },
   async _swap(a,b){ try{ await Promise.all([sb.from('config_categorias').update({orden:b.orden}).eq('id',a.id),sb.from('config_categorias').update({orden:a.orden}).eq('id',b.id)]); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } }
 };
+
+// guarda el coste de material (€/ud) de un núcleo, editado en su ficha de detalle
+async function guardarCosteMaterial(sku,costeMO){
+  const inp=document.getElementById('costeMatInp'); if(!inp)return;
+  const v=Math.max(0,parseFloat(inp.value)||0);
+  try{
+    const {error}=await sb.from('productos').update({coste_material:v}).eq('sku',sku);
+    if(error)throw error;
+    const lbl=document.getElementById('costeTotalLbl'); if(lbl)lbl.textContent=(v+(costeMO||0)).toFixed(2)+'€/ud';
+    if(window.Prod && Prod.costeMat) Prod.costeMat[sku]=v;
+    toast('✓ Coste de material guardado','ok');
+  }catch(e){ toast('Error al guardar coste: '+(e.message||e),'err'); }
+}
 
 // anula una OT de núcleo: borra sus reservas y unidades, marca la orden anulada
 async function anularOTPorNumero(ot,now){
