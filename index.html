@@ -170,7 +170,6 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navPartes" onclick="nav('partes')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Partes lanzados</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
     <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
-    <button class="nav" id="navUsr" onclick="nav('usr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Usuarios</span></button>
     <div class="grp">Análisis</div>
     <button class="nav" id="navProdv" onclick="nav('prodv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10l4 4"/><circle cx="12" cy="12" r="10"/></svg><span>Productividad</span></button>
     <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempo por núcleo</span></button>
@@ -294,34 +293,107 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
 
     <div class="content" id="view-conf" style="display:none">
       <div class="h1">Configuración</div>
-      <div class="h1sub">Parámetros globales de consumo y reposición</div>
-      <div class="card" style="padding:8px 4px">
-        <div id="confFields"></div>
-      </div>
-      <div class="card">
-        <div class="ch"><div class="t">Lote de fabricación por programa</div><div class="s">Unidades que se fabrican por lote de cada programa</div></div>
-        <div id="confLotes" style="padding:8px 16px 4px"></div>
-      </div>
-      <button class="chip" style="padding:13px 28px;font-size:15px" onclick="Conf.save()">Guardar configuración</button>
-      <div style="height:20px"></div>
-    </div>
+      <div class="h1sub">Parámetros del sistema, turnos, puestos, usuarios y lotes</div>
 
-    <div class="content" id="view-usr" style="display:none">
-      <div class="h1">Usuarios</div>
-      <div class="h1sub">Plantilla · da de alta encargados y operarios con su PIN</div>
-      <div class="card" style="margin-bottom:16px">
-        <div class="ch"><div class="t">Nuevo usuario</div></div>
-        <div style="padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
-            <input id="uNom" placeholder="Nombre y apellido" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:220px"></div>
-          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Rol</div>
-            <select id="uRol" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"><option value="operario">Operario</option><option value="encargado">Encargado</option></select></div>
-          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">PIN</div>
-            <input id="uPin" placeholder="4 dígitos" maxlength="6" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:110px"></div>
-          <button class="chip" onclick="Usr.crear()">Añadir usuario</button>
+      <div class="card accSec" style="margin-top:14px">
+        <div class="ch accHead" onclick="Conf.toggleSec('cDiario')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
+          <div style="flex:1"><div class="t">1 · Diario / Personalizado</div><div class="s">Umbral, histórico y maduración que deciden si un núcleo va a stock o es a medida</div></div>
+          <span id="accArrow-cDiario" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
+        </div>
+        <div id="accBody-cDiario" style="padding:8px 4px"><div id="confFields"></div></div>
+      </div>
+
+      <div class="card accSec" style="margin-top:14px">
+        <div class="ch accHead" onclick="Conf.toggleSec('cTurnos')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
+          <div style="flex:1"><div class="t">2 · Turnos de trabajo</div><div class="s">Horarios que se pueden asignar a los operarios de planta</div></div>
+          <span id="accArrow-cTurnos" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
+        </div>
+        <div id="accBody-cTurnos" style="display:none;padding:16px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+              <input id="tuNom" placeholder="Ej. Turno mañana" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:180px"></div>
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Tipo</div>
+              <select id="tuTipo" onchange="Turnos.toggleTipoForm()" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+                <option value="continuo">Continuo (un tramo)</option>
+                <option value="partido">Partido (dos tramos)</option>
+              </select></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLbl1Ini">Inicio</div>
+              <input id="tuIni" type="time" value="06:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLbl1Fin">Fin</div>
+              <input id="tuFin" type="time" value="14:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+            <div id="tuBloque2" style="display:none;gap:8px;align-items:flex-end">
+              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Inicio tramo 2</div>
+                <input id="tuIni2" type="time" value="15:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Fin tramo 2</div>
+                <input id="tuFin2" type="time" value="19:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+            </div>
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLblDesc">Descanso (min)</div>
+              <input id="tuDesc" type="number" min="0" value="30" style="width:90px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+            <button class="chip" onclick="Turnos.crear()">Añadir turno</button>
+          </div>
+          <div id="turnosLista"></div>
         </div>
       </div>
-      <div id="usrLista"></div>
+
+      <div class="card accSec" style="margin-top:14px">
+        <div class="ch accHead" onclick="Conf.toggleSec('cPuestos')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
+          <div style="flex:1"><div class="t">3 · Puestos de trabajo</div><div class="s">Secciones de la fábrica y cuántos trabajadores caben en cada una</div></div>
+          <span id="accArrow-cPuestos" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
+        </div>
+        <div id="accBody-cPuestos" style="display:none;padding:16px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+              <input id="puNom" placeholder="Ej. Corte" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:200px"></div>
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Trabajadores</div>
+              <input id="puCap" type="number" min="1" value="1" style="width:90px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+            <button class="chip" onclick="Puestos.crear()">Añadir puesto</button>
+          </div>
+          <div id="puestosLista"></div>
+        </div>
+      </div>
+
+      <div class="card accSec" style="margin-top:14px">
+        <div class="ch accHead" onclick="Conf.toggleSec('cUsr')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
+          <div style="flex:1"><div class="t">4 · Usuarios y costes</div><div class="s">Accesos de oficina, plantilla de planta, y coste por hora de cada uno</div></div>
+          <span id="accArrow-cUsr" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
+        </div>
+        <div id="accBody-cUsr" style="display:none;padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border:1px solid var(--border);border-radius:9px;margin-bottom:18px;background:var(--surf2)">
+            <label style="font-size:14px">Coste por defecto (para quien no tenga uno propio)</label>
+            <div style="display:flex;align-items:center;gap:6px">
+              <input id="cf_coste" type="number" step="0.01" value="0" style="width:100px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;text-align:right;font-family:inherit">
+              <span style="font-size:12px;color:var(--muted)">€/h</span>
+              <button class="chip" style="background:var(--ink);padding:8px 12px;font-size:12px" onclick="Conf.guardarCosteDefecto()">Guardar</button>
+            </div>
+          </div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="ch"><div class="t">Nuevo usuario de planta</div></div>
+            <div style="padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+                <input id="uNom" placeholder="Nombre y apellido" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:220px"></div>
+              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Rol</div>
+                <select id="uRol" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"><option value="operario">Operario</option><option value="encargado">Encargado</option></select></div>
+              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">PIN</div>
+                <input id="uPin" placeholder="4 dígitos" maxlength="6" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:110px"></div>
+              <button class="chip" onclick="Usr.crear()">Añadir usuario</button>
+            </div>
+          </div>
+          <div id="usrLista"></div>
+        </div>
+      </div>
+
+      <div class="card accSec" style="margin-top:14px">
+        <div class="ch accHead" onclick="Conf.toggleSec('cLotes')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
+          <div style="flex:1"><div class="t">5 · Lotes de fabricación</div><div class="s">Unidades que se fabrican por lote de cada programa</div></div>
+          <span id="accArrow-cLotes" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
+        </div>
+        <div id="accBody-cLotes" style="display:none;padding:8px 16px 4px"><div id="confLotes"></div></div>
+      </div>
+
+      <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.save()">Guardar configuración</button>
+      <div style="height:20px"></div>
     </div>
 
     <div class="content" id="view-inv" style="display:none">
@@ -779,16 +851,16 @@ function go2(){nav('ot')}
 // ============================================================
 //  PRODUCCIÓN
 // ============================================================
-const ADMIN_VIEWS = new Set(['conf','usr','apr','alta','pers']);
+const ADMIN_VIEWS = new Set(['conf','apr','alta','pers']);
 
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',conf:'Configuración',usr:'Usuarios',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',conf:'navConf',usr:'navUsr',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+  const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',conf:'Configuración',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',conf:'navConf',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if(ADMIN_VIEWS.has(v) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  ['dash','prod','partes','ot','conf','usr','inv','prodv','tsku','apr','alta','pers'].forEach(k=>{
+  ['dash','prod','partes','ot','conf','inv','prodv','tsku','apr','alta','pers'].forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
   });
@@ -796,9 +868,8 @@ function nav(v){
   if(v==='prod') Prod.init();
   if(v==='partes') Partes.reload();
   if(v==='ot') OT.reload();
-  if(v==='conf') Conf.load();
+  if(v==='conf'){ Conf.load(); Turnos.reload(); Puestos.reload(); Usr.reload(); }
   if(v==='pers') Pers.load();
-  if(v==='usr') Usr.reload();
   if(v==='inv') Inv.paint();
   if(v==='prodv') Prodv.startAuto();
   else if(window.Prodv && Prodv.stopAuto) Prodv.stopAuto();
@@ -1558,6 +1629,14 @@ document.getElementById('otSearch').addEventListener('input',()=>OT.paint());
 // ============================================================
 const Conf = {
   raw:{}, loaded:false,
+  // abre/cierra una sección del acordeón (las demás no se tocan: se pueden tener varias abiertas)
+  toggleSec(id){
+    const body=document.getElementById('accBody-'+id), arrow=document.getElementById('accArrow-'+id);
+    if(!body) return;
+    const open=body.style.display!=='none';
+    body.style.display=open?'none':'';
+    if(arrow) arrow.textContent=open?'▾':'▴';
+  },
   async load(){
     try{
       const {data}=await sb.from('config').select('*').eq('id',1).single();
@@ -1579,11 +1658,8 @@ const Conf = {
       f('cf_dias','Días de histórico (con consumo)',c.dias_historico??5,'1','')+
       f('cf_umbral','Umbral personalizado (consumo/día mínimo)',c.umbral_semanal??2,'0.1','')+
       f('cf_madur','Maduración (días)',c.maduracion??2,'1','')+
-      f('cf_fab','Días de fabricación (de lanzar a fabricado)',c.dias_fabricacion??0,'1','')+
-      f('cf_ini','Horario · hora de inicio',c.hora_inicio||'06:00','','h')+
-      f('cf_fin','Horario · hora de fin',c.hora_fin||'15:00','','h')+
-      f('cf_desc','Descanso de la jornada',c.descanso_min??30,'1','min')+
-      f('cf_coste','Coste hora operario',c.coste_hora_operario??0,'0.01','€/h');
+      f('cf_fab','Días de fabricación (de lanzar a fabricado)',c.dias_fabricacion??0,'1','');
+    const costeInp=$('#cf_coste'); if(costeInp) costeInp.value=c.coste_hora_operario??0;
     // lotes en 2 columnas
     const progs=Object.keys(PROG_DESC).sort();
     $('#confLotes').innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px">'+
@@ -1591,6 +1667,15 @@ const Conf = {
         <label style="font-size:13px"><b>${p}</b> · ${esc(PROG_DESC[p]||'')}</label>
         <input id="lote_${p}" type="number" min="1" value="${this.lotes[p]??(c.lote??10)}" style="width:90px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit">
       </div>`).join('')+'</div>';
+  },
+  async guardarCosteDefecto(){
+    try{
+      const coste=parseFloat($('#cf_coste').value)||0;
+      const {error}=await sb.from('config').update({coste_hora_operario:coste,updated_at:new Date().toISOString()}).eq('id',1);
+      if(error)throw error;
+      CFG.coste_hora_operario=coste; this.raw.coste_hora_operario=coste;
+      toast('✓ Coste por defecto guardado','ok');
+    }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
   },
   async save(){
     try{
@@ -1601,9 +1686,6 @@ const Conf = {
         umbral_semanal:parseFloat(val('cf_umbral'))||2,
         maduracion:parseInt(val('cf_madur'))||2,
         dias_fabricacion:parseInt(val('cf_fab'))||0,
-        hora_inicio:val('cf_ini')||'06:00',
-        hora_fin:val('cf_fin')||'15:00',
-        descanso_min:parseInt(val('cf_desc'))||30,
         coste_hora_operario:parseFloat(val('cf_coste'))||0,
         lote:this.raw.lote??10,
         updated_at:new Date().toISOString()
@@ -1627,6 +1709,108 @@ const Conf = {
 
 
 // ============================================================
+//  TURNOS DE TRABAJO
+// ============================================================
+const Turnos = {
+  data:[],
+  async reload(){
+    const el=$('#turnosLista'); if(el) el.innerHTML='<div class="loading">Cargando…</div>';
+    try{
+      const {data,error}=await sb.from('turnos_plantilla').select('*').order('hora_inicio');
+      if(error)throw error;
+      this.data=data||[];
+      this.paint();
+      if(window.Usr) Usr.paint();
+    }catch(e){ if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)</div>'; }
+  },
+  paint(){
+    const el=$('#turnosLista'); if(!el) return;
+    if(!this.data.length){ el.innerHTML='<div class="vacio">Sin turnos creados todavía.</div>'; return; }
+    const hm=t=>(t||'').slice(0,5);
+    el.innerHTML=this.data.map(t=>{
+      const partido=t.tipo==='partido';
+      const horario=partido
+        ? `${hm(t.hora_inicio)}-${hm(t.hora_fin)} y ${hm(t.hora_inicio2)}-${hm(t.hora_fin2)}`
+        : `${hm(t.hora_inicio)}-${hm(t.hora_fin)}`;
+      return `<div class="card" style="margin-bottom:8px;${t.activo?'':'opacity:.5'}">
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 16px">
+        <div style="flex:1"><div style="font-weight:700">${esc(t.nombre)} <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:uppercase">· ${partido?'Partido':'Continuo'}</span></div>
+          <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono'">${horario} · ${t.descanso_min||0} min descanso${partido?' (tramo 1)':''}</div></div>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Turnos.toggleActivo(${t.id},${!t.activo})">${t.activo?'Desactivar':'Reactivar'}</button>
+      </div></div>`;}).join('');
+  },
+  // muestra/oculta el segundo tramo según el tipo elegido en el formulario
+  toggleTipoForm(){
+    const partido=$('#tuTipo').value==='partido';
+    $('#tuBloque2').style.display=partido?'flex':'none';
+    $('#tuLbl1Ini').textContent=partido?'Inicio tramo 1':'Inicio';
+    $('#tuLbl1Fin').textContent=partido?'Fin tramo 1':'Fin';
+    $('#tuLblDesc').textContent=partido?'Descanso tramo 1 (min)':'Descanso (min)';
+  },
+  async crear(){
+    const nombre=$('#tuNom').value.trim(), tipo=$('#tuTipo').value||'continuo';
+    const hora_inicio=$('#tuIni').value||'06:00', hora_fin=$('#tuFin').value||'14:00', descanso_min=parseInt($('#tuDesc').value)||0;
+    if(!nombre){ toast('Escribe un nombre de turno','err'); return; }
+    const row={nombre,tipo,hora_inicio,hora_fin,descanso_min,activo:true};
+    if(tipo==='partido'){
+      row.hora_inicio2=$('#tuIni2').value||'15:00'; row.hora_fin2=$('#tuFin2').value||'19:00';
+      if(row.hora_fin>=row.hora_inicio2){ toast('El tramo 2 debe empezar después de acabar el tramo 1','err'); return; }
+    }
+    try{
+      const {error}=await sb.from('turnos_plantilla').insert(row);
+      if(error)throw error;
+      $('#tuNom').value='';
+      toast('✓ Turno creado','ok'); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)','err'); }
+  },
+  async toggleActivo(id,val){
+    try{ await sb.from('turnos_plantilla').update({activo:val}).eq('id',id); this.reload(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); }
+  }
+};
+
+// ============================================================
+//  PUESTOS DE TRABAJO
+// ============================================================
+const Puestos = {
+  data:[],
+  async reload(){
+    const el=$('#puestosLista'); if(el) el.innerHTML='<div class="loading">Cargando…</div>';
+    try{
+      const {data,error}=await sb.from('puestos_trabajo').select('*').order('nombre');
+      if(error)throw error;
+      this.data=data||[];
+      this.paint();
+      if(window.Usr) Usr.paint();
+    }catch(e){ if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)</div>'; }
+  },
+  paint(){
+    const el=$('#puestosLista'); if(!el) return;
+    if(!this.data.length){ el.innerHTML='<div class="vacio">Sin puestos creados todavía.</div>'; return; }
+    el.innerHTML=this.data.map(p=>`<div class="card" style="margin-bottom:8px;${p.activo?'':'opacity:.5'}">
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 16px">
+        <div style="flex:1"><div style="font-weight:700">${esc(p.nombre)}</div>
+          <div style="font-size:12px;color:var(--muted)">${p.capacidad||1} trabajador${(p.capacidad||1)===1?'':'es'}</div></div>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.toggleActivo(${p.id},${!p.activo})">${p.activo?'Desactivar':'Reactivar'}</button>
+      </div></div>`).join('');
+  },
+  async crear(){
+    const nombre=$('#puNom').value.trim(), capacidad=Math.max(1,parseInt($('#puCap').value)||1);
+    if(!nombre){ toast('Escribe un nombre de puesto','err'); return; }
+    try{
+      const {error}=await sb.from('puestos_trabajo').insert({nombre,capacidad,activo:true});
+      if(error)throw error;
+      $('#puNom').value='';
+      toast('✓ Puesto creado','ok'); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async toggleActivo(id,val){
+    try{ await sb.from('puestos_trabajo').update({activo:val}).eq('id',id); this.reload(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); }
+  }
+};
+
+// ============================================================
 //  USUARIOS
 // ============================================================
 const Usr = {
@@ -1634,7 +1818,7 @@ const Usr = {
   async reload(){
     $('#usrLista').innerHTML='<div class="loading">Cargando usuarios…</div>';
     try{
-      const {data}=await sb.from('usuarios').select('id,nombre,pin,rol,activo').order('nombre');
+      const {data}=await sb.from('usuarios').select('id,nombre,pin,rol,activo,turno_id,puesto_id,coste_hora').order('nombre');
       this.data=data||[];
       // usuarios de oficina (solo si soy admin)
       this.ofi=[];
@@ -1642,7 +1826,7 @@ const Usr = {
         try{ const {data:o}=await sb.from('usuarios_oficina').select('*').order('created_at'); this.ofi=o||[]; }catch(e){}
       }
       this.paint();
-    }catch(e){ $('#usrLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+    }catch(e){ $('#usrLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)</div>'; }
   },
   paintOficina(){
     if(!Auth.esAdmin()) return '';
@@ -1681,13 +1865,20 @@ const Usr = {
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
   paint(){
     const act=this.data.filter(u=>u.activo), baj=this.data.filter(u=>!u.activo);
+    const turnos=(window.Turnos&&Turnos.data)||[], puestos=(window.Puestos&&Puestos.data)||[];
     const card=(u)=>{
       const enc=u.rol==='encargado';
+      const selTurno=`<select onchange="Usr.setCampo(${u.id},'turno_id',this.value?Number(this.value):null)" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px">
+        <option value="">Sin turno</option>${turnos.map(t=>`<option value="${t.id}" ${u.turno_id===t.id?'selected':''}>${esc(t.nombre)}</option>`).join('')}</select>`;
+      const selPuesto=`<select onchange="Usr.setCampo(${u.id},'puesto_id',this.value?Number(this.value):null)" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px">
+        <option value="">Sin puesto</option>${puestos.map(p=>`<option value="${p.id}" ${u.puesto_id===p.id?'selected':''}>${esc(p.nombre)}</option>`).join('')}</select>`;
       return `<div class="card" style="border-left:4px solid ${enc?'var(--blue)':'var(--terra)'};margin-bottom:10px">
-        <div style="display:flex;align-items:center;gap:14px;padding:14px 18px">
+        <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap">
           <div style="width:42px;height:42px;border-radius:50%;background:${enc?'#E4EDF0':'#F5E7DF'};color:${enc?'var(--blue)':'var(--terra)'};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px">${esc((u.nombre||'?')[0].toUpperCase())}</div>
-          <div style="flex:1"><div style="font-weight:700;font-size:15px">${esc(u.nombre)}</div>
+          <div style="flex:1;min-width:160px"><div style="font-weight:700;font-size:15px">${esc(u.nombre)}</div>
             <div style="font-size:12px;color:var(--muted)">${enc?'Encargado':'Operario'} · PIN ${esc(u.pin)}</div></div>
+          ${selTurno}${selPuesto}
+          <div style="display:flex;align-items:center;gap:4px"><input type="number" step="0.01" placeholder="€/h" value="${u.coste_hora??''}" onchange="Usr.setCampo(${u.id},'coste_hora',this.value?parseFloat(this.value):null)" style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;text-align:right;font-size:12px"><span style="font-size:11px;color:var(--muted)">€/h</span></div>
           ${u.activo?`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.baja(${u.id},'${esc(u.nombre)}')">Dar de baja</button>`
             :`<button class="chip" style="background:var(--green)" onclick="Usr.alta(${u.id})">Reactivar</button>`}
         </div></div>`;
@@ -1714,7 +1905,16 @@ const Usr = {
     try{ await sb.from('usuarios').update({activo:false}).eq('id',id); toast('Usuario dado de baja','ok'); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
   async alta(id){ try{ await sb.from('usuarios').update({activo:true}).eq('id',id); toast('Usuario reactivado','ok'); this.reload(); }
-    catch(e){ toast('Error: '+(e.message||e),'err'); } }
+    catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  // guarda al vuelo turno_id / puesto_id / coste_hora de un operario de planta
+  async setCampo(id,campo,valor){
+    try{
+      const {error}=await sb.from('usuarios').update({[campo]:valor}).eq('id',id);
+      if(error)throw error;
+      const u=this.data.find(x=>x.id===id); if(u)u[campo]=valor;
+      toast('✓ Guardado','ok');
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  }
 };
 
 
@@ -2396,7 +2596,7 @@ const Auth = {
     const av=document.querySelector('.top .user .av'), nm=document.querySelector('.top .user span');
     if(av)av.textContent=(u.nombre||u.email||'OF').slice(0,2).toUpperCase();
     if(nm)nm.textContent=(u.nombre||u.email)+(u.rol==='administrador'?' · Admin':'');
-    ['navUsr','navConf','navApr','navAlta','navPers'].forEach(id=>{
+    ['navConf','navApr','navAlta','navPers'].forEach(id=>{
       const el=document.getElementById(id);
       if(el)el.style.display=this.esAdmin()?'flex':'none';
     });
