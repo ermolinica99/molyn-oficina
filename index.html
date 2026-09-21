@@ -336,8 +336,14 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="content" id="view-prodv" style="display:none">
       <div style="display:flex;align-items:flex-start;justify-content:space-between">
         <div><div class="h1">Productividad</div><div class="h1sub">Tiempo efectivo, ocupación y rendimiento por operario</div></div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <div class="seg">
+            <button id="prodvRangoDia" class="on" onclick="Prodv.setRango('dia')">Día</button>
+            <button id="prodvRangoSemana" onclick="Prodv.setRango('semana')">Semana</button>
+            <button id="prodvRangoPeriodo" onclick="Prodv.setRango('periodo')">Periodo</button>
+          </div>
           <input id="prodvFecha" type="date" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+          <input id="prodvFecha2" type="date" style="display:none;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
           <button class="chip" onclick="Prodv.reload()" style="background:var(--surf2);color:var(--ink)">Ver</button>
         </div>
       </div>
@@ -1796,6 +1802,7 @@ function solaparSeg(iniMs,finMs,intervalos){
 // ============================================================
 const Prodv = {
   mode:'live',
+  rangoMode:'dia',
   rows:[],
   alerts:[],
   selectedId:null,
@@ -1817,6 +1824,38 @@ const Prodv = {
     if(b)b.classList.toggle('on',m==='turno');
     this.paint();
   },
+  setRango(r){
+    this.rangoMode=r;
+    ['dia','semana','periodo'].forEach(k=>{ const el=document.getElementById('prodvRango'+k[0].toUpperCase()+k.slice(1)); if(el)el.classList.toggle('on',k===r); });
+    const f2=$('#prodvFecha2'); if(f2)f2.style.display=(r==='periodo')?'':'none';
+    this.reload();
+  },
+  // calcula el rango de fechas real a consultar según Día/Semana/Periodo
+  getRango(){
+    const fecha=$('#prodvFecha').value || new Date().toISOString().slice(0,10);
+    $('#prodvFecha').value=fecha;
+    const base=new Date(fecha+'T00:00:00');
+    if(this.rangoMode==='semana'){
+      const dow=(base.getDay()+6)%7; // lunes=0
+      const lunes=new Date(base); lunes.setDate(base.getDate()-dow);
+      const domingo=new Date(lunes); domingo.setDate(lunes.getDate()+6);
+      return {ini:lunes, fin:domingo, bucketBy:'dia', label:'Semana del '+lunes.toLocaleDateString('es-ES')+' al '+domingo.toLocaleDateString('es-ES')};
+    }
+    if(this.rangoMode==='periodo'){
+      const f2raw=$('#prodvFecha2').value || fecha;
+      let ini=base, fin=new Date(f2raw+'T00:00:00');
+      if(fin<ini){ const t=ini; ini=fin; fin=t; }
+      const dias=Math.round((fin-ini)/86400000);
+      if(dias>90){ fin=new Date(ini); fin.setDate(ini.getDate()+90); }
+      return {ini, fin, bucketBy:'dia', label:'Periodo '+ini.toLocaleDateString('es-ES')+' - '+fin.toLocaleDateString('es-ES')};
+    }
+    return {ini:base, fin:base, bucketBy:'hora', label:base.toLocaleDateString('es-ES')};
+  },
+  // índice del bucket (this.hourly) para una fecha dada, según bucketBy
+  bucketIdx(d){
+    if(this.rangoInfo.bucketBy==='hora') return d.getHours();
+    return Math.floor((new Date(d.getFullYear(),d.getMonth(),d.getDate())-this.rangoBase)/86400000);
+  },
   selectOperario(id){
     this.selectedId=id;
     this.paint();
@@ -1824,11 +1863,12 @@ const Prodv = {
   async reload(silent){
     if(this.loading) return;
     this.loading=true;
-    const fecha=$('#prodvFecha').value || new Date().toISOString().slice(0,10);
-    $('#prodvFecha').value=fecha;
     if(!silent || !this.rows.length) $('#prodvLista').innerHTML='<div class="loading">Calculando panel en vivo...</div>';
     try{
-      const ini=fecha+'T00:00:00', fin=fecha+'T23:59:59';
+      const rango=this.getRango(); this.rangoInfo=rango;
+      this.rangoBase=new Date(rango.ini.getFullYear(),rango.ini.getMonth(),rango.ini.getDate());
+      const nBuckets=rango.bucketBy==='hora'?24:(Math.floor((rango.fin-rango.ini)/86400000)+1);
+      const ini=rango.ini.toISOString().slice(0,10)+'T00:00:00', fin=rango.fin.toISOString().slice(0,10)+'T23:59:59';
       const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
       const [ops,evs,pars,turs,tsku]=await Promise.all([
         safe(sb.from('usuarios').select('id,nombre').eq('rol','operario').eq('activo',true).order('nombre'),[]),
@@ -1840,7 +1880,7 @@ const Prodv = {
       const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.mediana_seg||t.segundos||t.mediana||0)||0; });
       const now=new Date();
       this.alerts=[];
-      this.hourly=Array.from({length:24},()=>({uds:0,efectivo:0,pausas:0}));
+      this.hourly=Array.from({length:Math.max(1,nBuckets)},()=>({uds:0,efectivo:0,pausas:0}));
       this.rows=ops.map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
       this.rows.sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
       this.lastUpdate=now;
@@ -1864,7 +1904,7 @@ const Prodv = {
         const iniMs=new Date(inis[i].ts).getTime(), finMs=new Date(f.ts).getTime();
         const solape=solaparSeg(iniMs,finMs,retraIntervalos);
         const d=(finMs-iniMs)/1000-solape;
-        if(d>0&&d<86400){ if(solape>0)retrabajos++; efectivo+=d; hechas++; const _hb=this.hourly&&this.hourly[new Date(f.ts).getHours()]; if(_hb){_hb.uds++;_hb.efectivo+=d;} const sk=f.sku||inis[i].sku||'';
+        if(d>0&&d<86400){ if(solape>0)retrabajos++; efectivo+=d; hechas++; const _hb=this.hourly&&this.hourly[this.bucketIdx(new Date(f.ts))]; if(_hb){_hb.uds++;_hb.efectivo+=d;} const sk=f.sku||inis[i].sku||'';
           const s=porSku[sk]=porSku[sk]||{sku:sk,n:0,durs:[],total:0,hist:hist[sk]||0};
           s.n++; s.durs.push(d); s.total+=d;
         }
@@ -1880,7 +1920,7 @@ const Prodv = {
     let turno=0, inTurno=false;
     turO.forEach(t=>{ const i=new Date(t.inicio), f=t.fin?new Date(t.fin):now; turno+=Math.max(0,(f-i)/1000); if(!t.fin)inTurno=true; });
     let paradas=0,npar=0,pausa=null; const porMotivo={};
-    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000); paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[i.getHours()]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p;
+    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000); paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[this.bucketIdx(i)]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p;
       const mo=porMotivo[p.motivo||'Otro']=porMotivo[p.motivo||'Otro']||{motivo:p.motivo||'Otro',seg:0,n:0}; mo.seg+=_d; mo.n++; });
     const disp=Math.max(0,turno-paradas);
     const lastTimes=[...evO.map(e=>e.ts),...parO.map(p=>p.fin||p.inicio),...turO.map(t=>t.fin||t.inicio)].filter(Boolean).map(x=>new Date(x));
@@ -1920,6 +1960,10 @@ const Prodv = {
   },
   horasActivas(){
     const H=this.hourly||[];
+    // con buckets por día (semana/periodo) se muestran todos los días del rango
+    if(this.rangoInfo && this.rangoInfo.bucketBy==='dia'){
+      const out=[]; for(let i=0;i<H.length;i++) out.push(i); return out;
+    }
     let ini=null, fin=null;
     H.forEach((h,i)=>{ if(h && (h.uds||h.pausas||h.efectivo)){ if(ini==null)ini=i; fin=i; } });
     if(ini==null){ const c=new Date().getHours(); ini=Math.max(0,c-7); fin=c; }
@@ -1927,6 +1971,14 @@ const Prodv = {
     if(fin-ini<7) ini=Math.max(0,fin-7);
     const out=[]; for(let i=ini;i<=fin;i++) out.push(i);
     return out;
+  },
+  // etiqueta de eje X para un índice de bucket: hora (HH:00) o fecha corta (dd/mm)
+  bucketLabel(i){
+    if(this.rangoInfo && this.rangoInfo.bucketBy==='dia'){
+      const d=new Date(this.rangoBase); d.setDate(d.getDate()+i);
+      return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
+    }
+    return String(i).padStart(2,'0')+':00';
   },
   kpiCard(o){
     return `<div class="kpi" style="cursor:default;display:flex;flex-direction:column">
@@ -1982,13 +2034,15 @@ const Prodv = {
       </div>
       <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento (vs histórico) × calidad</div>
     </div>`;
+    const esDia=!this.rangoInfo || this.rangoInfo.bucketBy==='hora';
     const kpis=[
-      this.kpiCard({tit:'Unidades hoy',val:uds,unit:'uds',delta:'',sub:'proyección a cierre · '+proy+' uds',
+      this.kpiCard({tit:esDia?'Unidades hoy':'Unidades del periodo',val:uds,unit:'uds',delta:'',
+        sub:esDia?'proyección a cierre · '+proy+' uds':(this.rangoInfo.label||''),
         chart:this.spark(serieAcc,160,34,'var(--terra)','#F5E7DF')}),
-      this.kpiCard({tit:'Ritmo en vivo',val:ritmoG.toFixed(1),unit:'uds/h',
-        delta:ultRitmo?(ultRitmo>=ritmoG?'+':'')+(ultRitmo-ritmoG).toFixed(1):'',
+      this.kpiCard({tit:esDia?'Ritmo en vivo':'Ritmo medio',val:ritmoG.toFixed(1),unit:'uds/h',
+        delta:esDia&&ultRitmo?(ultRitmo>=ritmoG?'+':'')+(ultRitmo-ritmoG).toFixed(1):'',
         deltaCol:ultRitmo>=ritmoG?'var(--green)':'var(--red)',
-        sub:'sobre hora efectiva · última hora '+ultRitmo.toFixed(1),
+        sub:esDia?'sobre hora efectiva · última hora '+ultRitmo.toFixed(1):'sobre el periodo completo',
         chart:this.spark(serieRitmo,160,34,'var(--blue)','#E4EDF0')}),
       this.kpiCard({tit:'Vs histórico',val:efG?Math.round(efG*100)+'%':'--',unit:'',
         delta:efG?(efG>=1?'+':'')+Math.round((efG-1)*100)+'%':'',deltaCol:efG>=1?'var(--green)':'var(--red)',
@@ -2003,7 +2057,7 @@ const Prodv = {
     ].join('');
     return `<div style="display:flex;justify-content:flex-end;margin:-4px 0 10px;color:var(--muted);font-size:12px">
         <span style="display:inline-flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:var(--green)"></span>
-        En vivo · autoactualización cada ${Math.round(this.autoMs/1000)}s · última ${stamp}</span></div>
+        ${esDia?'':(this.rangoInfo.label||'')+' · '}En vivo · autoactualización cada ${Math.round(this.autoMs/1000)}s · última ${stamp}</span></div>
       <div style="display:grid;grid-template-columns:280px repeat(4,1fr);gap:14px;margin-bottom:14px">${oeeCard}${kpis}</div>`;
   },
   paintTrend(rows){
@@ -2022,18 +2076,19 @@ const Prodv = {
     const best=uds.indexOf(Math.max(...uds));
     const npar=rows.reduce((a,r)=>a+(r.npar||0),0), parS=rows.reduce((a,r)=>a+(r.paradas||0),0);
     const disp=rows.reduce((a,r)=>a+r.disp,0), turno=rows.reduce((a,r)=>a+r.turno,0);
-    const foot=[['Mejor hora',(String(hs[best]||0).padStart(2,'0'))+':00 · '+(uds[best]||0)+' u'],['Pausas del turno',npar+' · '+fmtDur(parS)],
-      ['Hora en curso',(uds[uds.length-1]||0)+' u'],['Disponibilidad',(turno?Math.round(disp/turno*100):0)+'%']]
+    const esDiaTrend=!this.rangoInfo || this.rangoInfo.bucketBy==='hora';
+    const foot=[[esDiaTrend?'Mejor hora':'Mejor día',this.bucketLabel(hs[best]||0)+' · '+(uds[best]||0)+' u'],['Pausas del periodo',npar+' · '+fmtDur(parS)],
+      [esDiaTrend?'Hora en curso':'Último día',(uds[uds.length-1]||0)+' u'],['Disponibilidad',(turno?Math.round(disp/turno*100):0)+'%']]
       .map(f=>`<div style="padding:12px 20px;border-right:1px solid var(--border)"><div class="mono" style="font-size:16px;font-weight:700">${f[1]}</div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.5px">${f[0]}</div></div>`).join('');
     const leg=(c,t)=>`<div class="leg"><i style="background:${c}"></i>${t}</div>`;
     const trend=`<div class="card" style="margin-bottom:0">
       <div class="ch" style="display:flex;align-items:center;gap:14px">
-        <div><div class="t">Tendencia del día</div><div class="s">Unidades cerradas y tiempo en pausa por hora</div></div>
+        <div><div class="t">${esDiaTrend?'Tendencia del día':'Tendencia del periodo'}</div><div class="s">Unidades cerradas y tiempo en pausa por ${esDiaTrend?'hora':'día'}</div></div>
         <div style="margin-left:auto;display:flex;gap:14px">${leg('var(--terra)','Unidades')}${leg('var(--blue)','Ritmo uds/h')}${leg('#E3D5CE','Pausas')}</div>
       </div>
       <div style="padding:18px 20px 14px">
         <svg width="100%" height="212" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none">${grid}${barsP}${barsU}${line}${dots}</svg>
-        <div style="display:flex;justify-content:space-between;margin-top:6px;padding:0 2px">${hs.map(h=>`<span class="mono" style="font-size:10px;color:var(--muted)">${String(h).padStart(2,'0')}:00</span>`).join('')}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;padding:0 2px">${hs.map(h=>`<span class="mono" style="font-size:10px;color:var(--muted)">${this.bucketLabel(h)}</span>`).join('')}</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--border)">${foot}</div>
     </div>`;
