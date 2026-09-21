@@ -177,7 +177,14 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="grp">Ajustes</div>
     <button class="nav" id="navPers" onclick="nav('pers')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg><span>Personalización</span></button>
     <button class="nav" id="navAlta" onclick="nav('alta')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Alta masiva</span></button>
-    <button class="nav" id="navConf" onclick="nav('conf')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configuración</span></button>
+    <button class="nav" id="navConf" onclick="toggleConfMenu()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configuración</span><span id="confMenuArrow" style="margin-left:auto;font-size:11px">▸</span></button>
+    <div id="confSubmenu" style="display:none;flex-direction:column;gap:1px;padding:2px 0 4px 34px">
+      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cDiario')">Diario / Personalizado</button>
+      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cTurnos')">Turnos de trabajo</button>
+      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cPuestos')">Puestos de trabajo</button>
+      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cUsr')">Usuarios y costes</button>
+      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cLotes')">Lotes de fabricación</button>
+    </div>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
   </aside>
 
@@ -846,6 +853,26 @@ function svgIco(n,c){
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${P[n]||''}</svg>`;
 }
 function go2(){nav('ot')}
+
+// desplegable de Configuración en el menú lateral
+function toggleConfMenu(){
+  const sm=$('#confSubmenu'), ar=$('#confMenuArrow');
+  const abierto=sm.style.display==='flex';
+  if(abierto){ sm.style.display='none'; if(ar)ar.textContent='▸'; }
+  else{ nav('conf'); sm.style.display='flex'; if(ar)ar.textContent='▾'; }
+}
+// ir directamente a una sección de Configuración desde el submenú del sidebar
+function irConf(secId){
+  nav('conf');
+  const sm=$('#confSubmenu'), ar=$('#confMenuArrow'); if(sm){sm.style.display='flex';} if(ar)ar.textContent='▾';
+  ['cDiario','cTurnos','cPuestos','cUsr','cLotes'].forEach(id=>{
+    const body=document.getElementById('accBody-'+id), arrow=document.getElementById('accArrow-'+id);
+    if(body){ body.style.display=(id===secId)?'':'none'; }
+    if(arrow) arrow.textContent=(id===secId)?'▴':'▾';
+  });
+  const target=document.getElementById('accBody-'+secId);
+  if(target) target.scrollIntoView({behavior:'smooth',block:'start'});
+}
 
 
 // ============================================================
