@@ -2006,19 +2006,17 @@ const Usr = {
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
   paint(){
     const act=this.data.filter(u=>u.activo), baj=this.data.filter(u=>!u.activo);
-    const turnos=Turnos.data||[], puestos=Puestos.data||[];
+    const turnos=Turnos.data||[];
     const card=(u)=>{
       const enc=u.rol==='encargado';
       const selTurno=`<select onchange="Usr.setCampo(${u.id},'turno_id',this.value?Number(this.value):null)" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px">
         <option value="">Sin turno</option>${turnos.map(t=>`<option value="${t.id}" ${u.turno_id===t.id?'selected':''}>${esc(t.nombre)}</option>`).join('')}</select>`;
-      const selPuesto=`<select onchange="Usr.setCampo(${u.id},'puesto_id',this.value?Number(this.value):null)" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px">
-        <option value="">Sin puesto</option>${puestos.map(p=>`<option value="${p.id}" ${u.puesto_id===p.id?'selected':''}>${esc(p.nombre)}</option>`).join('')}</select>`;
       return `<div class="card" style="border-left:4px solid ${enc?'var(--blue)':'var(--terra)'};margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap">
           <div style="width:42px;height:42px;border-radius:50%;background:${enc?'#E4EDF0':'#F5E7DF'};color:${enc?'var(--blue)':'var(--terra)'};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px">${esc((u.nombre||'?')[0].toUpperCase())}</div>
           <div style="flex:1;min-width:160px"><div style="font-weight:700;font-size:15px">${esc(u.nombre)}</div>
             <div style="font-size:12px;color:var(--muted)">${enc?'Encargado':'Operario'} · PIN ${esc(u.pin)}</div></div>
-          ${selTurno}${selPuesto}
+          ${selTurno}
           <div style="display:flex;align-items:center;gap:4px"><input type="number" step="0.01" placeholder="€/h" value="${u.coste_hora??''}" onchange="Usr.setCampo(${u.id},'coste_hora',this.value?parseFloat(this.value):null)" style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;text-align:right;font-size:12px"><span style="font-size:11px;color:var(--muted)">€/h</span></div>
           ${u.activo?`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.baja(${u.id},'${esc(u.nombre)}')">Dar de baja</button>`
             :`<button class="chip" style="background:var(--green)" onclick="Usr.alta(${u.id})">Reactivar</button>`}
@@ -2537,9 +2535,15 @@ const Prodv = {
         <div class="mono" style="text-align:right;font-size:12px">${fmtDur(r.efectivo)}</div>
       </div>`;
     }).join('');
+    const todosPuestos=this.puestoRows||rows;
+    const filtroSel=todosPuestos.length>1?`<select onchange="Prodv.setFiltroPuesto(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:12px">
+        <option value="">Todos los puestos</option>
+        ${todosPuestos.map(p=>`<option value="${esc(String(p.id))}" ${String(this.filtroPuesto)===String(p.id)?'selected':''}>${esc(p.nombre)}</option>`).join('')}
+      </select>`:'';
     const lista=`<div class="card" style="margin-bottom:0">
-      <div class="ch" style="display:flex;align-items:center;gap:12px">
+      <div class="ch" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div><div class="t">Puestos del turno</div><div class="s">Ordenado por rendimiento vs histórico · pulsa una fila para el detalle</div></div>
+        ${filtroSel}
         <div class="mono" style="margin-left:auto;font-size:12px;color:var(--muted)">${activos} trabajando · ${pausa} en pausa · ${rows.length} puestos</div>
       </div>${head}${filas}</div>`;
 
@@ -2597,10 +2601,13 @@ const Prodv = {
       </div></div>`;
     return `<div style="display:grid;grid-template-columns:1fr 400px;gap:14px">${lista}${panel}</div>`;
   },
+  setFiltroPuesto(id){ this.filtroPuesto=id||null; this.paint(); },
   paint(){
     const rows=this.rows||[];
     if(!rows.length){ $('#prodvLista').innerHTML='<div class="vacio">No hay operarios activos o no hay datos de productividad.</div>'; return; }
-    const prows=this.puestoRows&&this.puestoRows.length?this.puestoRows:rows;
+    const prowsAll=this.puestoRows&&this.puestoRows.length?this.puestoRows:rows;
+    let prows=this.filtroPuesto?prowsAll.filter(p=>String(p.id)===String(this.filtroPuesto)):prowsAll;
+    if(!prows.length){ this.filtroPuesto=null; prows=prowsAll; }
     if(this.selectedId==null||!prows.some(r=>String(r.id)===String(this.selectedId))) this.selectedId=prows[0].id;
     const sel=prows.find(r=>String(r.id)===String(this.selectedId))||prows[0];
     const stamp=this.lastUpdate?this.lastUpdate.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'--:--';
@@ -3136,7 +3143,7 @@ async function guardarCosteMaterial(sku,costeMO){
     const {error}=await sb.from('productos').update({coste_material:v}).eq('sku',sku);
     if(error)throw error;
     const lbl=document.getElementById('costeTotalLbl'); if(lbl)lbl.textContent=(v+(costeMO||0)).toFixed(2)+'€/ud';
-    if(window.Prod && Prod.costeMat) Prod.costeMat[sku]=v;
+    if(Prod.costeMat) Prod.costeMat[sku]=v;
     toast('✓ Coste de material guardado','ok');
   }catch(e){ toast('Error al guardar coste: '+(e.message||e),'err'); }
 }
