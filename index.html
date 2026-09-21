@@ -1739,7 +1739,7 @@ const Conf = {
 //  TURNOS DE TRABAJO
 // ============================================================
 const Turnos = {
-  data:[],
+  data:[], editId:null,
   async reload(){
     const el=$('#turnosLista'); if(el) el.innerHTML='<div class="loading">Cargando…</div>';
     try{
@@ -1747,7 +1747,7 @@ const Turnos = {
       if(error)throw error;
       this.data=data||[];
       this.paint();
-      if(window.Usr) Usr.paint();
+      Usr.paint();
     }catch(e){ if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)</div>'; }
   },
   paint(){
@@ -1755,6 +1755,7 @@ const Turnos = {
     if(!this.data.length){ el.innerHTML='<div class="vacio">Sin turnos creados todavía.</div>'; return; }
     const hm=t=>(t||'').slice(0,5);
     el.innerHTML=this.data.map(t=>{
+      if(this.editId===t.id) return this.formEdicion(t);
       const partido=t.tipo==='partido';
       const horario=partido
         ? `${hm(t.hora_inicio)}-${hm(t.hora_fin)} y ${hm(t.hora_inicio2)}-${hm(t.hora_fin2)}`
@@ -1763,8 +1764,55 @@ const Turnos = {
       <div style="display:flex;align-items:center;gap:14px;padding:12px 16px">
         <div style="flex:1"><div style="font-weight:700">${esc(t.nombre)} <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:uppercase">· ${partido?'Partido':'Continuo'}</span></div>
           <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono'">${horario} · ${t.descanso_min||0} min descanso${partido?' (tramo 1)':''}</div></div>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Turnos.editId=${t.id};Turnos.paint()">Editar</button>
         <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Turnos.toggleActivo(${t.id},${!t.activo})">${t.activo?'Desactivar':'Reactivar'}</button>
       </div></div>`;}).join('');
+  },
+  formEdicion(t){
+    const partido=t.tipo==='partido';
+    return `<div class="card" style="margin-bottom:8px;padding:14px 16px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+          <input id="teNom-${t.id}" value="${esc(t.nombre)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;width:160px"></div>
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Tipo</div>
+          <select id="teTipo-${t.id}" onchange="Turnos.toggleTipoEdicion(${t.id})" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit">
+            <option value="continuo" ${!partido?'selected':''}>Continuo</option>
+            <option value="partido" ${partido?'selected':''}>Partido</option>
+          </select></div>
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Inicio</div>
+          <input id="teIni-${t.id}" type="time" value="${(t.hora_inicio||'').slice(0,5)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit"></div>
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Fin</div>
+          <input id="teFin-${t.id}" type="time" value="${(t.hora_fin||'').slice(0,5)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit"></div>
+        <div id="teBloque2-${t.id}" style="display:${partido?'flex':'none'};gap:8px">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Inicio T2</div>
+            <input id="teIni2-${t.id}" type="time" value="${(t.hora_inicio2||'15:00').slice(0,5)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit"></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Fin T2</div>
+            <input id="teFin2-${t.id}" type="time" value="${(t.hora_fin2||'19:00').slice(0,5)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit"></div>
+        </div>
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Descanso (min)</div>
+          <input id="teDesc-${t.id}" type="number" min="0" value="${t.descanso_min||0}" style="width:80px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit"></div>
+        <button class="chip" onclick="Turnos.guardarEdicion(${t.id})">Guardar</button>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Turnos.editId=null;Turnos.paint()">Cancelar</button>
+      </div></div>`;
+  },
+  toggleTipoEdicion(id){
+    const partido=$('#teTipo-'+id).value==='partido';
+    $('#teBloque2-'+id).style.display=partido?'flex':'none';
+  },
+  async guardarEdicion(id){
+    const tipo=$('#teTipo-'+id).value;
+    const row={nombre:$('#teNom-'+id).value.trim(),tipo,hora_inicio:$('#teIni-'+id).value,hora_fin:$('#teFin-'+id).value,descanso_min:parseInt($('#teDesc-'+id).value)||0,hora_inicio2:null,hora_fin2:null};
+    if(!row.nombre){ toast('Escribe un nombre','err'); return; }
+    if(tipo==='partido'){
+      row.hora_inicio2=$('#teIni2-'+id).value; row.hora_fin2=$('#teFin2-'+id).value;
+      if(row.hora_fin>=row.hora_inicio2){ toast('El tramo 2 debe empezar después de acabar el tramo 1','err'); return; }
+    }
+    try{
+      const {error}=await sb.from('turnos_plantilla').update(row).eq('id',id);
+      if(error)throw error;
+      this.editId=null;
+      toast('✓ Turno actualizado','ok'); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   // muestra/oculta el segundo tramo según el tipo elegido en el formulario
   toggleTipoForm(){
@@ -1800,7 +1848,7 @@ const Turnos = {
 //  PUESTOS DE TRABAJO
 // ============================================================
 const Puestos = {
-  data:[],
+  data:[], editId:null,
   async reload(){
     const el=$('#puestosLista'); if(el) el.innerHTML='<div class="loading">Cargando…</div>';
     try{
@@ -1808,18 +1856,39 @@ const Puestos = {
       if(error)throw error;
       this.data=data||[];
       this.paint();
-      if(window.Usr) Usr.paint();
+      Usr.paint();
     }catch(e){ if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)</div>'; }
   },
   paint(){
     const el=$('#puestosLista'); if(!el) return;
     if(!this.data.length){ el.innerHTML='<div class="vacio">Sin puestos creados todavía.</div>'; return; }
-    el.innerHTML=this.data.map(p=>`<div class="card" style="margin-bottom:8px;${p.activo?'':'opacity:.5'}">
+    el.innerHTML=this.data.map(p=>{
+      if(this.editId===p.id) return `<div class="card" style="margin-bottom:8px;padding:14px 16px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+            <input id="peNom-${p.id}" value="${esc(p.nombre)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;width:200px"></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Trabajadores</div>
+            <input id="peCap-${p.id}" type="number" min="1" value="${p.capacidad||1}" style="width:90px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit"></div>
+          <button class="chip" onclick="Puestos.guardarEdicion(${p.id})">Guardar</button>
+          <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.editId=null;Puestos.paint()">Cancelar</button>
+        </div></div>`;
+      return `<div class="card" style="margin-bottom:8px;${p.activo?'':'opacity:.5'}">
       <div style="display:flex;align-items:center;gap:14px;padding:12px 16px">
         <div style="flex:1"><div style="font-weight:700">${esc(p.nombre)}</div>
           <div style="font-size:12px;color:var(--muted)">${p.capacidad||1} trabajador${(p.capacidad||1)===1?'':'es'}</div></div>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.editId=${p.id};Puestos.paint()">Editar</button>
         <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.toggleActivo(${p.id},${!p.activo})">${p.activo?'Desactivar':'Reactivar'}</button>
-      </div></div>`).join('');
+      </div></div>`;}).join('');
+  },
+  async guardarEdicion(id){
+    const nombre=$('#peNom-'+id).value.trim(), capacidad=Math.max(1,parseInt($('#peCap-'+id).value)||1);
+    if(!nombre){ toast('Escribe un nombre','err'); return; }
+    try{
+      const {error}=await sb.from('puestos_trabajo').update({nombre,capacidad}).eq('id',id);
+      if(error)throw error;
+      this.editId=null;
+      toast('✓ Puesto actualizado','ok'); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async crear(){
     const nombre=$('#puNom').value.trim(), capacidad=Math.max(1,parseInt($('#puCap').value)||1);
@@ -1892,7 +1961,7 @@ const Usr = {
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
   paint(){
     const act=this.data.filter(u=>u.activo), baj=this.data.filter(u=>!u.activo);
-    const turnos=(window.Turnos&&Turnos.data)||[], puestos=(window.Puestos&&Puestos.data)||[];
+    const turnos=Turnos.data||[], puestos=Puestos.data||[];
     const card=(u)=>{
       const enc=u.rol==='encargado';
       const selTurno=`<select onchange="Usr.setCampo(${u.id},'turno_id',this.value?Number(this.value):null)" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px">
