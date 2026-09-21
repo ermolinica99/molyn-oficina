@@ -1879,8 +1879,9 @@ const Prodv = {
 
     let turno=0, inTurno=false;
     turO.forEach(t=>{ const i=new Date(t.inicio), f=t.fin?new Date(t.fin):now; turno+=Math.max(0,(f-i)/1000); if(!t.fin)inTurno=true; });
-    let paradas=0,npar=0,pausa=null;
-    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000); paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[i.getHours()]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p; });
+    let paradas=0,npar=0,pausa=null; const porMotivo={};
+    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000); paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[i.getHours()]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p;
+      const mo=porMotivo[p.motivo||'Otro']=porMotivo[p.motivo||'Otro']||{motivo:p.motivo||'Otro',seg:0,n:0}; mo.seg+=_d; mo.n++; });
     const disp=Math.max(0,turno-paradas);
     const lastTimes=[...evO.map(e=>e.ts),...parO.map(p=>p.fin||p.inicio),...turO.map(t=>t.fin||t.inicio)].filter(Boolean).map(x=>new Date(x));
     const lastTs=lastTimes.length?new Date(Math.max(...lastTimes.map(d=>d.getTime()))):null;
@@ -1904,7 +1905,7 @@ const Prodv = {
     if(!pausa && !abierta && (inTurno||turno>0) && idle!=null && idle>15*60)this.alerts.push({tipo:'Sin actividad',msg:o.nombre+' lleva '+fmtDur(idle)+' sin registrar avance',sev:'warn'});
     if(abierta && currentSecs>45*60)this.alerts.push({tipo:'Tarea larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en '+(abierta.sku||abierta.ot||'una tarea'),sev:'warn'});
 
-    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs};
+    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
   },
   fmtUd(s){ s=Math.round(s||0); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); },
   spark(vals,w,h,col,soft){
@@ -2060,7 +2061,24 @@ const Prodv = {
           </div>`;
         }).join(''):'<div class="vacio" style="padding:20px">Sin referencias cerradas hoy</div>'}
       </div></div>`;
-    return `<div style="display:grid;grid-template-columns:1fr 360px;gap:14px;margin-bottom:14px">${trend}${mixCard}</div>`;
+
+    const aggMot={};
+    rows.forEach(r=>(r.porMotivo||[]).forEach(m=>{ const a=aggMot[m.motivo]=aggMot[m.motivo]||{motivo:m.motivo,seg:0,n:0}; a.seg+=m.seg; a.n+=m.n; }));
+    const motivos=Object.values(aggMot).sort((a,b)=>b.seg-a.seg).slice(0,6);
+    const maxSeg=Math.max(1,...motivos.map(m=>m.seg));
+    const motCard=`<div class="card" style="margin-bottom:0">
+      <div class="ch"><div class="t">Motivos de pausa</div><div class="s">A qué se debe el tiempo parado hoy</div></div>
+      <div style="padding:14px 20px;display:flex;flex-direction:column;gap:14px">
+        ${motivos.length?motivos.map(m=>`<div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+              <span style="font-size:12px;font-weight:700">${esc(m.motivo)}</span>
+              <span class="mono" style="margin-left:auto;font-size:13px;font-weight:700">${fmtDur(m.seg)}</span>
+              <span style="font-size:10px;color:var(--muted);font-family:'Archivo Narrow';text-transform:uppercase">· ${m.n}×</span>
+            </div>
+            <div style="height:8px;background:var(--surf2);overflow:hidden"><div style="width:${Math.round(m.seg/maxSeg*100)}%;height:100%;background:${m.motivo==='Preparación'?'var(--blue)':m.motivo==='Retrabajo'?'var(--red)':'var(--terra)'}"></div></div>
+          </div>`).join(''):'<div class="vacio" style="padding:20px">Sin pausas hoy</div>'}
+      </div></div>`;
+    return `<div style="display:grid;grid-template-columns:1fr 320px 320px;gap:14px;margin-bottom:14px">${trend}${mixCard}${motCard}</div>`;
   },
   paintBottom(rows,sel){
     const ord=[...rows].sort((a,b)=>(b.eficiencia||0)-(a.eficiencia||0)||b.hechas-a.hechas);
