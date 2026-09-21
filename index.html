@@ -2201,6 +2201,8 @@ function solaparSeg(iniMs,finMs,intervalos){
 // ============================================================
 //  PRODUCTIVIDAD
 // ============================================================
+// fecha en formato YYYY-MM-DD según el reloj LOCAL (no usar toISOString: convierte a UTC y desplaza el día)
+function ymdLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 const Prodv = {
   mode:'live',
   rangoMode:'dia',
@@ -2233,7 +2235,7 @@ const Prodv = {
   },
   // calcula el rango de fechas real a consultar según Día/Semana/Periodo
   getRango(){
-    const fecha=$('#prodvFecha').value || new Date().toISOString().slice(0,10);
+    const fecha=$('#prodvFecha').value || ymdLocal(new Date());
     $('#prodvFecha').value=fecha;
     const base=new Date(fecha+'T00:00:00');
     if(this.rangoMode==='semana'){
@@ -2269,7 +2271,11 @@ const Prodv = {
       const rango=this.getRango(); this.rangoInfo=rango;
       this.rangoBase=new Date(rango.ini.getFullYear(),rango.ini.getMonth(),rango.ini.getDate());
       const nBuckets=rango.bucketBy==='hora'?24:(Math.floor((rango.fin-rango.ini)/86400000)+1);
-      const ini=rango.ini.toISOString().slice(0,10)+'T00:00:00', fin=rango.fin.toISOString().slice(0,10)+'T23:59:59';
+      // ini/fin como instantes reales (rango.ini ya es medianoche local; fin se lleva al final del día local)
+      // antes se recortaba a la fecha en UTC y se reconstruía como si fuese medianoche UTC, lo que
+      // desplazaba el día consultado en cualquier huso horario distinto de UTC (por eso "Día" salía vacío)
+      const finDia=new Date(rango.fin.getFullYear(),rango.fin.getMonth(),rango.fin.getDate(),23,59,59,999);
+      const ini=rango.ini.toISOString(), fin=finDia.toISOString();
       const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
       const [ops,evs,pars,turs,tsku,roster]=await Promise.all([
         safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
