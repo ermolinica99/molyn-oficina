@@ -905,6 +905,16 @@ const Prod = {
       this.prodMap = {}; this.costeMat={}; prods.forEach(p=>{ this.prodMap[p.sku]=p.nombre||p.sku; this.costeMat[p.sku]=Number(p.coste_material||0)||0; });
       const tsku = await selectWhere('tiempos_sku','sku,mediana_seg,n_unidades',q=>q.eq('vigente',true));
       this.tiempos = {}; tsku.forEach(t=>{ this.tiempos[t.sku]={seg:Number(t.mediana_seg||0)||0, n:Number(t.n_unidades||0)||0}; });
+      // coste por puesto: qué puesto fabrica cada programa (N001-N012) y cuánto cuesta ese puesto (suma de sus trabajadores)
+      this.puestoPrograma={}; this.costePuesto={};
+      try{
+        const [lp,us]=await Promise.all([
+          selectAll('lotes_programa','programa,puesto_id'),
+          selectWhere('usuarios','puesto_id,coste_hora',q=>q.eq('activo',true))
+        ]);
+        lp.forEach(r=>{ if(r.puesto_id) this.puestoPrograma[r.programa]=r.puesto_id; });
+        us.forEach(u=>{ if(u.puesto_id) this.costePuesto[u.puesto_id]=(this.costePuesto[u.puesto_id]||0)+Number((u.coste_hora??CFG.coste_hora_operario)||0); });
+      }catch(e){} // si falta la migración de puestos, se sigue usando el coste por defecto
       await Pers.load(); // cargar categorías de personalización
       this.refs = true;
     }catch(e){ toast('Error cargando referencias: '+(e.message||e),'err'); }
@@ -915,11 +925,19 @@ const Prod = {
   // segundos por unidad para un núcleo: el aprendido si ya hay suficientes uds, si no el valor por defecto
   segPorUdDe(sku){ const t=this.tiempos[sku]; return (t && t.n>=this.TIEMPO_MIN_UDS && t.seg>0)?t.seg:this.TIEMPO_DEFAULT_SEG; },
 
+  // coste/hora real a aplicar a un núcleo: el del puesto que lo fabrica (suma de sus trabajadores) o el por defecto
+  costeHoraDe(sku){
+    const programa=progDe({sku});
+    const puestoId=this.puestoPrograma&&this.puestoPrograma[programa];
+    const cp=puestoId&&this.costePuesto[puestoId];
+    return cp||CFG.coste_hora_operario||0;
+  },
+
   // minutos estimados para fabricar n uds de un núcleo
   minutosDe(sku,n){ return Math.round(this.segPorUdDe(sku)*n/60); },
 
   // coste estimado (mano de obra + material) para fabricar n uds de un núcleo
-  costeDe(sku,n){ const mo=this.segPorUdDe(sku)*(CFG.coste_hora_operario||0)/3600; return (mo+(this.costeMat[sku]||0))*n; },
+  costeDe(sku,n){ const mo=this.segPorUdDe(sku)*this.costeHoraDe(sku)/3600; return (mo+(this.costeMat[sku]||0))*n; },
 
   // ---- leer parte Excel (réplica de leer_parte) ----
   async subirParte(file){
@@ -1648,8 +1666,9 @@ const Conf = {
     try{
       const {data}=await sb.from('config').select('*').eq('id',1).single();
       this.raw=data||{};
-      const {data:lt}=await sb.from('lotes_programa').select('programa,lote');
-      this.lotes={}; (lt||[]).forEach(r=>this.lotes[r.programa]=r.lote);
+      const {data:lt}=await sb.from('lotes_programa').select('programa,lote,puesto_id');
+      this.lotes={}; (lt||[]).forEach(r=>this.lotes[r.programa]={lote:r.lote,puesto_id:r.puesto_id});
+      try{ const {data:ps}=await sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'); this.puestos=ps||[]; }catch(e){ this.puestos=[]; }
       this.loaded=true; this.render();
     }catch(e){ const el=$('#confFields'); if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
   },
@@ -1668,14 +1687,23 @@ const Conf = {
       f('cf_madur','Maduración (días)',c.maduracion??2,'1','')+
       f('cf_fab','Días de fabricación (de lanzar a fabricado)',c.dias_fabricacion??0,'1','');
     const costeInp=$('#cf_coste'); if(costeInp) costeInp.value=c.coste_hora_operario??0;
-    // lotes en 2 columnas
+    // lotes: uno por fila, con lote y puesto que lo fabrica
     const progs=Object.keys(PROG_DESC).sort();
+    const puestos=this.puestos||[];
     const lotesEl=$('#confLotes');
-    if(lotesEl) lotesEl.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px">'+
-      progs.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-        <label style="font-size:13px"><b>${p}</b> · ${esc(PROG_DESC[p]||'')}</label>
-        <input id="lote_${p}" type="number" min="1" value="${this.lotes[p]??(c.lote??10)}" style="width:90px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit">
-      </div>`).join('')+'</div>';
+    if(lotesEl) lotesEl.innerHTML=progs.map(p=>{
+      const info=this.lotes[p]||{};
+      return `<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <label style="font-size:13px;flex:1;min-width:160px"><b>${p}</b> · ${esc(PROG_DESC[p]||'')}</label>
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Lote</span>
+          <input id="lote_${p}" type="number" min="1" value="${info.lote??(c.lote??10)}" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"></div>
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Puesto</span>
+          <select id="puesto_${p}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+            <option value="">Sin asignar</option>
+            ${puestos.map(pu=>`<option value="${pu.id}" ${info.puesto_id===pu.id?'selected':''}>${esc(pu.nombre)}</option>`).join('')}
+          </select></div>
+      </div>`;
+    }).join('');
   },
   async guardarCosteDefecto(){
     try{
@@ -1708,13 +1736,18 @@ const Conf = {
   async saveLotes(){
     try{
       const progs=Object.keys(PROG_DESC);
-      const filas=progs.map(p=>({programa:p,lote:parseInt(document.getElementById('lote_'+p).value)||10}));
+      const filas=progs.map(p=>({
+        programa:p,
+        lote:parseInt(document.getElementById('lote_'+p).value)||10,
+        puesto_id:document.getElementById('puesto_'+p).value?Number(document.getElementById('puesto_'+p).value):null
+      }));
       const {error}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
       if(error)throw error;
-      filas.forEach(f=>LOTES[f.programa]=f.lote);
+      filas.forEach(f=>{ LOTES[f.programa]=f.lote; this.lotes[f.programa]={lote:f.lote,puesto_id:f.puesto_id}; });
       toast('✓ Lotes guardados','ok');
+      Prod.refsPuestos=false; // recarga el mapa programa→puesto la próxima vez que se entre en Producción
       await refrescarMet(true); render();
-    }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
+    }catch(e){ toast('Error al guardar: '+(e.message||e)+' (¿ejecutaste lotes_puesto.sql?)','err'); }
   }
 };
 
@@ -1832,13 +1865,16 @@ const Turnos = {
 //  PUESTOS DE TRABAJO
 // ============================================================
 const Puestos = {
-  data:[], editId:null,
+  data:[], editId:null, trabajadores:[],
   async reload(){
     const el=$('#puestosLista'); if(el) el.innerHTML='<div class="loading">Cargando…</div>';
     try{
-      const {data,error}=await sb.from('puestos_trabajo').select('*').order('nombre');
-      if(error)throw error;
-      this.data=data||[];
+      const [{data,error},{data:us,error:e2}]=await Promise.all([
+        sb.from('puestos_trabajo').select('*').order('nombre'),
+        sb.from('usuarios').select('id,nombre,rol,activo,puesto_id,coste_hora').eq('activo',true).order('nombre')
+      ]);
+      if(error)throw error; if(e2)throw e2;
+      this.data=data||[]; this.trabajadores=us||[];
       this.paint();
       Usr.paint();
     }catch(e){ if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)</div>'; }
@@ -1856,13 +1892,38 @@ const Puestos = {
           <button class="chip" onclick="Puestos.guardarEdicion(${p.id})">Guardar</button>
           <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.editId=null;Puestos.paint()">Cancelar</button>
         </div></div>`;
+      const enPuesto=this.trabajadores.filter(t=>t.puesto_id===p.id);
+      const asignados=enPuesto.length;
+      const costeTotal=enPuesto.reduce((s,t)=>s+Number((t.coste_hora??CFG.coste_hora_operario)||0),0);
+      const chips=this.trabajadores.map(t=>{
+        const on=t.puesto_id===p.id;
+        return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:20px;background:${on?'var(--surf2)':'var(--surf)'};cursor:pointer">
+          <input type="checkbox" ${on?'checked':''} onchange="Puestos.asignarTrabajador(${t.id},this.checked?${p.id}:null)" style="accent-color:var(--terra)">
+          ${esc(t.nombre)}${t.rol==='encargado'?' <span style="color:var(--blue)">· enc.</span>':''}
+        </label>`;
+      }).join('');
       return `<div class="card" style="margin-bottom:8px;${p.activo?'':'opacity:.5'}">
       <div style="display:flex;align-items:center;gap:14px;padding:12px 16px">
         <div style="flex:1"><div style="font-weight:700">${esc(p.nombre)}</div>
-          <div style="font-size:12px;color:var(--muted)">${p.capacidad||1} trabajador${(p.capacidad||1)===1?'':'es'}</div></div>
+          <div style="font-size:12px;color:var(--muted)">Capacidad: ${p.capacidad||1} · asignados: ${asignados}${Auth.esAdmin()&&asignados?' · coste puesto: '+costeTotal.toFixed(2)+'€/h'+(asignados>1?' (x'+asignados+')':''):''}</div></div>
         <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.editId=${p.id};Puestos.paint()">Editar</button>
         <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.toggleActivo(${p.id},${!p.activo})">${p.activo?'Desactivar':'Reactivar'}</button>
-      </div></div>`;}).join('');
+      </div>
+      <div style="padding:0 16px 14px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Trabajadores en este puesto</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${chips||'<span style="font-size:12px;color:var(--muted)">No hay operarios/encargados de planta activos.</span>'}</div>
+      </div>
+      </div>`;}).join('');
+  },
+  async asignarTrabajador(usuarioId,puestoId){
+    try{
+      const {error}=await sb.from('usuarios').update({puesto_id:puestoId}).eq('id',usuarioId);
+      if(error)throw error;
+      const t=this.trabajadores.find(x=>x.id===usuarioId); if(t)t.puesto_id=puestoId;
+      const u=Usr.data.find(x=>x.id===usuarioId); if(u)u.puesto_id=puestoId;
+      toast('✓ Guardado','ok');
+      this.paint(); Usr.paint();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async guardarEdicion(id){
     const nombre=$('#peNom-'+id).value.trim(), capacidad=Math.max(1,parseInt($('#peCap-'+id).value)||1);
@@ -2150,19 +2211,23 @@ const Prodv = {
       const nBuckets=rango.bucketBy==='hora'?24:(Math.floor((rango.fin-rango.ini)/86400000)+1);
       const ini=rango.ini.toISOString().slice(0,10)+'T00:00:00', fin=rango.fin.toISOString().slice(0,10)+'T23:59:59';
       const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
-      const [ops,evs,pars,turs,tsku]=await Promise.all([
-        safe(sb.from('usuarios').select('id,nombre').eq('rol','operario').eq('activo',true).order('nombre'),[]),
+      const [ops,evs,pars,turs,tsku,puestos]=await Promise.all([
+        safe(sb.from('usuarios').select('id,nombre,puesto_id').eq('rol','operario').eq('activo',true).order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,usuario_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
         safe(sb.from('paradas').select('usuario_id,motivo,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('turnos').select('usuario_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
-        safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[])
+        safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[]),
+        safe(sb.from('puestos_trabajo').select('id,nombre'),[])
       ]);
       const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.mediana_seg||t.segundos||t.mediana||0)||0; });
+      const puestosMap={}; puestos.forEach(p=>puestosMap[p.id]=p.nombre);
       const now=new Date();
       this.alerts=[];
       this.hourly=Array.from({length:Math.max(1,nBuckets)},()=>({uds:0,efectivo:0,pausas:0}));
       this.rows=ops.map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
+      this.rows.forEach((r,i)=>{ r.puesto_id=ops[i].puesto_id||null; r.puestoNombre=puestosMap[ops[i].puesto_id]||'Sin puesto'; });
       this.rows.sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
+      this.puestoRows=this.agruparPorPuesto();
       this.lastUpdate=now;
       this.paint();
     }catch(e){ $('#prodvLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
@@ -2226,6 +2291,39 @@ const Prodv = {
     if(abierta && currentSecs>45*60)this.alerts.push({tipo:'Tarea larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en '+(abierta.sku||abierta.ot||'una tarea'),sev:'warn'});
 
     return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
+  },
+  // agrupa las filas por operario (this.rows) en filas por puesto de trabajo, sumando sus métricas
+  agruparPorPuesto(){
+    const grupos={};
+    this.rows.forEach(r=>{
+      const key=r.puesto_id||'sin';
+      const g=grupos[key]=grupos[key]||{id:key,nombre:r.puestoNombre||'Sin puesto',miembros:[],hechas:0,efectivo:0,turno:0,paradas:0,disp:0,retrabajos:0,npar:0,porSkuMap:{}};
+      g.miembros.push(r);
+      g.hechas+=r.hechas; g.efectivo+=r.efectivo; g.turno+=r.turno; g.paradas+=r.paradas; g.disp+=r.disp; g.retrabajos+=r.retrabajos||0; g.npar+=r.npar||0;
+      (r.porSku||[]).forEach(s=>{ const m=g.porSkuMap[s.sku]=g.porSkuMap[s.sku]||{sku:s.sku,n:0,durs:[],total:0,hist:s.hist||0}; m.n+=s.n; m.total+=s.total; m.durs=(m.durs||[]).concat(s.durs||[]); });
+    });
+    const out=Object.values(grupos).map(g=>{
+      const refs=Object.values(g.porSkuMap).map(s=>({...s,mediana:medianaJs(s.durs)})).sort((a,b)=>b.total-a.total);
+      const ritmo=g.efectivo>0?g.hechas/(g.efectivo/3600):0;
+      const ocup=g.turno>0?g.disp/g.turno:0, rend=g.disp>0?g.efectivo/g.disp:0, media=g.hechas?g.efectivo/g.hechas:0;
+      let eficiencia=null;
+      const ponder=refs.filter(s=>s.hist>0&&s.n>0).reduce((acc,s)=>{ acc.real+=s.mediana*s.n; acc.hist+=s.hist*s.n; return acc; },{real:0,hist:0});
+      if(ponder.real>0&&ponder.hist>0) eficiencia=ponder.hist/ponder.real;
+      const calidad=g.hechas>0?Math.max(0,(g.hechas-g.retrabajos)/g.hechas):1;
+      const trabajando=g.miembros.filter(m=>m.estado==='Trabajando');
+      const pausa=g.miembros.filter(m=>m.estado==='En pausa');
+      let estado='Fuera de turno', color='var(--muted)', tint='var(--surf2)', sort=4;
+      if(trabajando.length){ estado='Trabajando'; color='var(--green)'; tint='#E4EDE6'; sort=0; }
+      else if(pausa.length){ estado='En pausa'; color='var(--red)'; tint='#F7E1DC'; sort=1; }
+      else if(g.miembros.some(m=>m.turno>0)){ estado='Sin actividad'; color='var(--blue)'; tint='#E4EDF0'; sort=2; }
+      const detalle=g.miembros.length+' operario'+(g.miembros.length===1?'':'s')+(trabajando.length?' · '+trabajando.length+' trabajando':pausa.length?' · '+pausa.length+' en pausa':'');
+      const ref=trabajando[0]||pausa[0];
+      return {id:g.id,nombre:g.nombre,estado,color,tint,sort,detalle,hechas:g.hechas,efectivo:g.efectivo,turno:g.turno,paradas:g.paradas,disp:g.disp,retrabajos:g.retrabajos,npar:g.npar,
+        ritmo,ocup,rend,media,eficiencia,calidad,porSku:refs,miembros:g.miembros,
+        currentSecs:ref?ref.currentSecs:0,actual:ref?ref.actual:null};
+    });
+    out.sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
+    return out;
   },
   fmtUd(s){ s=Math.round(s||0); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); },
   spark(vals,w,h,col,soft){
@@ -2420,7 +2518,7 @@ const Prodv = {
     const activos=rows.filter(r=>r.estado==='Trabajando').length, pausa=rows.filter(r=>r.estado==='En pausa').length;
     const cols='1fr 96px 74px 74px 96px 84px';
     const head=`<div style="display:grid;grid-template-columns:${cols};padding:9px 20px;background:#F7F5F0;border-bottom:1px solid var(--border);font-size:9px;font-family:'Archivo Narrow';letter-spacing:.6px;text-transform:uppercase;color:var(--muted)">
-      <div>Operario</div><div>Estado</div><div style="text-align:right">Uds</div><div style="text-align:right">Uds/h</div><div style="text-align:right">Vs hist.</div><div style="text-align:right">Efectivo</div></div>`;
+      <div>Puesto</div><div>Estado</div><div style="text-align:right">Uds</div><div style="text-align:right">Uds/h</div><div style="text-align:right">Vs hist.</div><div style="text-align:right">Efectivo</div></div>`;
     const filas=ord.map(r=>{
       const on=String(r.id)===String(sel.id);
       const ef=r.eficiencia||0, efCol=ef>=1?'var(--green)':ef>=0.9?'var(--terra)':ef?'var(--red)':'var(--muted)';
@@ -2441,8 +2539,8 @@ const Prodv = {
     }).join('');
     const lista=`<div class="card" style="margin-bottom:0">
       <div class="ch" style="display:flex;align-items:center;gap:12px">
-        <div><div class="t">Operarios del turno</div><div class="s">Ordenado por rendimiento vs histórico · pulsa una fila para el detalle</div></div>
-        <div class="mono" style="margin-left:auto;font-size:12px;color:var(--muted)">${activos} trabajando · ${pausa} en pausa · ${rows.length} en turno</div>
+        <div><div class="t">Puestos del turno</div><div class="s">Ordenado por rendimiento vs histórico · pulsa una fila para el detalle</div></div>
+        <div class="mono" style="margin-left:auto;font-size:12px;color:var(--muted)">${activos} trabajando · ${pausa} en pausa · ${rows.length} puestos</div>
       </div>${head}${filas}</div>`;
 
     const crono=sel.estado==='Trabajando'||sel.estado==='En pausa';
@@ -2482,6 +2580,14 @@ const Prodv = {
         <div style="display:flex;height:14px;overflow:hidden;background:var(--surf2)">${rep.map(p=>`<div style="width:${(p[1]/tot*100).toFixed(1)}%;height:100%;background:${p[2]}"></div>`).join('')}</div>
         <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">${rep.map(p=>`<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink2)"><i style="width:8px;height:8px;background:${p[2]};display:inline-block"></i>${p[0]} <b class="mono">${fmtDur(p[1])}</b></div>`).join('')}</div>
       </div>
+      ${sel.miembros?`<div style="padding:14px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.8px;margin-bottom:9px">Trabajadores en este puesto (${sel.miembros.length})</div>
+        <div style="display:flex;flex-direction:column;gap:8px">${sel.miembros.map(m=>`<div style="display:flex;align-items:center;gap:10px">
+          <span class="tag" style="border-radius:100px;background:${m.tint};color:${m.color};font-size:10px">${esc(m.estado)}</span>
+          <span style="font-size:13px;font-weight:600;flex:1">${esc(m.nombre)}</span>
+          <span class="mono" style="font-size:12px;color:var(--muted)">${m.hechas} uds</span>
+        </div>`).join('')}</div>
+      </div>`:''}
       <div style="padding:14px 20px">
         <div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.8px;margin-bottom:10px">Referencias trabajadas</div>
         <div style="display:flex;flex-direction:column;gap:11px">${refs||'<div style="font-size:12px;color:var(--muted)">Sin unidades cerradas</div>'}</div>
@@ -2494,15 +2600,16 @@ const Prodv = {
   paint(){
     const rows=this.rows||[];
     if(!rows.length){ $('#prodvLista').innerHTML='<div class="vacio">No hay operarios activos o no hay datos de productividad.</div>'; return; }
-    if(this.selectedId==null||!rows.some(r=>String(r.id)===String(this.selectedId))) this.selectedId=rows[0].id;
-    const sel=rows.find(r=>String(r.id)===String(this.selectedId))||rows[0];
+    const prows=this.puestoRows&&this.puestoRows.length?this.puestoRows:rows;
+    if(this.selectedId==null||!prows.some(r=>String(r.id)===String(this.selectedId))) this.selectedId=prows[0].id;
+    const sel=prows.find(r=>String(r.id)===String(this.selectedId))||prows[0];
     const stamp=this.lastUpdate?this.lastUpdate.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'--:--';
-    $('#prodvLista').innerHTML=this.paintHead(rows,stamp)+(this.mode==='turno'?this.paintTurno(rows):this.paintTrend(rows)+this.paintBottom(rows,sel));
+    $('#prodvLista').innerHTML=this.paintHead(rows,stamp)+(this.mode==='turno'?this.paintTurno(prows):this.paintTrend(rows)+this.paintBottom(prows,sel));
   },
   paintTurno(rows){
-    return `<div class="card"><div class="ch"><div class="t">Resumen del turno</div><div class="s">Ordenado por unidades fabricadas</div></div>
+    return `<div class="card"><div class="ch"><div class="t">Resumen del turno</div><div class="s">Por puesto de trabajo · ordenado por unidades fabricadas</div></div>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Operario</th><th style="padding:11px 14px">Estado</th><th style="padding:11px 14px;text-align:right">Uds</th><th style="padding:11px 14px;text-align:right">Efectivo</th><th style="padding:11px 14px;text-align:right">Pausas</th><th style="padding:11px 14px;text-align:right">Uds/h</th><th style="padding:11px 14px;text-align:right">Vs hist.</th></tr></thead>
+        <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Puesto</th><th style="padding:11px 14px">Estado</th><th style="padding:11px 14px;text-align:right">Uds</th><th style="padding:11px 14px;text-align:right">Efectivo</th><th style="padding:11px 14px;text-align:right">Pausas</th><th style="padding:11px 14px;text-align:right">Uds/h</th><th style="padding:11px 14px;text-align:right">Vs hist.</th></tr></thead>
         <tbody>${[...rows].sort((a,b)=>b.hechas-a.hechas).map(r=>`<tr style="border-bottom:1px solid var(--border);cursor:pointer" onclick='open_operario(${JSON.stringify(r.nombre)},${JSON.stringify(r.porSku)},${r.hechas},${r.efectivo})'>
           <td style="padding:10px 14px;font-weight:700">${esc(r.nombre)}</td><td style="padding:10px 14px"><span class="tag" style="background:${r.tint};color:${r.color}">${esc(r.estado)}</span></td>
           <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700;color:var(--terra)">${r.hechas}</td>
@@ -2855,17 +2962,17 @@ async function open_detalle(sku,nombre){
     // ---- coste estimado (mano de obra + material) · solo visible para administración ----
     let costeHtml='';
     if(Auth.esAdmin()){
-      let costeMat=0, segUd=(window.Prod&&Prod.TIEMPO_DEFAULT_SEG)||270;
+      let costeMat=0, segUd=Prod.TIEMPO_DEFAULT_SEG;
       try{
         const [{data:prodRow},{data:tRow}]=await Promise.all([
           sb.from('productos').select('coste_material').eq('sku',sku).maybeSingle(),
           sb.from('tiempos_sku').select('mediana_seg,n_unidades').eq('sku',sku).eq('vigente',true).maybeSingle()
         ]);
         costeMat=Number(prodRow&&prodRow.coste_material||0)||0;
-        const minUds=(window.Prod&&Prod.TIEMPO_MIN_UDS)||7;
-        if(tRow && Number(tRow.n_unidades||0)>=minUds && Number(tRow.mediana_seg||0)>0) segUd=Number(tRow.mediana_seg);
+        if(tRow && Number(tRow.n_unidades||0)>=Prod.TIEMPO_MIN_UDS && Number(tRow.mediana_seg||0)>0) segUd=Number(tRow.mediana_seg);
       }catch(e){}
-      const costeMO=segUd*(CFG.coste_hora_operario||0)/3600;
+      if(!Prod.refs) await Prod.init(); // asegura tener el mapa de coste por puesto cargado
+      const costeMO=segUd*Prod.costeHoraDe(sku)/3600;
       costeHtml=`<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:16px;padding:12px 14px;background:var(--surf2);border-radius:10px">
         <div style="font-size:11px;color:var(--muted)">Mano de obra<br><b style="font-size:15px;color:var(--ink)">${costeMO.toFixed(2)}€/ud</b></div>
         <div style="font-size:11px;color:var(--muted)">Material<br><span style="display:flex;align-items:center;gap:4px"><input id="costeMatInp" type="number" min="0" step="0.01" value="${costeMat}" style="width:80px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:right;font-family:inherit">€/ud</span></div>
