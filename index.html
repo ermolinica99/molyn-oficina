@@ -372,8 +372,8 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
           <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
             <input id="uNom" placeholder="Nombre y apellido" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:220px"></div>
           <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Rol</div>
-            <select id="uRol" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"><option value="operario">Operario</option><option value="encargado">Encargado</option></select></div>
-          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">PIN</div>
+            <select id="uRol" onchange="Usr.toggleRolForm()" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"><option value="operario">Operario</option><option value="encargado">Encargado</option></select></div>
+          <div id="uPinWrap" style="display:none"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">PIN (para fichar)</div>
             <input id="uPin" placeholder="4 dígitos" maxlength="6" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:110px"></div>
           <button class="chip" onclick="Usr.crear()">Añadir usuario</button>
         </div>
@@ -1912,6 +1912,7 @@ const Puestos = {
           <div style="font-size:12px;color:var(--muted)">Capacidad: ${p.capacidad||1} · asignados: ${asignados}${p.pin?' · PIN '+esc(p.pin):' · sin PIN'}${Auth.esAdmin()&&asignados?' · coste puesto: '+costeTotal.toFixed(2)+'€/h'+(asignados>1?' (x'+asignados+')':''):''}</div></div>
         <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.editId=${p.id};Puestos.paint()">Editar</button>
         <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.toggleActivo(${p.id},${!p.activo})">${p.activo?'Desactivar':'Reactivar'}</button>
+        <button class="chip" style="background:var(--red)" onclick="Puestos.eliminar(${p.id},'${esc(p.nombre).replace(/'/g,"\\'")}')">Eliminar</button>
       </div>
       <div style="padding:0 16px 14px">
         <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Trabajadores en este puesto</div>
@@ -1956,6 +1957,14 @@ const Puestos = {
   async toggleActivo(id,val){
     try{ await sb.from('puestos_trabajo').update({activo:val}).eq('id',id); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async eliminar(id,nombre){
+    if(!confirm('¿Eliminar definitivamente el puesto "'+nombre+'"? No se puede deshacer.'))return;
+    try{
+      const {error}=await sb.from('puestos_trabajo').delete().eq('id',id);
+      if(error)throw error;
+      toast('✓ Puesto eliminado','ok'); this.reload();
+    }catch(e){ toast('No se pudo eliminar (¿tiene trabajadores, programas o fichajes asociados?): '+(e.message||e),'err'); }
   }
 };
 
@@ -2012,40 +2021,73 @@ const Usr = {
   async bajaOfi(id){ if(!confirm('¿Quitar el acceso a este usuario?'))return;
     try{ await sb.from('usuarios_oficina').update({activo:false,estado:'rechazado'}).eq('id',id); toast('Acceso retirado','ok'); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  editId:null,
+  toggleRolForm(){ $('#uPinWrap').style.display = $('#uRol').value==='encargado' ? '' : 'none'; },
   paint(){
     const act=this.data.filter(u=>u.activo), baj=this.data.filter(u=>!u.activo);
     const turnos=Turnos.data||[];
     const card=(u)=>{
       const enc=u.rol==='encargado';
+      if(this.editId===u.id) return `<div class="card" style="margin-bottom:10px;padding:14px 18px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+            <input id="ueNom-${u.id}" value="${esc(u.nombre)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;width:200px"></div>
+          ${enc?`<div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">PIN</div>
+            <input id="uePin-${u.id}" value="${esc(u.pin||'')}" maxlength="6" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;width:110px"></div>`:''}
+          <button class="chip" onclick="Usr.guardarEdicion(${u.id})">Guardar</button>
+          <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.editId=null;Usr.paint()">Cancelar</button>
+        </div></div>`;
       const selTurno=`<select onchange="Usr.setCampo(${u.id},'turno_id',this.value?Number(this.value):null)" style="padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:12px">
         <option value="">Sin turno</option>${turnos.map(t=>`<option value="${t.id}" ${u.turno_id===t.id?'selected':''}>${esc(t.nombre)}</option>`).join('')}</select>`;
       return `<div class="card" style="border-left:4px solid ${enc?'var(--blue)':'var(--terra)'};margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap">
           <div style="width:42px;height:42px;border-radius:50%;background:${enc?'#E4EDF0':'#F5E7DF'};color:${enc?'var(--blue)':'var(--terra)'};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px">${esc((u.nombre||'?')[0].toUpperCase())}</div>
           <div style="flex:1;min-width:160px"><div style="font-weight:700;font-size:15px">${esc(u.nombre)}</div>
-            <div style="font-size:12px;color:var(--muted)">${enc?'Encargado':'Operario'} · PIN ${esc(u.pin)}</div></div>
+            <div style="font-size:12px;color:var(--muted)">${enc?'Encargado · PIN '+esc(u.pin||'—'):'Operario'}</div></div>
           ${selTurno}
           <div style="display:flex;align-items:center;gap:4px"><input type="number" step="0.01" placeholder="€/h" value="${u.coste_hora??''}" onchange="Usr.setCampo(${u.id},'coste_hora',this.value?parseFloat(this.value):null)" style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;text-align:right;font-size:12px"><span style="font-size:11px;color:var(--muted)">€/h</span></div>
+          <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.editId=${u.id};Usr.paint()">Editar</button>
           ${u.activo?`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.baja(${u.id},'${esc(u.nombre)}')">Dar de baja</button>`
             :`<button class="chip" style="background:var(--green)" onclick="Usr.alta(${u.id})">Reactivar</button>`}
+          <button class="chip" style="background:var(--red)" onclick="Usr.eliminar(${u.id},'${esc(u.nombre).replace(/'/g,"\\'")}')">Eliminar</button>
         </div></div>`;
     };
     $('#usrLista').innerHTML=
       this.paintOficina()+
       `<div style="font-size:16px;font-weight:800;margin-bottom:4px">Operarios y encargados (planta)</div>
-       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Fichan con PIN en la app de planta</div>`+
+       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Los encargados fichan con PIN personal; los operarios fichan desde el puesto (sin PIN propio)</div>`+
       `<div style="font-size:11px;font-weight:700;color:var(--terra);letter-spacing:.8px;margin:4px 0 8px">ACTIVOS (${act.length})</div>`+
       (act.length?act.map(card).join(''):'<div class="vacio">Aún no hay usuarios. Añade el primero arriba.</div>')+
       (baj.length?`<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin:16px 0 8px">DE BAJA (${baj.length})</div>`+baj.map(card).join(''):'');
   },
   async crear(){
-    const nombre=$('#uNom').value.trim(), rol=$('#uRol').value, pin=$('#uPin').value.trim();
+    const nombre=$('#uNom').value.trim(), rol=$('#uRol').value;
+    const pin=(rol==='encargado')?$('#uPin').value.trim():'';
     if(!nombre){ toast('Escribe el nombre','err'); return; }
-    if(!/^\d{4,6}$/.test(pin)){ toast('El PIN debe tener 4-6 dígitos','err'); return; }
-    if(this.data.some(u=>u.pin===pin&&u.activo)){ toast('Ya hay un usuario activo con ese PIN','err'); return; }
-    try{ const {error}=await sb.from('usuarios').insert({nombre,pin,rol,activo:true}); if(error)throw error;
+    if(rol==='encargado'){
+      if(!/^\d{4,6}$/.test(pin)){ toast('El PIN debe tener 4-6 dígitos','err'); return; }
+      if(this.data.some(u=>u.pin===pin&&u.activo)){ toast('Ya hay un usuario activo con ese PIN','err'); return; }
+    }
+    try{ const {error}=await sb.from('usuarios').insert({nombre,pin:pin||null,rol,activo:true}); if(error)throw error;
       $('#uNom').value='';$('#uPin').value='';
       toast('✓ Usuario creado','ok'); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async guardarEdicion(id){
+    const u=this.data.find(x=>x.id===id); if(!u)return;
+    const nombre=$('#ueNom-'+id).value.trim();
+    if(!nombre){ toast('Escribe un nombre','err'); return; }
+    const row={nombre};
+    if(u.rol==='encargado'){
+      const pin=$('#uePin-'+id).value.trim();
+      if(!/^\d{4,6}$/.test(pin)){ toast('El PIN debe tener 4-6 dígitos','err'); return; }
+      row.pin=pin;
+    }
+    try{
+      const {error}=await sb.from('usuarios').update(row).eq('id',id);
+      if(error)throw error;
+      this.editId=null;
+      toast('✓ Usuario actualizado','ok'); this.reload();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async baja(id,nombre){ if(!confirm('¿Dar de baja a '+nombre+'?'))return;
@@ -2053,6 +2095,14 @@ const Usr = {
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
   async alta(id){ try{ await sb.from('usuarios').update({activo:true}).eq('id',id); toast('Usuario reactivado','ok'); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  async eliminar(id,nombre){
+    if(!confirm('¿Eliminar definitivamente a '+nombre+'? No se puede deshacer.'))return;
+    try{
+      const {error}=await sb.from('usuarios').delete().eq('id',id);
+      if(error)throw error;
+      toast('✓ Usuario eliminado','ok'); this.reload();
+    }catch(e){ toast('No se pudo eliminar (¿tiene historial asociado?): '+(e.message||e),'err'); }
+  },
   // guarda al vuelo turno_id / puesto_id / coste_hora de un operario de planta
   async setCampo(id,campo,valor){
     try{
