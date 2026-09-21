@@ -899,6 +899,7 @@ const Prod = {
   modelosMap:{}, prodMap:{}, costeMat:{}, tiempos:{}, refs:false,
 
   async init(){
+    await this.cargarCostesPuesto(); // barato: siempre al día, aunque el resto ya esté cacheado
     if(this.refs) return;
     try{
       const modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo');
@@ -907,19 +908,23 @@ const Prod = {
       this.prodMap = {}; this.costeMat={}; prods.forEach(p=>{ this.prodMap[p.sku]=p.nombre||p.sku; this.costeMat[p.sku]=Number(p.coste_material||0)||0; });
       const tsku = await selectWhere('tiempos_sku','sku,mediana_seg,n_unidades',q=>q.eq('vigente',true));
       this.tiempos = {}; tsku.forEach(t=>{ this.tiempos[t.sku]={seg:Number(t.mediana_seg||0)||0, n:Number(t.n_unidades||0)||0}; });
-      // coste por puesto: qué puesto fabrica cada programa (N001-N012) y cuánto cuesta ese puesto (suma de sus trabajadores)
-      this.puestoPrograma={}; this.costePuesto={};
-      try{
-        const [lp,us]=await Promise.all([
-          selectAll('lotes_programa','programa,puesto_id'),
-          selectWhere('usuarios','puesto_id,coste_hora',q=>q.eq('activo',true))
-        ]);
-        lp.forEach(r=>{ if(r.puesto_id) this.puestoPrograma[r.programa]=r.puesto_id; });
-        us.forEach(u=>{ if(u.puesto_id) this.costePuesto[u.puesto_id]=(this.costePuesto[u.puesto_id]||0)+Number((u.coste_hora??CFG.coste_hora_operario)||0); });
-      }catch(e){} // si falta la migración de puestos, se sigue usando el coste por defecto
       await Pers.load(); // cargar categorías de personalización
       this.refs = true;
     }catch(e){ toast('Error cargando referencias: '+(e.message||e),'err'); }
+  },
+
+  // coste por puesto: qué puesto fabrica cada programa (N001-N012) y cuánto cuesta ese puesto (suma de sus trabajadores)
+  // NO se cachea de forma permanente: cambia cada vez que se asigna/quita un trabajador o se edita su coste
+  async cargarCostesPuesto(){
+    this.puestoPrograma={}; this.costePuesto={};
+    try{
+      const [lp,us]=await Promise.all([
+        selectAll('lotes_programa','programa,puesto_id'),
+        selectWhere('usuarios','puesto_id,coste_hora',q=>q.eq('activo',true))
+      ]);
+      lp.forEach(r=>{ if(r.puesto_id) this.puestoPrograma[r.programa]=r.puesto_id; });
+      us.forEach(u=>{ if(u.puesto_id) this.costePuesto[u.puesto_id]=(this.costePuesto[u.puesto_id]||0)+Number((u.coste_hora??CFG.coste_hora_operario)||0); });
+    }catch(e){} // si falta la migración de puestos, se sigue usando el coste por defecto
   },
 
   TIEMPO_MIN_UDS:7, TIEMPO_DEFAULT_SEG:270, // 4min 30s por defecto hasta tener al menos 7 uds fabricadas
@@ -1747,7 +1752,6 @@ const Conf = {
       if(error)throw error;
       filas.forEach(f=>{ LOTES[f.programa]=f.lote; this.lotes[f.programa]={lote:f.lote,puesto_id:f.puesto_id}; });
       toast('✓ Lotes guardados','ok');
-      Prod.refsPuestos=false; // recarga el mapa programa→puesto la próxima vez que se entre en Producción
       await refrescarMet(true); render();
     }catch(e){ toast('Error al guardar: '+(e.message||e)+' (¿ejecutaste lotes_puesto.sql?)','err'); }
   }
@@ -3000,7 +3004,7 @@ async function open_detalle(sku,nombre){
         costeMat=Number(prodRow&&prodRow.coste_material||0)||0;
         if(tRow && Number(tRow.n_unidades||0)>=Prod.TIEMPO_MIN_UDS && Number(tRow.mediana_seg||0)>0) segUd=Number(tRow.mediana_seg);
       }catch(e){}
-      if(!Prod.refs) await Prod.init(); // asegura tener el mapa de coste por puesto cargado
+      await Prod.cargarCostesPuesto(); // siempre al día, aunque Prod ya esté inicializado de antes
       const costeMO=segUd*Prod.costeHoraDe(sku)/3600;
       costeHtml=`<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:16px;padding:12px 14px;background:var(--surf2);border-radius:10px">
         <div style="font-size:11px;color:var(--muted)">Mano de obra<br><b style="font-size:15px;color:var(--ink)">${costeMO.toFixed(2)}€/ud</b></div>
