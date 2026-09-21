@@ -179,11 +179,11 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navAlta" onclick="nav('alta')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Alta masiva</span></button>
     <button class="nav" id="navConf" onclick="toggleConfMenu()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configuración</span><span id="confMenuArrow" style="margin-left:auto;font-size:11px">▸</span></button>
     <div id="confSubmenu" style="display:none;flex-direction:column;gap:1px;padding:2px 0 4px 34px">
-      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cDiario')">Diario / Personalizado</button>
-      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cTurnos')">Turnos de trabajo</button>
-      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cPuestos')">Puestos de trabajo</button>
-      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cUsr')">Usuarios y costes</button>
-      <button class="nav sub" style="font-size:12px;padding:8px 10px" onclick="irConf('cLotes')">Lotes de fabricación</button>
+      <button class="nav sub" id="navcDiario" style="font-size:12px;padding:8px 10px" onclick="nav('cDiario')">Diario / Personalizado</button>
+      <button class="nav sub" id="navcTurnos" style="font-size:12px;padding:8px 10px" onclick="nav('cTurnos')">Turnos de trabajo</button>
+      <button class="nav sub" id="navcPuestos" style="font-size:12px;padding:8px 10px" onclick="nav('cPuestos')">Puestos de trabajo</button>
+      <button class="nav sub" id="navcUsr" style="font-size:12px;padding:8px 10px" onclick="nav('cUsr')">Usuarios y costes</button>
+      <button class="nav sub" id="navcLotes" style="font-size:12px;padding:8px 10px" onclick="nav('cLotes')">Lotes de fabricación</button>
     </div>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
   </aside>
@@ -298,108 +298,92 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       </div>
     </div>
 
-    <div class="content" id="view-conf" style="display:none">
-      <div class="h1">Configuración</div>
-      <div class="h1sub">Parámetros del sistema, turnos, puestos, usuarios y lotes</div>
+    <div class="content" id="view-cDiario" style="display:none">
+      <div class="h1">Diario / Personalizado</div>
+      <div class="h1sub">Umbral, histórico y maduración que deciden si un núcleo va a stock o es a medida</div>
+      <div class="card" style="margin-top:14px;padding:8px 4px"><div id="confFields"></div></div>
+      <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveDiario()">Guardar</button>
+      <div style="height:20px"></div>
+    </div>
 
-      <div class="card accSec" style="margin-top:14px">
-        <div class="ch accHead" onclick="Conf.toggleSec('cDiario')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
-          <div style="flex:1"><div class="t">1 · Diario / Personalizado</div><div class="s">Umbral, histórico y maduración que deciden si un núcleo va a stock o es a medida</div></div>
-          <span id="accArrow-cDiario" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
+    <div class="content" id="view-cTurnos" style="display:none">
+      <div class="h1">Turnos de trabajo</div>
+      <div class="h1sub">Horarios que se pueden asignar a los operarios de planta</div>
+      <div class="card" style="margin-top:14px;padding:16px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+            <input id="tuNom" placeholder="Ej. Turno mañana" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:180px"></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Tipo</div>
+            <select id="tuTipo" onchange="Turnos.toggleTipoForm()" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+              <option value="continuo">Continuo (un tramo)</option>
+              <option value="partido">Partido (dos tramos)</option>
+            </select></div>
         </div>
-        <div id="accBody-cDiario" style="padding:8px 4px"><div id="confFields"></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLbl1Ini">Inicio</div>
+            <input id="tuIni" type="time" value="06:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLbl1Fin">Fin</div>
+            <input id="tuFin" type="time" value="14:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+          <div id="tuBloque2" style="display:none;gap:8px;align-items:flex-end">
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Inicio tramo 2</div>
+              <input id="tuIni2" type="time" value="15:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Fin tramo 2</div>
+              <input id="tuFin2" type="time" value="19:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+          </div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLblDesc">Descanso (min)</div>
+            <input id="tuDesc" type="number" min="0" value="30" style="width:90px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+          <button class="chip" onclick="Turnos.crear()">Añadir turno</button>
+        </div>
+        <div id="turnosLista"></div>
       </div>
+    </div>
 
-      <div class="card accSec" style="margin-top:14px">
-        <div class="ch accHead" onclick="Conf.toggleSec('cTurnos')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
-          <div style="flex:1"><div class="t">2 · Turnos de trabajo</div><div class="s">Horarios que se pueden asignar a los operarios de planta</div></div>
-          <span id="accArrow-cTurnos" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
+    <div class="content" id="view-cPuestos" style="display:none">
+      <div class="h1">Puestos de trabajo</div>
+      <div class="h1sub">Secciones de la fábrica y cuántos trabajadores caben en cada una</div>
+      <div class="card" style="margin-top:14px;padding:16px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+            <input id="puNom" placeholder="Ej. Corte" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:200px"></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Trabajadores</div>
+            <input id="puCap" type="number" min="1" value="1" style="width:90px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
+          <button class="chip" onclick="Puestos.crear()">Añadir puesto</button>
         </div>
-        <div id="accBody-cTurnos" style="display:none;padding:16px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
-            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
-              <input id="tuNom" placeholder="Ej. Turno mañana" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:180px"></div>
-            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Tipo</div>
-              <select id="tuTipo" onchange="Turnos.toggleTipoForm()" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
-                <option value="continuo">Continuo (un tramo)</option>
-                <option value="partido">Partido (dos tramos)</option>
-              </select></div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
-            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLbl1Ini">Inicio</div>
-              <input id="tuIni" type="time" value="06:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
-            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLbl1Fin">Fin</div>
-              <input id="tuFin" type="time" value="14:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
-            <div id="tuBloque2" style="display:none;gap:8px;align-items:flex-end">
-              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Inicio tramo 2</div>
-                <input id="tuIni2" type="time" value="15:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
-              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Fin tramo 2</div>
-                <input id="tuFin2" type="time" value="19:00" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
-            </div>
-            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="tuLblDesc">Descanso (min)</div>
-              <input id="tuDesc" type="number" min="0" value="30" style="width:90px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
-            <button class="chip" onclick="Turnos.crear()">Añadir turno</button>
-          </div>
-          <div id="turnosLista"></div>
-        </div>
+        <div id="puestosLista"></div>
       </div>
+    </div>
 
-      <div class="card accSec" style="margin-top:14px">
-        <div class="ch accHead" onclick="Conf.toggleSec('cPuestos')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
-          <div style="flex:1"><div class="t">3 · Puestos de trabajo</div><div class="s">Secciones de la fábrica y cuántos trabajadores caben en cada una</div></div>
-          <span id="accArrow-cPuestos" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
-        </div>
-        <div id="accBody-cPuestos" style="display:none;padding:16px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
-            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
-              <input id="puNom" placeholder="Ej. Corte" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:200px"></div>
-            <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Trabajadores</div>
-              <input id="puCap" type="number" min="1" value="1" style="width:90px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"></div>
-            <button class="chip" onclick="Puestos.crear()">Añadir puesto</button>
-          </div>
-          <div id="puestosLista"></div>
-        </div>
-      </div>
-
-      <div class="card accSec" style="margin-top:14px">
-        <div class="ch accHead" onclick="Conf.toggleSec('cUsr')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
-          <div style="flex:1"><div class="t">4 · Usuarios y costes</div><div class="s">Accesos de oficina, plantilla de planta, y coste por hora de cada uno</div></div>
-          <span id="accArrow-cUsr" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
-        </div>
-        <div id="accBody-cUsr" style="display:none;padding:16px">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border:1px solid var(--border);border-radius:9px;margin-bottom:18px;background:var(--surf2)">
-            <label style="font-size:14px">Coste por defecto (para quien no tenga uno propio)</label>
-            <div style="display:flex;align-items:center;gap:6px">
-              <input id="cf_coste" type="number" step="0.01" value="0" style="width:100px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;text-align:right;font-family:inherit">
-              <span style="font-size:12px;color:var(--muted)">€/h</span>
-              <button class="chip" style="background:var(--ink);padding:8px 12px;font-size:12px" onclick="Conf.guardarCosteDefecto()">Guardar</button>
-            </div>
-          </div>
-          <div class="card" style="margin-bottom:16px">
-            <div class="ch"><div class="t">Nuevo usuario de planta</div></div>
-            <div style="padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
-                <input id="uNom" placeholder="Nombre y apellido" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:220px"></div>
-              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Rol</div>
-                <select id="uRol" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"><option value="operario">Operario</option><option value="encargado">Encargado</option></select></div>
-              <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">PIN</div>
-                <input id="uPin" placeholder="4 dígitos" maxlength="6" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:110px"></div>
-              <button class="chip" onclick="Usr.crear()">Añadir usuario</button>
-            </div>
-          </div>
-          <div id="usrLista"></div>
+    <div class="content" id="view-cUsr" style="display:none">
+      <div class="h1">Usuarios y costes</div>
+      <div class="h1sub">Accesos de oficina, plantilla de planta, y coste por hora de cada uno</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border:1px solid var(--border);border-radius:9px;margin:14px 0 18px;background:var(--surf2)">
+        <label style="font-size:14px">Coste por defecto (para quien no tenga uno propio)</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input id="cf_coste" type="number" step="0.01" value="0" style="width:100px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;text-align:right;font-family:inherit">
+          <span style="font-size:12px;color:var(--muted)">€/h</span>
+          <button class="chip" style="background:var(--ink);padding:8px 12px;font-size:12px" onclick="Conf.guardarCosteDefecto()">Guardar</button>
         </div>
       </div>
-
-      <div class="card accSec" style="margin-top:14px">
-        <div class="ch accHead" onclick="Conf.toggleSec('cLotes')" style="cursor:pointer;display:flex;align-items:center;gap:12px">
-          <div style="flex:1"><div class="t">5 · Lotes de fabricación</div><div class="s">Unidades que se fabrican por lote de cada programa</div></div>
-          <span id="accArrow-cLotes" style="margin-left:auto;font-size:12px;color:var(--muted)">▾</span>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ch"><div class="t">Nuevo usuario de planta</div></div>
+        <div style="padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+            <input id="uNom" placeholder="Nombre y apellido" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:220px"></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Rol</div>
+            <select id="uRol" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit"><option value="operario">Operario</option><option value="encargado">Encargado</option></select></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">PIN</div>
+            <input id="uPin" placeholder="4 dígitos" maxlength="6" style="padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;width:110px"></div>
+          <button class="chip" onclick="Usr.crear()">Añadir usuario</button>
         </div>
-        <div id="accBody-cLotes" style="display:none;padding:8px 16px 4px"><div id="confLotes"></div></div>
       </div>
+      <div id="usrLista"></div>
+    </div>
 
-      <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.save()">Guardar configuración</button>
+    <div class="content" id="view-cLotes" style="display:none">
+      <div class="h1">Lotes de fabricación</div>
+      <div class="h1sub">Unidades que se fabrican por lote de cada programa</div>
+      <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confLotes"></div></div>
+      <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveLotes()">Guardar lotes</button>
       <div style="height:20px"></div>
     </div>
 
@@ -854,52 +838,56 @@ function svgIco(n,c){
 }
 function go2(){nav('ot')}
 
-// desplegable de Configuración en el menú lateral
+// desplegable de Configuración en el menú lateral: solo abre/cierra el submenú
 function toggleConfMenu(){
   const sm=$('#confSubmenu'), ar=$('#confMenuArrow');
   const abierto=sm.style.display==='flex';
-  if(abierto){ sm.style.display='none'; if(ar)ar.textContent='▸'; }
-  else{ nav('conf'); sm.style.display='flex'; if(ar)ar.textContent='▾'; }
-}
-// ir directamente a una sección de Configuración desde el submenú del sidebar
-function irConf(secId){
-  nav('conf');
-  const sm=$('#confSubmenu'), ar=$('#confMenuArrow'); if(sm){sm.style.display='flex';} if(ar)ar.textContent='▾';
-  ['cDiario','cTurnos','cPuestos','cUsr','cLotes'].forEach(id=>{
-    const body=document.getElementById('accBody-'+id), arrow=document.getElementById('accArrow-'+id);
-    if(body){ body.style.display=(id===secId)?'':'none'; }
-    if(arrow) arrow.textContent=(id===secId)?'▴':'▾';
-  });
-  const target=document.getElementById('accBody-'+secId);
-  if(target) target.scrollIntoView({behavior:'smooth',block:'start'});
+  sm.style.display=abierto?'none':'flex';
+  if(ar) ar.textContent=abierto?'▸':'▾';
+  if(!abierto && !CONF_SUBVIEWS.some(v=>document.getElementById('view-'+v).style.display!=='none')){
+    nav('cDiario'); // primera vez: abre la primera sección por defecto
+  }
 }
 
 
 // ============================================================
 //  PRODUCCIÓN
 // ============================================================
-const ADMIN_VIEWS = new Set(['conf','apr','alta','pers']);
+const ADMIN_VIEWS = new Set(['apr','alta','pers']);
 
+const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes'];
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',conf:'Configuración',inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',conf:'navConf',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
-  if(ADMIN_VIEWS.has(v) && !Auth.esAdmin()){
+  const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',
+    cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',
+    inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+  if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  ['dash','prod','partes','ot','conf','inv','prodv','tsku','apr','alta','pers'].forEach(k=>{
+  const todas=['dash','prod','partes','ot','inv','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
+  todas.forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
   });
+  // resalta el submenú de Configuración (y el propio "Configuración") si toca
+  const esConf=CONF_SUBVIEWS.includes(v);
+  const navConf=$('#navConf'); if(navConf) navConf.classList.toggle('on',esConf);
+  CONF_SUBVIEWS.forEach(k=>{ const nb=document.getElementById('nav'+k); if(nb) nb.classList.toggle('on',v===k); });
+  if(esConf){ const sm=$('#confSubmenu'),ar=$('#confMenuArrow'); if(sm)sm.style.display='flex'; if(ar)ar.textContent='▾'; }
   $('.crumb').innerHTML='MOLYN&nbsp;&nbsp;/&nbsp;&nbsp;<b>'+titulos[v]+'</b>';
   if(v==='prod') Prod.init();
   if(v==='partes') Partes.reload();
   if(v==='ot') OT.reload();
-  if(v==='conf'){ Conf.load(); Turnos.reload(); Puestos.reload(); Usr.reload(); }
+  if(v==='cDiario') Conf.load();
+  if(v==='cLotes') Conf.load();
+  if(v==='cTurnos') Turnos.reload();
+  if(v==='cPuestos') Puestos.reload();
+  if(v==='cUsr'){ Conf.load(); Turnos.reload(); Puestos.reload(); Usr.reload(); }
   if(v==='pers') Pers.load();
   if(v==='inv') Inv.paint();
   if(v==='prodv') Prodv.startAuto();
-  else if(window.Prodv && Prodv.stopAuto) Prodv.stopAuto();
+  else Prodv.stopAuto();
   if(v==='tsku') Tsku.reload();
   if(v==='apr') Apr.reload();
 }
@@ -1656,14 +1644,6 @@ document.getElementById('otSearch').addEventListener('input',()=>OT.paint());
 // ============================================================
 const Conf = {
   raw:{}, loaded:false,
-  // abre/cierra una sección del acordeón (las demás no se tocan: se pueden tener varias abiertas)
-  toggleSec(id){
-    const body=document.getElementById('accBody-'+id), arrow=document.getElementById('accArrow-'+id);
-    if(!body) return;
-    const open=body.style.display!=='none';
-    body.style.display=open?'none':'';
-    if(arrow) arrow.textContent=open?'▾':'▴';
-  },
   async load(){
     try{
       const {data}=await sb.from('config').select('*').eq('id',1).single();
@@ -1671,7 +1651,7 @@ const Conf = {
       const {data:lt}=await sb.from('lotes_programa').select('programa,lote');
       this.lotes={}; (lt||[]).forEach(r=>this.lotes[r.programa]=r.lote);
       this.loaded=true; this.render();
-    }catch(e){ $('#confFields').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+    }catch(e){ const el=$('#confFields'); if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
   },
   render(){
     const c=this.raw;
@@ -1681,7 +1661,8 @@ const Conf = {
         <input id="${id}" type="${step?'number':'text'}" ${step?`step="${step}"`:''} value="${esc(val)}" style="width:120px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;text-align:right;font-family:inherit">
         ${suf?`<span style="font-size:12px;color:var(--muted);width:34px">${suf}</span>`:'<span style="width:34px"></span>'}
       </div></div>`;
-    $('#confFields').innerHTML=
+    const fieldsEl=$('#confFields');
+    if(fieldsEl) fieldsEl.innerHTML=
       f('cf_dias','Días de histórico (con consumo)',c.dias_historico??5,'1','')+
       f('cf_umbral','Umbral personalizado (consumo/día mínimo)',c.umbral_semanal??2,'0.1','')+
       f('cf_madur','Maduración (días)',c.maduracion??2,'1','')+
@@ -1689,7 +1670,8 @@ const Conf = {
     const costeInp=$('#cf_coste'); if(costeInp) costeInp.value=c.coste_hora_operario??0;
     // lotes en 2 columnas
     const progs=Object.keys(PROG_DESC).sort();
-    $('#confLotes').innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px">'+
+    const lotesEl=$('#confLotes');
+    if(lotesEl) lotesEl.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px">'+
       progs.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
         <label style="font-size:13px"><b>${p}</b> · ${esc(PROG_DESC[p]||'')}</label>
         <input id="lote_${p}" type="number" min="1" value="${this.lotes[p]??(c.lote??10)}" style="width:90px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit">
@@ -1704,7 +1686,7 @@ const Conf = {
       toast('✓ Coste por defecto guardado','ok');
     }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
   },
-  async save(){
+  async saveDiario(){
     try{
       const val=id=>document.getElementById(id).value;
       const cfg={
@@ -1713,22 +1695,24 @@ const Conf = {
         umbral_semanal:parseFloat(val('cf_umbral'))||2,
         maduracion:parseInt(val('cf_madur'))||2,
         dias_fabricacion:parseInt(val('cf_fab'))||0,
-        coste_hora_operario:parseFloat(val('cf_coste'))||0,
-        lote:this.raw.lote??10,
         updated_at:new Date().toISOString()
       };
       const {error}=await sb.from('config').update(cfg).eq('id',1);
       if(error)throw error;
-      // lotes
+      CFG.dias_historico=cfg.dias_historico;CFG.umbral_semanal=cfg.umbral_semanal;CFG.maduracion=cfg.maduracion;
+      Object.assign(this.raw,cfg);
+      toast('✓ Guardado','ok');
+      await refrescarMet(true); render();
+    }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
+  },
+  async saveLotes(){
+    try{
       const progs=Object.keys(PROG_DESC);
       const filas=progs.map(p=>({programa:p,lote:parseInt(document.getElementById('lote_'+p).value)||10}));
-      const {error:e2}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
-      if(e2)throw e2;
-      // actualizar en memoria y recalcular dashboard
-      CFG.dias_historico=cfg.dias_historico;CFG.umbral_semanal=cfg.umbral_semanal;CFG.maduracion=cfg.maduracion;LOTE_DFLT=cfg.lote;CFG.coste_hora_operario=cfg.coste_hora_operario;
+      const {error}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
+      if(error)throw error;
       filas.forEach(f=>LOTES[f.programa]=f.lote);
-      this.raw=cfg;
-      toast('✓ Configuración guardada','ok');
+      toast('✓ Lotes guardados','ok');
       await refrescarMet(true); render();
     }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
   }
