@@ -1422,7 +1422,7 @@ const Prod = {
           <div class="qr" id="q_${u.id}"></div>
           <div class="sku">${esc(u.sku)}</div>
           <div class="ot">${esc(u.ot)}</div>
-          ${(u.tipo==='personalizado'&&u.parte_ref)?`<div class="parte">Parte ${esc(u.parte_ref)}</div>`:''}
+          ${u.parte_ref?`<div class="parte">Parte ${esc(u.parte_ref)}</div>`:''}
           <div class="fechas">
             <div><div class="lbl">Lanzamiento</div><div class="val">${fmt(lanz)}</div></div>
             <div style="text-align:right"><div class="lbl">Disponible (teórica)</div><div class="val">${fmt(disp)}</div></div>
@@ -3231,8 +3231,16 @@ async function guardarCosteMaterial(sku,costeMO){
 async function anularOTPorNumero(ot,now){
   now=now||new Date().toISOString();
   await sb.from('reservas').delete().eq('ot',ot);
-  await sb.from('unidades').delete().eq('ot',ot);
-  await sb.from('ordenes').update({estado:'anulada',cerrada_at:now}).eq('ot',ot);
+  // respeta lo que ya esté fabricado (o consumido): solo se borran las unidades pendientes.
+  // si queda algo fabricado, la OT se cierra con esa cantidad en vez de anularse del todo.
+  const {data:uds}=await sb.from('unidades').select('id,estado').eq('ot',ot);
+  const fabricadas=(uds||[]).filter(u=>u.estado==='stock'||u.estado==='consumida').length;
+  await sb.from('unidades').delete().eq('ot',ot).eq('estado','pendiente');
+  if(fabricadas>0){
+    await sb.from('ordenes').update({estado:'cerrada',cantidad:fabricadas,cerrada_at:now}).eq('ot',ot);
+  }else{
+    await sb.from('ordenes').update({estado:'anulada',cerrada_at:now}).eq('ot',ot);
+  }
 }
 
 // ---- arranque ----
