@@ -892,6 +892,26 @@ function nav(v){
   else Prodv.stopAuto();
   if(v==='tsku') Tsku.reload();
   if(v==='apr') Apr.reload();
+  startViewAuto(v);
+}
+
+// refresco automático (cada 30s) de las pantallas de solo lectura, para que no haga
+// falta pulsar "Actualizar" si cambia algo desde Planta o desde otra sesión de Oficina.
+// Producción, Configuración y Alta masiva quedan fuera para no perder lo que se esté editando.
+const AUTO_REFRESH_VIEWS={
+  dash: async()=>{ await refrescarMet(true); render(); },
+  partes: ()=>Partes.reload(),
+  ot: ()=>OT.reload(),
+  apr: ()=>Apr.reload(),
+  tsku: ()=>Tsku.reload(),
+  inv: async()=>{ await refrescarMet(true); Inv.paint(); },
+};
+let _viewAutoTimer=null;
+function stopViewAuto(){ if(_viewAutoTimer){ clearInterval(_viewAutoTimer); _viewAutoTimer=null; } }
+function startViewAuto(v){
+  stopViewAuto();
+  const fn=AUTO_REFRESH_VIEWS[v];
+  if(fn) _viewAutoTimer=setInterval(fn,30000);
 }
 
 const Prod = {
@@ -2219,7 +2239,7 @@ const Prodv = {
   selectedId:null,
   timer:null,
   loading:false,
-  autoMs:30000,
+  autoMs:5000,
   startAuto(){
     this.stopAuto();
     this.reload();
