@@ -170,6 +170,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navPartes" onclick="nav('partes')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Partes lanzados</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
     <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
+    <button class="nav" id="navCatalogo" onclick="nav('catalogo')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>Producto</span></button>
     <div class="grp">Análisis</div>
     <button class="nav" id="navProdv" onclick="nav('prodv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10l4 4"/><circle cx="12" cy="12" r="10"/></svg><span>Productividad</span></button>
     <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempo por núcleo</span></button>
@@ -184,6 +185,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <button class="nav sub" id="navcPuestos" style="font-size:12px;padding:8px 10px" onclick="nav('cPuestos')">Puestos de trabajo</button>
       <button class="nav sub" id="navcUsr" style="font-size:12px;padding:8px 10px" onclick="nav('cUsr')">Usuarios y costes</button>
       <button class="nav sub" id="navcLotes" style="font-size:12px;padding:8px 10px" onclick="nav('cLotes')">Lotes de fabricación</button>
+      <button class="nav sub" id="navcSinNucleo" style="font-size:12px;padding:8px 10px" onclick="nav('cSinNucleo')">Colchones sin núcleo</button>
     </div>
     <div class="conn" id="conn"><b>Conectando…</b>Supabase</div>
   </aside>
@@ -230,6 +232,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
             <input id="addModelo" placeholder="Añadir modelo (SKU)…" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
             <input id="addModeloN" type="number" min="1" value="1" style="width:70px;padding:9px;border:1px solid var(--border);border-radius:9px;text-align:center;font-family:inherit">
             <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Prod.addModelo()">Añadir</button>
+            <button class="chip" style="background:#EEE4F2;color:#7A3E8C" onclick="Prod.abrirPicker()" title="Buscar en el catálogo de producto">🔍 Catálogo</button>
           </div>
         </div>
         <div class="card">
@@ -389,6 +392,19 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div style="height:20px"></div>
     </div>
 
+    <div class="content" id="view-cSinNucleo" style="display:none">
+      <div class="h1">Colchones sin núcleo</div>
+      <div class="h1sub">Categorías para modelos que no llevan núcleo (colchonetas, etc.). Se asignan con doble clic sobre el modelo en Producción o en Producto.</div>
+      <div class="card" style="margin-top:14px;padding:16px">
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:14px">
+          <div style="flex:1;max-width:320px"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Nombre</div>
+            <input id="sinNucNom" placeholder="Ej. Colchoneta" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit" onkeydown="if(event.key==='Enter')NucCat.crearCat()"></div>
+          <button class="chip" onclick="NucCat.crearCat()">Añadir categoría</button>
+        </div>
+        <div id="sinNucLista"></div>
+      </div>
+    </div>
+
     <div class="content" id="view-inv" style="display:none">
       <div class="h1">Inventario físico</div>
       <div class="h1sub">Da de alta o baja unidades del almacén (rotura, recuento, ajustes)</div>
@@ -396,6 +412,24 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         <input id="invSearch" placeholder="Buscar núcleo por SKU o nombre…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div id="invLista" class="ngrid"></div>
+    </div>
+
+    <div class="content" id="view-catalogo" style="display:none">
+      <div class="h1">Producto</div>
+      <div class="h1sub">Catálogo de colchones (modelos) y su núcleo asociado. Doble clic en una línea para vincular/editar su núcleo.</div>
+      <div style="display:flex;gap:10px;margin:12px 0;flex-wrap:wrap;align-items:center">
+        <input id="catBuscar" placeholder="Buscar por SKU, nombre o núcleo…" oninput="Catalogo.filtro=this.value;Catalogo.render()" style="flex:1;min-width:220px;max-width:340px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+        <select id="catProg" onchange="Catalogo.render()" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit"><option value="">Todos los programas</option></select>
+        <div class="seg" id="catTabs">
+          <button class="on" data-tab="todos" onclick="Catalogo.setTab('todos')">Todos</button>
+          <button data-tab="conNucleo" onclick="Catalogo.setTab('conNucleo')">Con núcleo</button>
+          <button data-tab="sinAsignar" onclick="Catalogo.setTab('sinAsignar')">Sin asignar</button>
+          <button data-tab="sinNucleo" onclick="Catalogo.setTab('sinNucleo')">Sin núcleo</button>
+        </div>
+        <div style="flex:1"></div>
+        <div class="mono" id="catCount" style="color:var(--muted);font-weight:600"></div>
+      </div>
+      <div class="card"><div id="catLista"></div></div>
     </div>
 
     <div class="content" id="view-prodv" style="display:none">
@@ -492,6 +526,7 @@ let CFG={dias_historico:5,umbral_semanal:2.0,maduracion:2,coste_hora_operario:0}
 let LOTES={}; let LOTE_DFLT=10;
 let MET={};        // sku -> métrica
 let FILTRO='todos';
+let MEDIDA='';
 let KPI=null;      // 'stock'|'bajo'|'neg'
 let PROG=null;
 
@@ -590,20 +625,31 @@ async function toggleForzado(sku,val){
 // ---- filtros ----
 function setKpi(k){KPI=(KPI===k)?null:k;PROG=null;render()}
 function setProg(p){PROG=(PROG===p)?null:p;KPI=null;render()}
-function clearF(){KPI=null;PROG=null;FILTRO='todos';render()}
+function clearF(){KPI=null;PROG=null;FILTRO='todos';MEDIDA='';const ms=$('#medidaSel');if(ms)ms.value='';render()}
 function setFiltro(f){FILTRO=f;render()}
+function setMedida(m){MEDIDA=m;render()}
+
+// medida legible a partir del SKU (ej. N001160X200EXTRA FIRM -> "160x200")
+function medidaDe(sku){
+  const s=(sku||'').replace(/^N\d{3}/,'');
+  const m=s.match(/(\d{2,3})[xX](\d{3})/);
+  return m? m[1]+'x'+m[2] : null;
+}
 
 function filtrar(){
   let rs=Object.values(MET);
   const q=$('#search').value.toLowerCase().trim();
-  if(q)return rs.filter(b=>b.sku.toLowerCase().includes(q)||(b.nombre||'').toLowerCase().includes(q)).sort((a,b)=>a.sku.localeCompare(b.sku));
-  if(KPI==='stock'){rs=rs.filter(b=>(b.disp+b.madurando)>0).sort((a,b)=>(b.disp+b.madurando)-(a.disp+a.madurando)||a.sku.localeCompare(b.sku));return rs}
-  if(KPI==='bajo'){rs=rs.filter(b=>b.bajoMin).sort((a,b)=>a.sku.localeCompare(b.sku));return rs}
-  if(KPI==='neg'){rs=rs.filter(b=>b.saldo<0).sort((a,b)=>a.saldo-b.saldo);return rs}
-  if(PROG){rs=rs.filter(b=>b.prog===PROG).sort((a,b)=>(a.bajoMin?0:1)-(b.bajoMin?0:1)||a.sku.localeCompare(b.sku));return rs}
-  if(FILTRO==='bajo')rs=rs.filter(b=>b.bajoMin);
-  else if(FILTRO==='diarios')rs=rs.filter(b=>!b.personalizado);
-  else if(FILTRO==='pers')rs=rs.filter(b=>b.personalizado);
+  if(q) rs=rs.filter(b=>b.sku.toLowerCase().includes(q)||(b.nombre||'').toLowerCase().includes(q));
+  else if(KPI==='stock') rs=rs.filter(b=>(b.disp+b.madurando)>0);
+  else if(KPI==='bajo') rs=rs.filter(b=>b.bajoMin);
+  else if(KPI==='neg') rs=rs.filter(b=>b.saldo<0);
+  else if(PROG) rs=rs.filter(b=>b.prog===PROG);
+  else if(FILTRO==='bajo') rs=rs.filter(b=>b.bajoMin);
+  else if(FILTRO==='diarios') rs=rs.filter(b=>!b.personalizado);
+  else if(FILTRO==='pers') rs=rs.filter(b=>b.personalizado);
+  if(MEDIDA) rs=rs.filter(b=>medidaDe(b.sku)===MEDIDA);
+  if(KPI==='neg') return rs.sort((a,b)=>a.saldo-b.saldo);
+  if(KPI==='stock') return rs.sort((a,b)=>(b.disp+b.madurando)-(a.disp+a.madurando)||a.sku.localeCompare(b.sku));
   return rs.sort((a,b)=>(a.bajoMin?0:1)-(b.bajoMin?0:1)||a.sku.localeCompare(b.sku));
 }
 
@@ -791,9 +837,18 @@ function render(){
   $('#gridTitle').textContent=titulo;
   const rs=filtrar();
   $('#gridCount').textContent=rs.length;
-  $('#gridFilter').innerHTML=(KPI||PROG)
+  const medidas=[...new Set(Object.values(MET).map(b=>medidaDe(b.sku)).filter(Boolean))].sort((a,b)=>{
+    const [aw,al]=a.split('x').map(Number), [bw,bl]=b.split('x').map(Number);
+    return aw-bw||al-bl;
+  });
+  const medidaSel=`<select id="medidaSel" onchange="setMedida(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:13px;margin-left:8px">
+    <option value="">Todas las medidas</option>
+    ${medidas.map(m=>`<option value="${m}" ${MEDIDA===m?'selected':''}>${m}</option>`).join('')}
+  </select>`;
+  $('#gridFilter').innerHTML=((KPI||PROG)
     ? `<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="clearF()">✕ Quitar filtro</button>`
-    : `<div class="seg">${[['todos','Todos'],['bajo','Bajo mínimo'],['diarios','Diarios'],['pers','Personalizados']].map(([k,t])=>`<button class="${FILTRO===k?'on':''}" onclick="setFiltro('${k}')">${t}</button>`).join('')}</div>`;
+    : `<div class="seg">${[['todos','Todos'],['bajo','Bajo mínimo'],['diarios','Diarios'],['pers','Personalizados']].map(([k,t])=>`<button class="${FILTRO===k?'on':''}" onclick="setFiltro('${k}')">${t}</button>`).join('')}</div>`)
+    + medidaSel;
 
   // tarjetas
   $('#grid').innerHTML=rs.length?rs.map(cardN).join(''):'<div class="vacio">No hay núcleos que cumplan este filtro.</div>';
@@ -857,17 +912,17 @@ function toggleConfMenu(){
 // ============================================================
 const ADMIN_VIEWS = new Set(['apr','alta','pers']);
 
-const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes'];
+const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes','cSinNucleo'];
 function nav(v){
   const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',
-    cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',
-    inv:'Inventario físico',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+    cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',cSinNucleo:'Colchones sin núcleo',
+    inv:'Inventario físico',catalogo:'Producto',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',catalogo:'navCatalogo',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  const todas=['dash','prod','partes','ot','inv','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
+  const todas=['dash','prod','partes','ot','inv','catalogo','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
   todas.forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
@@ -886,8 +941,10 @@ function nav(v){
   if(v==='cTurnos') Turnos.reload();
   if(v==='cPuestos') Puestos.reload();
   if(v==='cUsr'){ Conf.load(); Turnos.reload(); Puestos.reload(); Usr.reload(); }
+  if(v==='cSinNucleo') NucCat.load();
   if(v==='pers') Pers.load();
   if(v==='inv') Inv.paint();
+  if(v==='catalogo') Catalogo.load();
   if(v==='prodv') Prodv.startAuto();
   else Prodv.stopAuto();
   if(v==='tsku') Tsku.reload();
@@ -905,6 +962,7 @@ const AUTO_REFRESH_VIEWS={
   apr: ()=>Apr.reload(),
   tsku: ()=>Tsku.reload(),
   inv: async()=>{ await refrescarMet(true); Inv.paint(); },
+  catalogo: ()=>Catalogo.load(),
 };
 let _viewAutoTimer=null;
 // va a Partes lanzados y resalta la tarjeta del parte indicado (desde Órdenes de trabajo)
@@ -937,7 +995,7 @@ const Prod = {
     await this.cargarCostesPuesto(); // barato: siempre al día, aunque el resto ya esté cacheado
     if(this.refs) return;
     try{
-      const modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo');
+      const modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id');
       this.modelosMap = {}; modelos.forEach(m=>this.modelosMap[m.sku_pf]=m);
       const prods = await selectAll('productos','sku,nombre,coste_material');
       this.prodMap = {}; this.costeMat={}; prods.forEach(p=>{ this.prodMap[p.sku]=p.nombre||p.sku; this.costeMat[p.sku]=Number(p.coste_material||0)||0; });
@@ -1018,9 +1076,10 @@ const Prod = {
       this.lineas=filas.map(f=>{ const m=this.modelosMap[f.sku_pf];
         const desc=f.descParte||(m?m.nombre:'')||'';
         return {sku_pf:f.sku_pf, cant:f.cant, descParte:desc, descBase:desc,
-          nombre:m?m.nombre:'', medida:m?m.medida:'', sku_nucleo:m?m.sku_nucleo:null, configs:[]};});
+          nombre:m?m.nombre:'', medida:m?m.medida:'', sku_nucleo:m?m.sku_nucleo:null,
+          sin_nucleo:m?!!m.sin_nucleo:false, categoria_sin_nucleo_id:m?m.categoria_sin_nucleo_id:null, configs:[]};});
       $('#prodSub').textContent = num?('Parte '+num+' · '+this.lineas.length+' líneas'):(this.lineas.length+' líneas');
-      const faltan=[...new Set(this.lineas.filter(l=>!l.sku_nucleo).map(l=>l.sku_pf))];
+      const faltan=[...new Set(this.lineas.filter(l=>!l.sku_nucleo && !l.sin_nucleo).map(l=>l.sku_pf))];
       $('#prodAviso').innerHTML = faltan.length?
         `<div style="background:#F7EDDF;color:#8a5a1e;border-left:4px solid #D9963C;border-radius:9px;padding:10px 14px;margin:10px 0;font-size:13px">⚠️ ${faltan.length} modelos sin núcleo asignado: ${faltan.slice(0,8).map(esc).join(', ')}${faltan.length>8?'…':''}</div>`:'';
       await this.recompute();
@@ -1060,18 +1119,19 @@ const Prod = {
   render(){
     // modelos
     const mrows=this.lineas.map((l,i)=>{
-      const sinNuc=!l.sku_nucleo;
+      const faltaNuc=!l.sku_nucleo && !l.sin_nucleo;
       // descripción con las configuraciones aplicadas
       const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
       const desc=(l.descBase||l.descParte||l.nombre||'')+cfgTxt;
-      return `<div style="display:flex;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);align-items:center;${sinNuc?'background:#FDF6EF':''}">
-        <input type="checkbox" class="mchk" data-i="${i}" style="width:16px;height:16px;accent-color:var(--terra)">
-        <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-size:12px;font-weight:700${sinNuc?';color:var(--red)':''}">${esc(l.sku_pf)}</div>
+      const nucCell=l.sku_nucleo?esc(l.sku_nucleo):(l.sin_nucleo?('🚫 '+esc(NucCat.nombreDe(l.categoria_sin_nucleo_id)||'Sin núcleo')):'— sin núcleo');
+      return `<div ondblclick="Prod.editarNucleoLinea(${i})" title="Doble clic para vincular/editar el núcleo de este modelo" style="display:flex;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer;${faltaNuc?'background:#FDF6EF':(l.sin_nucleo?'background:var(--surf2)':'')}">
+        <input type="checkbox" class="mchk" data-i="${i}" onclick="event.stopPropagation()" style="width:16px;height:16px;accent-color:var(--terra)">
+        <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-size:12px;font-weight:700${faltaNuc?';color:var(--red)':''}">${esc(l.sku_pf)}</div>
           <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(desc)}">${esc(desc)}</div></div>
-        <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono'">${l.sku_nucleo?esc(l.sku_nucleo):'— sin núcleo'}</div>
+        <div style="font-size:11px;color:${l.sin_nucleo?'var(--pur)':'var(--muted)'};font-family:'JetBrains Mono'">${nucCell}</div>
         <div style="text-align:center"><div style="font-size:8px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow'">Cant.</div>
-          <input type="number" min="0" value="${l.cant}" data-i="${i}" class="mcant" style="width:56px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:center;font-family:inherit"></div>
-        <button class="chip" style="background:#EEE4F2;color:#7A3E8C;padding:8px 10px" title="Dividir por configuración" onclick="Prod.abrirConfig(${i})">⚙</button>
+          <input type="number" min="0" value="${l.cant}" data-i="${i}" class="mcant" onclick="event.stopPropagation()" style="width:56px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:center;font-family:inherit"></div>
+        <button class="chip" style="background:#EEE4F2;color:#7A3E8C;padding:8px 10px" title="Dividir por configuración" onclick="event.stopPropagation();Prod.abrirConfig(${i})">⚙</button>
       </div>`;
     }).join('');
     $('#prodModelos').innerHTML = this.lineas.length?
@@ -1137,8 +1197,43 @@ const Prod = {
     const m=this.modelosMap[sku];
     if(!m){ toast('Ese modelo no existe','err'); return; }
     const n=Math.max(1,parseInt($('#addModeloN').value)||1);
-    this.lineas.push({sku_pf:sku,cant:n,descParte:m.nombre||'',descBase:m.nombre||'',nombre:m.nombre||'',medida:m.medida||'',sku_nucleo:m.sku_nucleo,configs:[]});
-    $('#addModelo').value='';$('#addModeloN').value=1; this.recompute();
+    this.addModeloDesde(m,n);
+    $('#addModelo').value='';$('#addModeloN').value=1;
+  },
+  // añade una línea al parte a partir de un modelo (usado por addModelo, el picker y la pestaña Producto)
+  addModeloDesde(m,n){
+    n=Math.max(1,n||1);
+    this.lineas.push({sku_pf:m.sku_pf,cant:n,descParte:m.nombre||'',descBase:m.nombre||'',nombre:m.nombre||'',medida:m.medida||'',
+      sku_nucleo:m.sku_nucleo||null,sin_nucleo:!!m.sin_nucleo,categoria_sin_nucleo_id:m.categoria_sin_nucleo_id||null,configs:[]});
+    this.recompute();
+  },
+  // ventana emergente para buscar un modelo en el catálogo y añadirlo al parte
+  abrirPicker(){
+    abrirModal('Buscar modelo','Elige un modelo del catálogo para añadirlo al parte');
+    Catalogo.load().then(()=>{
+      $('#modalBody').innerHTML=`<input id="pickerBuscar" placeholder="Buscar por SKU o nombre…" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;margin-bottom:10px">
+        <div id="pickerLista" style="max-height:50vh;overflow:auto"></div>`;
+      const pintar=()=>{
+        const q=($('#pickerBuscar').value||'').toLowerCase();
+        const rs=Catalogo.rows.filter(m=>!q||m.sku_pf.toLowerCase().includes(q)||String(m.nombre||'').toLowerCase().includes(q)).slice(0,80);
+        $('#pickerLista').innerHTML=rs.map(m=>`<div onclick="Prod.addModeloDesde(Catalogo.map['${esc(m.sku_pf)}'],1);cerrarModal();toast('✓ Añadido: ${esc(m.sku_pf)}','ok')" style="padding:9px 10px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;gap:10px;align-items:center">
+          <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-weight:700;font-size:12px">${esc(m.sku_pf)}</div><div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.nombre||'')}</div></div>
+          <div style="font-family:'JetBrains Mono';font-size:11px;color:${m.sku_nucleo?'var(--muted)':(m.sin_nucleo?'var(--pur)':'var(--red)')}">${m.sku_nucleo?esc(m.sku_nucleo):(m.sin_nucleo?'sin núcleo':'sin asignar')}</div>
+        </div>`).join('')||'<div class="vacio">Sin resultados</div>';
+      };
+      pintar();
+      $('#pickerBuscar').addEventListener('input',pintar);
+      $('#pickerBuscar').focus();
+    });
+  },
+  // abre el editor de núcleo de una línea concreta del parte (doble clic)
+  editarNucleoLinea(i){
+    const l=this.lineas[i]; if(!l)return;
+    abrirEditorNucleoModal(l.sku_pf,(m)=>{
+      // por si la misma línea se dividió en varias (por configuración), actualiza todas las que compartan sku_pf
+      this.lineas.forEach(x=>{ if(x.sku_pf===m.sku_pf){ x.sku_nucleo=m.sku_nucleo; x.sin_nucleo=m.sin_nucleo; x.categoria_sin_nucleo_id=m.categoria_sin_nucleo_id; }});
+      this.recompute();
+    });
   },
 
   // ---- dividir una línea por configuración (etiquetas, asas, enrollado…) ----
@@ -1248,15 +1343,15 @@ const Prod = {
         otByNuc[sku]=ot;
         nucRows.push({ot,sku,nombre,cant:n,tipo:this.tipo[sku]||'stock'});
       }
-      const {bA,bB,bC}=this.repartirFifo(pools,otByNuc);
-      const _bA=JSON.parse(JSON.stringify(bA)),_bB=JSON.parse(JSON.stringify(bB)),_bC=JSON.parse(JSON.stringify(bC));
+      const {bA,bB,bC,bD}=this.repartirFifo(pools,otByNuc);
+      const _bA=JSON.parse(JSON.stringify(bA)),_bB=JSON.parse(JSON.stringify(bB)),_bC=JSON.parse(JSON.stringify(bC)),_bD=JSON.parse(JSON.stringify(bD));
       const res=[];
       [[bA,'disponible'],[bB,'maduracion'],[bC,'pendiente']].forEach(([blk,name])=>{
         blk.forEach(x=>{ if(x.nucleo) res.push({parte_ref:this.parteNum||null,sku:x.nucleo,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:name}); });
       });
       if(res.length){ let e3=(await sb.from('reservas').insert(res)).error; if(e3)throw e3; }
       // documento de parte + etiquetas QR
-      this.imprimirParte(nucRows,_bA,_bB,_bC);
+      this.imprimirParte(nucRows,_bA,_bB,_bC,_bD);
       this.imprimirEtiquetas(nuevos);
       // limpiar
       this.lineas=[];this.cant={};this.tipo={};this.manual={};this.manualTipo={};this.parteNum='';
@@ -1316,24 +1411,26 @@ const Prod = {
     return out;
   },
   repartirFifo(pools,otByNuc){
-    const bA=[],bB=[],bC=[];
+    const bA=[],bB=[],bC=[],bD=[];
     const espDate=new Date(Date.now()+((CFG.dias_fabricacion||0)+CFG.maduracion)*86400000).toISOString();
     this.lineas.forEach(l=>{ if(l.cant<=0)return;
       let rest=l.cant;
       const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
       const base={sku_pf:l.sku_pf,desc:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,nucleo:l.sku_nucleo};
+      // marcado explícitamente "sin núcleo": va aparte, no pasa por el reparto FIFO de núcleos
+      if(l.sin_nucleo){ bD.push({...base,cant:rest}); return; }
       const p=(l.sku_nucleo&&pools[l.sku_nucleo])?pools[l.sku_nucleo]:{disp:[],madur:[],fabri:[]};
       while(rest>0&&p.disp.length){ const g=p.disp[0],t=Math.min(rest,g.n); bA.push({...base,ot:g.ot,cant:t}); g.n-=t;rest-=t; if(g.n<=0)p.disp.shift(); }
       while(rest>0&&p.madur.length){ const g=p.madur[0],t=Math.min(rest,g.n); bB.push({...base,ot:g.ot,cant:t,dispDate:g.dispDate}); g.n-=t;rest-=t; if(g.n<=0)p.madur.shift(); }
       while(rest>0&&p.fabri.length){ const g=p.fabri[0],t=Math.min(rest,g.n); bC.push({...base,ot:g.ot,cant:t,dispDate:g.dispDate}); g.n-=t;rest-=t; if(g.n<=0)p.fabri.shift(); }
       if(rest>0){ const ot=l.sku_nucleo?(otByNuc[l.sku_nucleo]||''):''; bC.push({...base,ot,cant:rest,dispDate:l.sku_nucleo?espDate:null}); }
     });
-    return {bA,bB,bC};
+    return {bA,bB,bC,bD};
   },
 
 
   // ---- documento de PARTE de fabricación imprimible ----
-  imprimirParte(nucRows, bA, bB, bC){
+  imprimirParte(nucRows, bA, bB, bC, bD){
     const ref=this.parteNum||'—';
     const fecha=new Date().toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
     const css=`<style>
@@ -1390,9 +1487,17 @@ const Prod = {
     const h1=hojaMod('Parte · Modelos con núcleo DISPONIBLE','Se puede fabricar ya (OT indicada).',bA,false);
     const h2=hojaMod('Parte · Modelos EN MADURACIÓN','El núcleo ya está fabricado pero aún no disponible.',bB,true);
     const h3=hojaMod('Parte · Modelos PENDIENTES de fabricar','Se ha lanzado / está en curso la OT indicada.',bC,true);
+    // hoja aparte para los modelos marcados como "sin núcleo" (colchonetas, etc.): no requieren fabricar núcleo
+    const h4=(()=>{
+      const arr=bD||[]; if(!arr.length)return'';
+      const t=arr.reduce((s,x)=>s+x.cant,0);
+      const rows=arr.map(x=>`<tr><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td class="n">${x.cant}</td></tr>`).join('');
+      return `<div class="pb"></div><h1>Parte · Colchones SIN NÚCLEO</h1><div class="meta">No requieren fabricación de núcleo. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
+        <table><tr><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="2">TOTAL</td><td class="n">${t}</td></tr></table>`;
+    })();
     const w=window.open('','_blank');
     if(!w||!w.document){ toast('⚠️ El navegador bloqueó la ventana de impresión del parte. Permite las ventanas emergentes para imprimir.','err'); return; }
-    w.document.write(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}
+    w.document.write(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}${h4}
       <script>setTimeout(()=>window.print(),500);<\/script></body></html>`);
     w.document.close();
   },
@@ -3218,6 +3323,205 @@ const Pers = {
   async bajar(id){ const i=this.cats.findIndex(c=>c.id===id); if(i<0||i>=this.cats.length-1)return; await this._swap(this.cats[i],this.cats[i+1]); },
   async _swap(a,b){ try{ await Promise.all([sb.from('config_categorias').update({orden:b.orden}).eq('id',a.id),sb.from('config_categorias').update({orden:a.orden}).eq('id',b.id)]); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } }
 };
+
+// ============================================================
+//  CATEGORÍAS DE "SIN NÚCLEO" (colchonetas, etc.) — Configuración
+// ============================================================
+const NucCat = {
+  cats:[],
+  async load(){
+    try{
+      const {data,error}=await sb.from('categorias_sin_nucleo').select('*').eq('activo',true).order('nombre');
+      if(error)throw error;
+      this.cats=data||[];
+    }catch(e){ this.cats=[]; }
+    this.render();
+  },
+  nombreDe(id){ if(!id)return''; const c=this.cats.find(c=>c.id==id); return c?c.nombre:''; },
+  render(){
+    const el=$('#sinNucLista'); if(!el)return;
+    if(!this.cats.length){ el.innerHTML='<div class="vacio">Aún no hay categorías. Crea la primera arriba (ej. "Colchoneta").</div>'; return; }
+    el.innerHTML=this.cats.map(c=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;font-weight:600">${esc(c.nombre)}</div>
+        <button class="chip" style="background:var(--red);padding:6px 10px" onclick="NucCat.borrarCat(${c.id},'${esc(c.nombre)}')">Borrar</button>
+      </div>`).join('');
+  },
+  async crearCat(){
+    if(!Auth.esAdmin()){ toast('No tienes permisos','err'); return; }
+    const inp=$('#sinNucNom'); const nombre=(inp.value||'').trim(); if(!nombre)return;
+    try{ await sb.from('categorias_sin_nucleo').insert({nombre,activo:true}); inp.value=''; toast('✓ Categoría creada','ok'); this.load(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async borrarCat(id,nom){
+    if(!Auth.esAdmin()){ toast('No tienes permisos','err'); return; }
+    if(!confirm('¿Borrar la categoría "'+nom+'"? Los modelos que la tenían seguirán marcados como "sin núcleo" pero sin categoría, hasta que la vuelvas a asignar.'))return;
+    try{
+      await sb.from('modelos').update({categoria_sin_nucleo_id:null}).eq('categoria_sin_nucleo_id',id);
+      await sb.from('categorias_sin_nucleo').delete().eq('id',id);
+      toast('Categoría borrada','ok'); this.load();
+      if(Catalogo.loaded) Catalogo.load();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  }
+};
+
+// ============================================================
+//  PRODUCTO — catálogo de modelos (colchones) y su núcleo
+// ============================================================
+const Catalogo = {
+  rows:[], map:{}, loaded:false, filtro:'', tab:'todos',
+
+  async load(){
+    const el=$('#catLista'); if(el && !this.loaded) el.innerHTML='<div class="loading">Cargando…</div>';
+    try{
+      const [modelos]=await Promise.all([ selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id') ]);
+      await NucCat.load();
+      this.rows=modelos;
+      this.map={}; modelos.forEach(m=>this.map[m.sku_pf]=m);
+      this.loaded=true;
+      this.fillProgFilter();
+      this.render();
+    }catch(e){ if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+
+  progDeModelo(m){ return m.sku_nucleo?progDe({sku:m.sku_nucleo}):null; },
+
+  fillProgFilter(){
+    const sel=$('#catProg'); if(!sel)return;
+    const progs=[...new Set(this.rows.map(m=>this.progDeModelo(m)).filter(Boolean))].sort();
+    const cur=sel.value;
+    sel.innerHTML='<option value="">Todos los programas</option>'+progs.map(p=>`<option value="${p}">${p}</option>`).join('');
+    sel.value=cur;
+  },
+
+  setTab(t){ this.tab=t; document.querySelectorAll('#catTabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); this.render(); },
+
+  render(){
+    const el=$('#catLista'); if(!el)return;
+    const q=(this.filtro||'').toLowerCase();
+    const prog=$('#catProg')?$('#catProg').value:'';
+    let rs=this.rows.filter(m=>{
+      if(q && !(m.sku_pf.toLowerCase().includes(q)||String(m.nombre||'').toLowerCase().includes(q)||String(m.sku_nucleo||'').toLowerCase().includes(q))) return false;
+      if(prog && this.progDeModelo(m)!==prog) return false;
+      if(this.tab==='conNucleo' && !m.sku_nucleo) return false;
+      if(this.tab==='sinAsignar' && (m.sku_nucleo||m.sin_nucleo)) return false;
+      if(this.tab==='sinNucleo' && !m.sin_nucleo) return false;
+      return true;
+    }).sort((a,b)=>a.sku_pf.localeCompare(b.sku_pf));
+    if($('#catCount')) $('#catCount').textContent=rs.length+' modelo(s)';
+    if(!rs.length){ el.innerHTML='<div class="vacio">Sin resultados.</div>'; return; }
+    el.innerHTML=`<div style="max-height:64vh;overflow:auto">`
+      +`<div style="display:flex;gap:10px;padding:8px 16px;background:var(--surf2);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0"><span style="flex:1">Modelo</span><span style="width:170px">Núcleo</span><span style="width:110px"></span></div>`
+      +rs.map(m=>{
+        const estado = m.sku_nucleo ? `<span style="color:var(--muted)">${esc(m.sku_nucleo)}</span>`
+          : (m.sin_nucleo ? `<span style="color:var(--pur)">🚫 ${esc(NucCat.nombreDe(m.categoria_sin_nucleo_id)||'Sin núcleo')}</span>` : `<span style="color:var(--red)">— sin asignar</span>`);
+        return `<div ondblclick="Catalogo.editarNucleo('${esc(m.sku_pf)}')" title="Doble clic para vincular/editar núcleo" style="display:flex;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer">
+          <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-size:12px;font-weight:700">${esc(m.sku_pf)}</div>
+            <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.nombre||'')}${m.medida?' · '+esc(m.medida):''}</div></div>
+          <div style="width:170px;font-family:'JetBrains Mono';font-size:12px">${estado}</div>
+          <div style="width:110px;text-align:right"><button class="chip" style="background:var(--surf2);color:var(--ink);padding:7px 10px;font-size:12px" onclick="event.stopPropagation();Catalogo.addAProduccion('${esc(m.sku_pf)}')">+ Producción</button></div>
+        </div>`;
+      }).join('')+`</div>`;
+  },
+
+  addAProduccion(sku_pf){
+    const m=this.map[sku_pf]; if(!m){ toast('Modelo no encontrado','err'); return; }
+    Prod.addModeloDesde(m,1);
+    nav('prod');
+    toast('✓ Añadido a Producción: '+sku_pf,'ok');
+  },
+
+  editarNucleo(sku_pf){
+    const m=this.map[sku_pf]; if(!m)return;
+    abrirEditorNucleoModal(sku_pf,(merged)=>{ Object.assign(this.map[sku_pf],merged); this.render(); });
+  }
+};
+
+// ---- editor compartido para vincular/crear/quitar el núcleo de un modelo (doble clic en Producción o Producto) ----
+let _nucEditorCb=null;
+async function abrirEditorNucleoModal(sku_pf, onSaved){
+  if(!Auth.esAdmin()){ toast('No tienes permisos para editar el núcleo de un modelo','err'); return; }
+  _nucEditorCb=onSaved;
+  const m=(Catalogo.map&&Catalogo.map[sku_pf])||Prod.modelosMap[sku_pf]||{sku_pf};
+  await NucCat.load();
+  abrirModal('Vincular núcleo',sku_pf+(m.nombre?' · '+m.nombre:''));
+  const catOpts=NucCat.cats.map(c=>`<option value="${c.id}" ${m.categoria_sin_nucleo_id==c.id?'selected':''}>${esc(c.nombre)}</option>`).join('');
+  $('#modalBody').innerHTML=`
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="modoNuc" value="existente" ${m.sku_nucleo?'checked':''}> Vincular a un núcleo que ya existe</label>
+      <div id="modoExistente" style="padding-left:26px;display:${m.sku_nucleo?'block':'none'}">
+        <input id="edNucSku" list="dlNucleos" value="${m.sku_nucleo?esc(m.sku_nucleo):''}" placeholder="Buscar por SKU o nombre…" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+        <datalist id="dlNucleos">${Object.entries(Prod.prodMap||{}).map(([sku,nom])=>`<option value="${esc(sku)}">${esc(nom)}</option>`).join('')}</datalist>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="modoNuc" value="nuevo"> Crear un núcleo nuevo en la base de datos</label>
+      <div id="modoNuevo" style="padding-left:26px;display:none;flex-direction:column;gap:8px">
+        <input id="edNucNuevoSku" placeholder="SKU del núcleo nuevo" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+        <input id="edNucNuevoNom" placeholder="Nombre / descripción" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="modoNuc" value="sin" ${m.sin_nucleo?'checked':''}> No lleva núcleo (colchoneta, etc.)</label>
+      <div id="modoSin" style="padding-left:26px;display:${m.sin_nucleo?'block':'none'};flex-direction:column;gap:8px">
+        <select id="edNucCat" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+          <option value="">— elegir categoría —</option>${catOpts}
+        </select>
+        <div style="display:flex;gap:8px">
+          <input id="edNucCatNueva" placeholder="Crear categoría nueva…" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit">
+          <button class="chip" style="background:var(--surf2);color:var(--ink);padding:8px 12px" onclick="crearCategoriaSinNucleoRapida()">Crear</button>
+        </div>
+      </div>
+      <button class="chip" style="padding:12px;margin-top:6px" onclick="guardarEditorNucleo('${esc(sku_pf)}')">Guardar</button>
+    </div>`;
+  $('#modalBody').addEventListener('change',e=>{
+    if(e.target.name!=='modoNuc')return;
+    $('#modoExistente').style.display=e.target.value==='existente'?'block':'none';
+    $('#modoNuevo').style.display=e.target.value==='nuevo'?'flex':'none';
+    $('#modoSin').style.display=e.target.value==='sin'?'flex':'none';
+  });
+}
+async function crearCategoriaSinNucleoRapida(){
+  const inp=$('#edNucCatNueva'); const nombre=(inp.value||'').trim(); if(!nombre)return;
+  try{
+    const {data,error}=await sb.from('categorias_sin_nucleo').insert({nombre,activo:true}).select().single();
+    if(error)throw error;
+    NucCat.cats.push(data);
+    const sel=$('#edNucCat');
+    const opt=document.createElement('option'); opt.value=data.id; opt.textContent=data.nombre; opt.selected=true;
+    sel.appendChild(opt);
+    inp.value='';
+    toast('✓ Categoría creada','ok');
+  }catch(e){ toast('Error: '+(e.message||e),'err'); }
+}
+async function guardarEditorNucleo(sku_pf){
+  const modo=(document.querySelector('input[name="modoNuc"]:checked')||{}).value;
+  if(!modo){ toast('Elige una opción','err'); return; }
+  let patch=null;
+  try{
+    if(modo==='existente'){
+      const sku=($('#edNucSku').value||'').trim().toUpperCase();
+      if(!sku||!Prod.prodMap[sku]){ toast('Ese núcleo no existe. Créalo con la opción de abajo.','err'); return; }
+      patch={sku_nucleo:sku, sin_nucleo:false, categoria_sin_nucleo_id:null};
+    }else if(modo==='nuevo'){
+      const sku=($('#edNucNuevoSku').value||'').trim().toUpperCase();
+      const nombre=($('#edNucNuevoNom').value||'').trim();
+      if(!sku){ toast('Escribe el SKU del núcleo nuevo','err'); return; }
+      const {error:eP}=await sb.from('productos').upsert({sku,nombre:nombre||sku},{onConflict:'sku'});
+      if(eP) throw eP;
+      Prod.prodMap[sku]=nombre||sku;
+      patch={sku_nucleo:sku, sin_nucleo:false, categoria_sin_nucleo_id:null};
+    }else if(modo==='sin'){
+      const catId=$('#edNucCat').value;
+      if(!catId){ toast('Elige o crea una categoría','err'); return; }
+      patch={sku_nucleo:null, sin_nucleo:true, categoria_sin_nucleo_id:Number(catId)};
+    }
+    const {error}=await sb.from('modelos').update(patch).eq('sku_pf',sku_pf);
+    if(error)throw error;
+    const merged=Object.assign({},Prod.modelosMap[sku_pf]||{sku_pf},patch);
+    Prod.modelosMap[sku_pf]=merged;
+    if(Catalogo.map[sku_pf]) Object.assign(Catalogo.map[sku_pf],patch);
+    cerrarModal();
+    toast('✓ Guardado','ok');
+    if(_nucEditorCb) _nucEditorCb(merged);
+  }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
+}
 
 // guarda el coste de material (€/ud) de un núcleo, editado en su ficha de detalle
 async function guardarCosteMaterial(sku,costeMO){
