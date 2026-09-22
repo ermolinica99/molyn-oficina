@@ -1046,10 +1046,12 @@ const Prod = {
         if(lz>0){ cant[nuc]=lz; tipo[nuc]='personalizado'; }
       }else{ cant[nuc]=Math.round(d); tipo[nuc]='stock'; }
     }
-    // núcleos bajo mínimo no incluidos
+    // núcleos que SÍ corresponden a demanda real del parte (para no etiquetarles el nº de parte a los demás)
+    this.demandaSkus=new Set(Object.keys(demanda));
+    // núcleos bajo mínimo no incluidos (reposición automática, no pedida por este parte)
     Object.values(MET).forEach(b=>{ if(b.bajoMin && !(b.sku in cant) && !(b.sku in demanda)){
       const lz=this.redondearLote(b.reponer,this.loteDe(b.sku)); if(lz>0){ cant[b.sku]=lz; tipo[b.sku]='stock'; } }});
-    // sumar manual
+    // sumar manual (tampoco es demanda del parte: se añadió a mano)
     for(const s in this.manual){ if(this.manual[s]>0){ cant[s]=(cant[s]||0)+this.manual[s]; if(!tipo[s])tipo[s]=this.manualTipo[s]||'stock'; } }
     this.cant=cant; this.tipo=tipo;
     this.render();
@@ -1236,10 +1238,13 @@ const Prod = {
         const {data:otData,error:otErr}=await sb.rpc('siguiente_ot'); if(otErr)throw otErr;
         const ot=otData;
         const now=new Date().toISOString();
-        let e1=(await sb.from('ordenes').insert({ot,sku,nombre,cantidad:n,lanzada_at:now,fabricada_at:null,estado:'abierta',parte_ref:this.parteNum||null})).error; if(e1)throw e1;
+        // solo se etiqueta con el parte si ese núcleo lo pedía realmente algún modelo del parte;
+        // la reposición por mínimo o lo añadido a mano no es demanda de este parte
+        const parteDeEsto=(this.parteNum && this.demandaSkus && this.demandaSkus.has(sku))?this.parteNum:null;
+        let e1=(await sb.from('ordenes').insert({ot,sku,nombre,cantidad:n,lanzada_at:now,fabricada_at:null,estado:'abierta',parte_ref:parteDeEsto})).error; if(e1)throw e1;
         const uds=[]; for(let i=1;i<=n;i++) uds.push({id:`${ot}-${String(i).padStart(4,'0')}`,ot,sku,estado:'pendiente',lanzada_at:now});
         let e2=(await sb.from('unidades').insert(uds)).error; if(e2)throw e2;
-        uds.forEach(u=>nuevos.push({id:u.id,sku,ot,nombre,lanzada_at:now,tipo:this.tipo[sku]||'stock',parte_ref:this.parteNum||null}));
+        uds.forEach(u=>nuevos.push({id:u.id,sku,ot,nombre,lanzada_at:now,tipo:this.tipo[sku]||'stock',parte_ref:parteDeEsto}));
         otByNuc[sku]=ot;
         nucRows.push({ot,sku,nombre,cant:n,tipo:this.tipo[sku]||'stock'});
       }
