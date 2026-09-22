@@ -916,21 +916,26 @@ const Prod = {
   // coste por puesto: qué puesto fabrica cada programa (N001-N012) y cuánto cuesta ese puesto (suma de sus trabajadores)
   // NO se cachea de forma permanente: cambia cada vez que se asigna/quita un trabajador o se edita su coste
   async cargarCostesPuesto(){
-    this.puestoPrograma={}; this.costePuesto={};
+    this.puestoPrograma={}; this.costePuesto={}; this.tiempoTeoricoPrograma={};
     try{
       const [lp,us]=await Promise.all([
-        selectAll('lotes_programa','programa,puesto_id'),
+        selectAll('lotes_programa','programa,puesto_id,tiempo_teorico_seg'),
         selectWhere('usuarios','puesto_id,coste_hora',q=>q.eq('activo',true))
       ]);
-      lp.forEach(r=>{ if(r.puesto_id) this.puestoPrograma[r.programa]=r.puesto_id; });
+      lp.forEach(r=>{
+        if(r.puesto_id) this.puestoPrograma[r.programa]=r.puesto_id;
+        if(r.tiempo_teorico_seg) this.tiempoTeoricoPrograma[r.programa]=r.tiempo_teorico_seg;
+      });
       us.forEach(u=>{ if(u.puesto_id) this.costePuesto[u.puesto_id]=(this.costePuesto[u.puesto_id]||0)+Number((u.coste_hora??CFG.coste_hora_operario)||0); });
-    }catch(e){} // si falta la migración de puestos, se sigue usando el coste por defecto
+    }catch(e){} // si falta la migración de puestos, se sigue usando el coste/tiempo por defecto
   },
 
-  TIEMPO_MIN_UDS:7, TIEMPO_DEFAULT_SEG:270, // 4min 30s por defecto hasta tener al menos 7 uds fabricadas
+  TIEMPO_MIN_UDS:7, TIEMPO_DEFAULT_SEG:270, // 4min 30s por defecto (si el programa no tiene tiempo teórico propio) hasta tener al menos 7 uds fabricadas
+  // tiempo teórico por defecto para un sku: el de su programa (N001-N012) si está configurado, si no el general
+  tiempoDefaultDe(sku){ const prog=progDe({sku}); return (this.tiempoTeoricoPrograma&&this.tiempoTeoricoPrograma[prog])||this.TIEMPO_DEFAULT_SEG; },
 
   // segundos por unidad para un núcleo: el aprendido si ya hay suficientes uds, si no el valor por defecto
-  segPorUdDe(sku){ const t=this.tiempos[sku]; return (t && t.n>=this.TIEMPO_MIN_UDS && t.seg>0)?t.seg:this.TIEMPO_DEFAULT_SEG; },
+  segPorUdDe(sku){ const t=this.tiempos[sku]; return (t && t.n>=this.TIEMPO_MIN_UDS && t.seg>0)?t.seg:this.tiempoDefaultDe(sku); },
 
   // coste/hora real a aplicar a un núcleo: el del puesto que lo fabrica (suma de sus trabajadores) o el por defecto
   costeHoraDe(sku){
@@ -1673,8 +1678,8 @@ const Conf = {
     try{
       const {data}=await sb.from('config').select('*').eq('id',1).single();
       this.raw=data||{};
-      const {data:lt}=await sb.from('lotes_programa').select('programa,lote,puesto_id');
-      this.lotes={}; (lt||[]).forEach(r=>this.lotes[r.programa]={lote:r.lote,puesto_id:r.puesto_id});
+      const {data:lt}=await sb.from('lotes_programa').select('programa,lote,puesto_id,tiempo_teorico_seg');
+      this.lotes={}; (lt||[]).forEach(r=>this.lotes[r.programa]={lote:r.lote,puesto_id:r.puesto_id,tiempo_teorico_seg:r.tiempo_teorico_seg});
       try{ const {data:ps}=await sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'); this.puestos=ps||[]; }catch(e){ this.puestos=[]; }
       this.loaded=true; this.render();
     }catch(e){ const el=$('#confFields'); if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
@@ -1709,6 +1714,8 @@ const Conf = {
             <option value="">Sin asignar</option>
             ${puestos.map(pu=>`<option value="${pu.id}" ${info.puesto_id===pu.id?'selected':''}>${esc(pu.nombre)}</option>`).join('')}
           </select></div>
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Tiempo teórico</span>
+          <input id="ttp_${p}" type="number" min="0" step="0.1" value="${info.tiempo_teorico_seg?(info.tiempo_teorico_seg/60):4.5}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"><span style="font-size:11px;color:var(--muted)">min/ud</span></div>
       </div>`;
     }).join('');
   },
@@ -1746,11 +1753,12 @@ const Conf = {
       const filas=progs.map(p=>({
         programa:p,
         lote:parseInt(document.getElementById('lote_'+p).value)||10,
-        puesto_id:document.getElementById('puesto_'+p).value?Number(document.getElementById('puesto_'+p).value):null
+        puesto_id:document.getElementById('puesto_'+p).value?Number(document.getElementById('puesto_'+p).value):null,
+        tiempo_teorico_seg:Math.round((parseFloat(document.getElementById('ttp_'+p).value)||4.5)*60)
       }));
       const {error}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
       if(error)throw error;
-      filas.forEach(f=>{ LOTES[f.programa]=f.lote; this.lotes[f.programa]={lote:f.lote,puesto_id:f.puesto_id}; });
+      filas.forEach(f=>{ LOTES[f.programa]=f.lote; this.lotes[f.programa]={lote:f.lote,puesto_id:f.puesto_id,tiempo_teorico_seg:f.tiempo_teorico_seg}; });
       toast('✓ Lotes guardados','ok');
       await refrescarMet(true); render();
     }catch(e){ toast('Error al guardar: '+(e.message||e)+' (¿ejecutaste lotes_puesto.sql?)','err'); }
@@ -3001,7 +3009,8 @@ async function open_detalle(sku,nombre){
     // ---- coste estimado (mano de obra + material) · solo visible para administración ----
     let costeHtml='';
     if(Auth.esAdmin()){
-      let costeMat=0, segUd=Prod.TIEMPO_DEFAULT_SEG;
+      await Prod.cargarCostesPuesto(); // siempre al día, aunque Prod ya esté inicializado de antes
+      let costeMat=0, segUd=Prod.tiempoDefaultDe(sku);
       try{
         const [{data:prodRow},{data:tRow}]=await Promise.all([
           sb.from('productos').select('coste_material').eq('sku',sku).maybeSingle(),
@@ -3010,7 +3019,6 @@ async function open_detalle(sku,nombre){
         costeMat=Number(prodRow&&prodRow.coste_material||0)||0;
         if(tRow && Number(tRow.n_unidades||0)>=Prod.TIEMPO_MIN_UDS && Number(tRow.mediana_seg||0)>0) segUd=Number(tRow.mediana_seg);
       }catch(e){}
-      await Prod.cargarCostesPuesto(); // siempre al día, aunque Prod ya esté inicializado de antes
       const costeMO=segUd*Prod.costeHoraDe(sku)/3600;
       costeHtml=`<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:16px;padding:12px 14px;background:var(--surf2);border-radius:10px">
         <div style="font-size:11px;color:var(--muted)">Mano de obra<br><b style="font-size:15px;color:var(--ink)">${costeMO.toFixed(2)}€/ud</b></div>
