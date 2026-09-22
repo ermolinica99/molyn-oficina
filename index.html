@@ -907,6 +907,21 @@ const AUTO_REFRESH_VIEWS={
   inv: async()=>{ await refrescarMet(true); Inv.paint(); },
 };
 let _viewAutoTimer=null;
+// va a Partes lanzados y resalta la tarjeta del parte indicado (desde Órdenes de trabajo)
+function irAParte(ref){
+  nav('partes');
+  let intentos=0;
+  const intentar=()=>{
+    const el=document.getElementById('parte-'+ref);
+    if(el){
+      el.scrollIntoView({behavior:'smooth',block:'center'});
+      el.style.transition='background .3s';
+      el.style.background='#F7E4D9';
+      setTimeout(()=>{ el.style.background=''; },1800);
+    }else if(intentos++<10){ setTimeout(intentar,200); } // Partes.reload() aún cargando
+  };
+  setTimeout(intentar,150);
+}
 function stopViewAuto(){ if(_viewAutoTimer){ clearInterval(_viewAutoTimer); _viewAutoTimer=null; } }
 function startViewAuto(v){
   stopViewAuto();
@@ -1224,7 +1239,7 @@ const Prod = {
         let e1=(await sb.from('ordenes').insert({ot,sku,nombre,cantidad:n,lanzada_at:now,fabricada_at:null,estado:'abierta',parte_ref:this.parteNum||null})).error; if(e1)throw e1;
         const uds=[]; for(let i=1;i<=n;i++) uds.push({id:`${ot}-${String(i).padStart(4,'0')}`,ot,sku,estado:'pendiente',lanzada_at:now});
         let e2=(await sb.from('unidades').insert(uds)).error; if(e2)throw e2;
-        uds.forEach(u=>nuevos.push({id:u.id,sku,ot,nombre,lanzada_at:now}));
+        uds.forEach(u=>nuevos.push({id:u.id,sku,ot,nombre,lanzada_at:now,tipo:this.tipo[sku]||'stock',parte_ref:this.parteNum||null}));
         otByNuc[sku]=ot;
         nucRows.push({ot,sku,nombre,cant:n,tipo:this.tipo[sku]||'stock'});
       }
@@ -1398,6 +1413,7 @@ const Prod = {
       .fechas .lbl{color:#555;font-size:8pt;text-transform:uppercase}
       .fechas .val{font-weight:bold;font-size:12pt}
       .idu{font-size:8pt;color:#888;margin-top:2mm}
+      .parte{color:#7A3E8C;font-weight:bold;font-size:11pt;margin-top:1mm}
       </style></head><body>
       ${units.map(u=>{
         const lanz=u.lanzada_at||new Date().toISOString();
@@ -1406,6 +1422,7 @@ const Prod = {
           <div class="qr" id="q_${u.id}"></div>
           <div class="sku">${esc(u.sku)}</div>
           <div class="ot">${esc(u.ot)}</div>
+          ${(u.tipo==='personalizado'&&u.parte_ref)?`<div class="parte">Parte ${esc(u.parte_ref)}</div>`:''}
           <div class="fechas">
             <div><div class="lbl">Lanzamiento</div><div class="val">${fmt(lanz)}</div></div>
             <div style="text-align:right"><div class="lbl">Disponible (teórica)</div><div class="val">${fmt(disp)}</div></div>
@@ -1471,7 +1488,7 @@ const Partes = {
           <button title="Anular esta OT de núcleo" onclick="Partes.anularOT('${esc(ot)}')" style="border:none;background:none;color:var(--red);cursor:pointer;font-weight:700">✕</button>
         </span>`;
       }).join(' ');
-      return `<div style="border-bottom:1px solid var(--border);padding:14px 16px">
+      return `<div id="parte-${esc(g.parte_ref)}" style="border-bottom:1px solid var(--border);padding:14px 16px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
           <div>
             <div style="font-weight:700;font-family:'JetBrains Mono'">Parte ${esc(g.parte_ref)}</div>
@@ -1546,7 +1563,7 @@ const OT = {
         estado:o.estado||'abierta',
         pend:(cont[o.ot]||{}).pend||0,stock:(cont[o.ot]||{}).stock||0,cons:(cont[o.ot]||{}).cons||0,
         prog:(String(o.sku||'').match(/^N\d{3}/)||[''])[0],
-        lanzada:o.lanzada_at,cerrada:o.cerrada_at}));
+        lanzada:o.lanzada_at,cerrada:o.cerrada_at,parte_ref:o.parte_ref||null}));
       // rellenar el selector de programas
       const progs=[...new Set(this.rows.map(r=>r.prog).filter(Boolean))].sort();
       const selP=$('#otProg');
@@ -1627,6 +1644,7 @@ const OT = {
           <th style="padding:11px 14px;text-align:center">Estado</th>
           <th style="padding:11px 14px;text-align:center">Fabr.</th><th style="padding:11px 14px;text-align:center">Pend.</th>
           <th style="padding:11px 14px;text-align:center">Total</th>
+          <th style="padding:11px 14px">Parte</th>
           <th style="padding:11px 14px">Lanzada</th>
         </tr></thead><tbody>
         ${rs.map(r=>{
@@ -1639,6 +1657,7 @@ const OT = {
           <td style="padding:9px 14px;text-align:center;font-family:'JetBrains Mono';color:var(--green);font-weight:700">${r.stock}</td>
           <td style="padding:9px 14px;text-align:center;font-family:'JetBrains Mono';color:var(--blue);font-weight:700">${r.pend}</td>
           <td style="padding:9px 14px;text-align:center;font-family:'JetBrains Mono';color:var(--muted)">${r.cant}</td>
+          <td style="padding:9px 14px">${r.parte_ref?`<span onclick="event.stopPropagation();irAParte('${esc(r.parte_ref)}')" style="cursor:pointer;font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:var(--terra);background:var(--surf2);padding:4px 9px;border-radius:20px">${esc(r.parte_ref)}</span>`:'<span style="color:var(--muted);font-size:12px">—</span>'}</td>
           <td style="padding:9px 14px;color:var(--muted);font-size:12px">${fmtF(r.lanzada)}</td>
         </tr>`;}).join('')}
         </tbody></table></div>`;
