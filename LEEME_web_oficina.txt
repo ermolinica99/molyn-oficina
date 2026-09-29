@@ -36,3 +36,23 @@ PRUDENCIA AL ESTRENAR
    con un caso de prueba y verifica el resultado.
  - Para imprimir (parte + etiquetas), permite las ventanas
    emergentes del navegador para esta pagina.
+
+------------------------------------------------------------
+PUESTA EN MARCHA (checklist antes del primer día)
+------------------------------------------------------------
+ 1. Supabase -> SQL Editor: ejecutar permitir_borrar_unidades.sql
+    (sin él, Cerrar/Anular OT y las bajas de inventario no pueden
+    borrar unidades; la web ahora lo detecta y avisa).
+ 2. GitHub -> molyn-oficina -> Settings -> Secrets -> Actions:
+    comprobar que existe SUPABASE_DB_URL (lo usan el backup diario
+    y el cierre automático de turnos). En la pestaña Actions, lanzar
+    a mano "Backup base de datos MOLYN" y ver que sale en verde.
+ 3. En cada tablet de planta: abrir https://ermolinica99.github.io/molyn-planta/,
+    "Añadir a pantalla de inicio", entrar con el PIN del puesto
+    (la sesión del puesto se queda guardada) y permitir la cámara.
+ 4. En el ordenador de oficina: permitir ventanas emergentes para
+    esta web (partes y etiquetas QR). Si se bloquean, abajo a la
+    derecha aparece un botón para abrirlas.
+ 5. Prueba en vacío: lanzar un parte pequeño, fabricarlo en planta,
+    consumirlo con el encargado, pedir una baja desde planta y
+    aprobarla en Oficina. Comprobar el stock en el Dashboard.

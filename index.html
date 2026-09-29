@@ -536,6 +536,23 @@ const $=s=>document.querySelector(s);
 function toast(m,t){const e=$('#toast');e.textContent=m;e.className='toast show '+(t||'');setTimeout(()=>e.className='toast',1900)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function cssId(s){return String(s).replace(/[^a-zA-Z0-9]/g,'_')}
+// supabase-js NO lanza una excepción cuando falla una escritura: devuelve {error}. Sin comprobarlo,
+// la app mostraba "✓ Guardado" aunque no se hubiera guardado nada. chk() lo convierte en excepción.
+function chk(r){ if(r&&r.error) throw r.error; return r; }
+// borra unidades por id y COMPRUEBA que se han borrado: si la base de datos no tiene permiso de
+// borrado en 'unidades' (seguridad.sql solo lo daba en reservas y fabricacion_eventos), Supabase
+// no devuelve error, simplemente no borra nada, y la app daba el "✓" igualmente.
+async function borrarUnidades(ids){
+  for(let i=0;i<ids.length;i+=200){
+    const ch=ids.slice(i,i+200);
+    const {data,error}=await sb.from('unidades').delete().in('id',ch).select('id');
+    if(error) throw error;
+    if((data||[]).length<ch.length) throw new Error('La base de datos no ha permitido borrar unidades. Ejecuta permitir_borrar_unidades.sql en el Editor SQL de Supabase.');
+  }
+}
+async function idsPendientesDeOT(ot){
+  return (await selectWhere('unidades','id',q=>q.eq('ot',ot).eq('estado','pendiente'))).map(u=>u.id);
+}
 
 const PROG_DESC={N001:'Extra Firm',N002:'040',N003:'030',N004:'V50',N005:'Medium',N006:'V65/32',N007:'V65/40',N008:'V80 Soft',N009:'V80/40',N010:'Abatible',N011:'Kids',N012:'Articulado'};
 function progDe(p){const m=(p.descripcion||p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
@@ -555,22 +572,19 @@ async function cargarConfig(){
     if(data){CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;LOTE_DFLT=data.lote??10;CFG.coste_hora_operario=parseFloat(data.coste_hora_operario||0)||0;}}catch(e){}
   try{const {data:lt}=await sb.from('lotes_programa').select('programa,lote');(lt||[]).forEach(r=>LOTES[r.programa]=r.lote);}catch(e){}
 }
+// orden estable para paginar: sin ORDER BY, Postgres puede devolver las filas en distinto orden en
+// cada página (sobre todo si Planta las está modificando a la vez) y se saltan o repiten filas
+const ORDEN_TABLA={unidades:['id'],ordenes:['ot'],productos:['sku'],modelos:['sku_pf'],reservas:['id'],
+  fabricacion_eventos:['ts','unidad_id','tipo'],tiempos_sku:['sku','semana'],lotes_programa:['programa'],usuarios:['id']};
+function ordenar(q,table){ (ORDEN_TABLA[table]||[]).forEach(c=>{ q=q.order(c); }); return q; }
 async function selectAll(table,cols){
-  let out=[],from=0,size=1000;
-  while(true){
-    const {data,error}=await sb.from(table).select(cols).range(from,from+size-1);
-    if(error)throw error;
-    out=out.concat(data||[]);
-    if(!data||data.length<size)break;
-    from+=size;
-  }
-  return out;
+  return selectWhere(table,cols,null);
 }
 // paginador con filtro opcional (más rápido: descarga solo lo necesario)
 async function selectWhere(table,cols,filterFn){
   let out=[],from=0,size=1000;
   while(true){
-    let q=sb.from(table).select(cols).range(from,from+size-1);
+    let q=ordenar(sb.from(table).select(cols),table).range(from,from+size-1);
     if(filterFn)q=filterFn(q);
     const {data,error}=await q;
     if(error)throw error;
@@ -1388,7 +1402,8 @@ const Prod = {
   async construirPools(nucs){
     const now=new Date(), madMs=CFG.maduracion*86400000, fabMs=(CFG.dias_fabricacion||0)*86400000;
     const pools={};
-    const stock=await selectAll('unidades','sku,ot,estado,fabricada_at,lanzada_at');
+    // solo lo que sigue vivo (stock/pendiente): antes descargaba TODAS las unidades de la historia, consumidas incluidas
+    const stock=await selectWhere('unidades','sku,ot,estado,fabricada_at,lanzada_at',q=>q.in('estado',['stock','pendiente']));
     // unidades de cada OT que YA están prometidas a otro parte (reservas pendientes de cualquier parte anterior):
     // sin esto, el FIFO podía "robar" núcleos que otro parte ya tenía reservados
     const reservasPend=await selectWhere('reservas','sku,ot,cantidad',q=>q.eq('estado','pendiente'));
@@ -1514,11 +1529,8 @@ const Prod = {
       return `<div class="pb"></div><h1>Parte · Colchones SIN NÚCLEO</h1><div class="meta">No requieren fabricación de núcleo. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
         <table><tr><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="2">TOTAL</td><td class="n">${t}</td></tr></table>`;
     })();
-    const w=window.open('','_blank');
-    if(!w||!w.document){ toast('⚠️ El navegador bloqueó la ventana de impresión del parte. Permite las ventanas emergentes para imprimir.','err'); return; }
-    w.document.write(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}${h4}
-      <script>setTimeout(()=>window.print(),500);<\/script></body></html>`);
-    w.document.close();
+    ventanaImpresion(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}${h4}
+      <script>setTimeout(()=>window.print(),500);<\/script></body></html>`, 'Parte '+ref);
   },
 
   // ---- etiquetas QR (ventana imprimible) ----
@@ -1526,9 +1538,7 @@ const Prod = {
     if(!units.length)return;
     const madDias=(CFG.dias_fabricacion||0)+(CFG.maduracion||0);
     const fmt=(d)=>{ if(!d)return '—'; const x=new Date(d); return x.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}); };
-    const w=window.open('','_blank');
-    if(!w||!w.document){ toast('⚠️ El navegador bloqueó la ventana de etiquetas. Permite las ventanas emergentes para imprimir.','err'); return; }
-    w.document.write(`<html><head><title>Etiquetas ${this.parteNum||''}</title>
+    ventanaImpresion(`<html><head><title>Etiquetas ${this.parteNum||''}</title>
       <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>
       <style>
       @page{size:100mm 100mm;margin:0}
@@ -1560,11 +1570,38 @@ const Prod = {
         </div>`;
       }).join('')}
       <script>window.onload=function(){${units.map(u=>`new QRCode(document.getElementById('q_${u.id}'),{text:'${esc(u.id)}',width:256,height:256});`).join('')}setTimeout(()=>window.print(),600);}<\/script>
-      </body></html>`);
-    w.document.close();
+      </body></html>`, units.length+' etiqueta'+(units.length===1?'':'s')+' QR'+(this.parteNum?' · parte '+this.parteNum:''));
   }
 };
 document.getElementById('fileParte').addEventListener('change',e=>{ if(e.target.files[0]) Prod.subirParte(e.target.files[0]); });
+
+// ---- ventanas de impresión ----
+// Abre el documento en una ventana nueva. Si el navegador la bloquea (pasa cuando se abre tras
+// esperar a la base de datos, p. ej. al lanzar un parte grande), en vez de perderla se queda
+// un aviso abajo a la derecha con un botón para abrirla con un clic.
+const _impPend=[];
+function ventanaImpresion(html,titulo){
+  const w=window.open('','_blank');
+  if(w&&w.document){ w.document.write(html); w.document.close(); return true; }
+  _impPend.push({html,titulo}); pintarImpPend(); return false;
+}
+function pintarImpPend(){
+  let el=document.getElementById('impPend');
+  if(!_impPend.length){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement('div'); el.id='impPend';
+    el.style.cssText='position:fixed;right:20px;bottom:20px;z-index:1500;background:#fff;border:2px solid var(--terra);border-radius:14px;padding:14px 16px;box-shadow:0 12px 40px rgba(0,0,0,.25);width:320px;font-size:13px';
+    document.body.appendChild(el); }
+  el.innerHTML='<div style="font-weight:800;margin-bottom:4px">🖨️ Pendiente de imprimir</div><div style="color:var(--muted);margin-bottom:10px">El navegador bloqueó la ventana. Pulsa para abrirla (y permite las ventanas emergentes para esta web).</div>'+
+    _impPend.map((p,i)=>`<button class="chip" style="width:100%;margin-bottom:6px" onclick="abrirImpPend(${i})">${esc(p.titulo)}</button>`).join('')+
+    '<button class="chip" style="width:100%;background:var(--surf2);color:var(--ink)" onclick="_impPend.length=0;pintarImpPend()">Descartar</button>';
+}
+function abrirImpPend(i){
+  const p=_impPend[i]; if(!p) return;
+  const w=window.open('','_blank');
+  if(!w||!w.document){ toast('Sigue bloqueado: permite las ventanas emergentes para esta web','err'); return; }
+  w.document.write(p.html); w.document.close();
+  _impPend.splice(i,1); pintarImpPend();
+}
 
 // ============================================================
 //  PARTES DE PRODUCCIÓN LANZADOS
@@ -1679,11 +1716,12 @@ const OT = {
       const ords=await selectAll('ordenes','*');
       // traer el conteo de unidades de TODAS las OT (para saber pendientes/stock reales)
       const ots=ords.map(o=>o.ot);
+      // paginado por bloques: 200 OT pueden tener más de 1000 unidades y Supabase cortaba el resultado
+      // (las OT afectadas salían con 0 pendientes y desaparecían de "Abiertas")
       let uds=[];
       for(let i=0;i<ots.length;i+=200){
         const chunk=ots.slice(i,i+200);
-        const {data}=await sb.from('unidades').select('ot,estado').in('ot',chunk);
-        uds=uds.concat(data||[]);
+        uds=uds.concat(await selectWhere('unidades','ot,estado',q=>q.in('ot',chunk)));
       }
       const cont={};
       uds.forEach(u=>{const c=cont[u.ot]||(cont[u.ot]={pend:0,stock:0,cons:0});
@@ -1727,7 +1765,7 @@ const OT = {
     else if(this.estado!=='todas') rs=rs.filter(r=>r.estado===this.estado);
     if(q)rs=rs.filter(r=>String(r.ot).toLowerCase().includes(q)||(r.sku||'').toLowerCase().includes(q)||(r.nombre||'').toLowerCase().includes(q));
     if(prog)rs=rs.filter(r=>r.prog===prog);
-    if(fecha)rs=rs.filter(r=>{ const d=r.lanzada||r.cerrada; return d && String(d).slice(0,10)===fecha; });
+    if(fecha)rs=rs.filter(r=>{ const d=r.lanzada||r.cerrada; return d && ymdLocal(new Date(d))===fecha; });
     return rs.sort((a,b)=>String(b.ot).localeCompare(String(a.ot)));
   },
 
@@ -1811,24 +1849,24 @@ const OT = {
       const now=new Date().toISOString();
       for(const o of sel){
         if(tipo==='fabricar'){
-          await sb.from('unidades').update({estado:'stock',fabricada_at:now}).eq('ot',o.ot).eq('estado','pendiente');
-          await sb.from('ordenes').update({estado:'cerrada',cerrada_at:now}).eq('ot',o.ot);
+          chk(await sb.from('unidades').update({estado:'stock',fabricada_at:now}).eq('ot',o.ot).eq('estado','pendiente'));
+          chk(await sb.from('ordenes').update({estado:'cerrada',cerrada_at:now}).eq('ot',o.ot));
         }else if(tipo==='cerrar'){
-          await sb.from('unidades').delete().eq('ot',o.ot).eq('estado','pendiente');
-          await sb.from('ordenes').update({estado:'cerrada',cerrada_at:now}).eq('ot',o.ot);
+          await borrarUnidades(await idsPendientesDeOT(o.ot));
+          chk(await sb.from('ordenes').update({estado:'cerrada',cerrada_at:now}).eq('ot',o.ot));
         }else if(tipo==='anular'){
           await anularOTPorNumero(o.ot,now);
         }
       }
       if(tipo==='qr'){ await this.reimprimir(sel); }
       else{ toast('✓ '+nombres[tipo]+': '+sel.length+' OT','ok'); this.sel.clear(); await this.reload(); await refrescarMet(true); render(); Partes.reload(); }
-    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+    }catch(e){ toast('Error: '+(e.message||e),'err'); if(tipo!=='qr'){ await this.reload(); } }
   },
 
   async reimprimir(sel){
     const ots=sel.map(o=>o.ot);
     let uds=[];
-    for(let i=0;i<ots.length;i+=200){ const {data}=await sb.from('unidades').select('id,sku,ot,estado,lanzada_at').in('ot',ots.slice(i,i+200)); uds=uds.concat(data||[]); }
+    for(let i=0;i<ots.length;i+=200){ const ch=ots.slice(i,i+200); uds=uds.concat(await selectWhere('unidades','id,sku,ot,estado,lanzada_at',q=>q.in('ot',ch))); }
     uds=uds.filter(u=>u.estado==='stock'||u.estado==='pendiente');
     const nombres={}; sel.forEach(o=>nombres[o.ot]=o.nombre);
     Prod.imprimirEtiquetas(uds.map(u=>({id:u.id,sku:u.sku,ot:u.ot,nombre:nombres[u.ot]||'',lanzada_at:u.lanzada_at})));
@@ -2038,7 +2076,7 @@ const Turnos = {
     }catch(e){ toast('Error: '+(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)','err'); }
   },
   async toggleActivo(id,val){
-    try{ await sb.from('turnos_plantilla').update({activo:val}).eq('id',id); this.reload(); }
+    try{ chk(await sb.from('turnos_plantilla').update({activo:val}).eq('id',id)); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); }
   }
 };
@@ -2135,7 +2173,7 @@ const Puestos = {
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async toggleActivo(id,val){
-    try{ await sb.from('puestos_trabajo').update({activo:val}).eq('id',id); this.reload(); }
+    try{ chk(await sb.from('puestos_trabajo').update({activo:val}).eq('id',id)); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async eliminar(id,nombre){
@@ -2191,15 +2229,15 @@ const Usr = {
     </div><div style="height:1px;background:var(--border);margin-bottom:24px"></div>`;
   },
   async aprobarOfi(id,estado){
-    try{ await sb.from('usuarios_oficina').update({estado,activo:estado==='aprobado'}).eq('id',id);
+    try{ chk(await sb.from('usuarios_oficina').update({estado,activo:estado==='aprobado'}).eq('id',id));
       toast(estado==='aprobado'?'✓ Usuario aprobado':'Usuario rechazado', estado==='aprobado'?'ok':''); this.reload();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async hacerAdmin(id){ if(!confirm('¿Dar permisos de administrador a este usuario?'))return;
-    try{ await sb.from('usuarios_oficina').update({rol:'administrador'}).eq('id',id); toast('✓ Ahora es administrador','ok'); this.reload(); }
+    try{ chk(await sb.from('usuarios_oficina').update({rol:'administrador'}).eq('id',id)); toast('✓ Ahora es administrador','ok'); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
   async bajaOfi(id){ if(!confirm('¿Quitar el acceso a este usuario?'))return;
-    try{ await sb.from('usuarios_oficina').update({activo:false,estado:'rechazado'}).eq('id',id); toast('Acceso retirado','ok'); this.reload(); }
+    try{ chk(await sb.from('usuarios_oficina').update({activo:false,estado:'rechazado'}).eq('id',id)); toast('Acceso retirado','ok'); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
   editId:null,
   toggleRolForm(){ $('#uPinWrap').style.display = $('#uRol').value==='encargado' ? '' : 'none'; },
@@ -2271,9 +2309,9 @@ const Usr = {
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async baja(id,nombre){ if(!confirm('¿Dar de baja a '+nombre+'?'))return;
-    try{ await sb.from('usuarios').update({activo:false}).eq('id',id); toast('Usuario dado de baja','ok'); this.reload(); }
+    try{ chk(await sb.from('usuarios').update({activo:false}).eq('id',id)); toast('Usuario dado de baja','ok'); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
-  async alta(id){ try{ await sb.from('usuarios').update({activo:true}).eq('id',id); toast('Usuario reactivado','ok'); this.reload(); }
+  async alta(id){ try{ chk(await sb.from('usuarios').update({activo:true}).eq('id',id)); toast('Usuario reactivado','ok'); this.reload(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); } },
   async eliminar(id,nombre){
     if(!confirm('¿Eliminar definitivamente a '+nombre+'? No se puede deshacer.'))return;
@@ -2340,26 +2378,28 @@ const Inv = {
     const sel=prompt(`${signo>0?'ALTA':'BAJA'} de ${n} uds · ${sku}\n\n${opciones}`,'1');
     if(sel===null)return; // canceló
     const motivo=mapa[String(sel).trim()]||'Otro';
+    if(this._busy) return; this._busy=true;
     try{
       const now=new Date().toISOString();
       if(signo>0){
-        // asegurar que existe la orden del día (las unidades necesitan una OT válida)
-        const ot=otInventario();
-        const {error:eo}=await sb.from('ordenes').upsert({ot,sku,nombre:'AJUSTE INVENTARIO ('+motivo+')',cantidad:n,lanzada_at:now,fabricada_at:now,estado:'cerrada',cerrada_at:now},{onConflict:'ot'}); if(eo)throw eo;
-        const rows=[]; for(let i=0;i<n;i++)rows.push({id:`${ot}-${sku.slice(0,6)}-${Date.now()}${i}`,sku,estado:'stock',fabricada_at:now,lanzada_at:now,ot});
-        const {error}=await sb.from('unidades').insert(rows); if(error)throw error;
+        await crearUnidadesAjuste(sku,n,'AJUSTE INVENTARIO ('+motivo+')');
       }else{
-        const {data}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(n);
+        const {data,error}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(n);
+        if(error)throw error;
         const ids=(data||[]).map(u=>u.id);
         if(ids.length<n){ toast('No hay tantas unidades en stock','err'); return; }
-        const {error}=await sb.from('unidades').delete().in('id',ids); if(error)throw error;
+        await borrarUnidades(ids);
       }
-      // registrar ajuste con motivo (defensivo: si la columna 'motivo' no existe, reintenta sin ella)
-      let r=await sb.from('ajustes_inventario').insert({sku,cantidad:signo*n,fecha:now,motivo});
-      if(r.error){ await sb.from('ajustes_inventario').insert({sku,cantidad:signo*n,fecha:now}); }
+      // registro del ajuste. Va ya como 'aprobado' (lo ha hecho Oficina): si se quedara 'pendiente'
+      // aparecería en Aprobaciones y se podría aplicar dos veces. Defensivo con columnas opcionales.
+      const reg={sku,tipo:signo>0?'alta':'baja',cantidad:signo*n,estado:'aprobado',fecha:now,motivo};
+      let r=await sb.from('ajustes_inventario').insert(reg);
+      if(r.error){ delete reg.motivo; delete reg.fecha; r=await sb.from('ajustes_inventario').insert(reg); }
+      if(r.error) console.warn('No se pudo registrar el ajuste en el historial:',r.error.message);
       toast(`✓ ${signo>0?'Alta':'Baja'} de ${n} uds · ${motivo}`,'ok');
       await refrescarMet(true); this.paint(); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
+    finally{ this._busy=false; }
   }
 };
 
@@ -2937,6 +2977,16 @@ const Auth = {
     $('#loginLogo').src='data:image/png;base64,'+LOGO_B64;
     // enlace para solicitar acceso
     $('#loginFoot').innerHTML='¿No tienes cuenta? <a href="#" onclick="event.preventDefault();Auth.modoRegistro()" style="color:#B85C38;font-weight:600">Solicitar acceso</a>';
+    $('#loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') this.login(); });
+    // sesión de esta pestaña: al recargar (F5) no vuelve a pedir la contraseña, pero se comprueba
+    // en la base de datos que la cuenta sigue aprobada y activa
+    try{
+      const s=JSON.parse(sessionStorage.getItem('molyn_oficina_user')||'null');
+      if(s && s.email){
+        const {data}=await sb.from('usuarios_oficina').select('*').eq('email',s.email).single();
+        if(data && data.id===s.id && data.pass_hash===s.h && data.activo && data.estado==='aprobado'){ this.entrar(data); return; }
+      }
+    }catch(e){}
     this.mostrar();
   },
   mostrar(){ $('#loginScreen').style.display='flex'; $('#appMain').style.display='none'; $('#loginEmail').focus(); },
@@ -2992,6 +3042,7 @@ const Auth = {
   },
   entrar(u){
     this.user=u;
+    try{ sessionStorage.setItem('molyn_oficina_user',JSON.stringify({id:u.id,email:u.email,h:u.pass_hash})); }catch(e){}
     $('#loginScreen').style.display='none';
     $('#appMain').style.display='flex';
     // mostrar nombre y rol en la barra superior
@@ -3011,53 +3062,87 @@ const Auth = {
 //  APROBACIONES
 // ============================================================
 const Apr = {
+  // Planta guarda {tipo:'alta'|'baja', cantidad:+N}; los ajustes antiguos de Oficina usaban el signo de cantidad
+  esAlta(aj){ return aj.tipo ? aj.tipo==='alta' : (Number(aj.cantidad)||0)>0; },
   async reload(){
     $('#aprLista').innerHTML='<div class="loading">Cargando…</div>';
     try{
-      const {data}=await sb.from('ajustes_inventario').select('*').eq('estado','pendiente').order('created_at');
+      const {data,error}=await sb.from('ajustes_inventario').select('*').eq('estado','pendiente').order('created_at');
+      if(error)throw error;
       const rows=data||[];
       if(!rows.length){ $('#aprLista').innerHTML='<div class="vacio">No hay inventarios pendientes de aprobar. ✓</div>'; return; }
       // nombres de usuario
       const uids=[...new Set(rows.map(r=>r.solicitado_por).filter(Boolean))];
       const users={}; if(uids.length){ const {data:us}=await sb.from('usuarios').select('id,nombre').in('id',uids); (us||[]).forEach(u=>users[u.id]=u.nombre); }
-      $('#aprLista').innerHTML=rows.map(r=>`
-        <div class="card" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:14px;padding:14px 18px">
-          <div style="flex:1"><div style="font-family:'JetBrains Mono';font-weight:700">${esc(r.sku)}</div>
-            <div style="font-size:12px;color:var(--muted)">${esc(users[r.solicitado_por]||'—')} · ${r.cantidad>0?'+':''}${r.cantidad} uds · ${r.created_at?new Date(r.created_at).toLocaleString('es-ES'):''}</div></div>
-          <button class="chip" style="background:var(--green)" onclick="Apr.resolver(${r.id},'aprobado')">Aprobar</button>
-          <button class="chip" style="background:var(--red)" onclick="Apr.resolver(${r.id},'rechazado')">Rechazar</button>
-        </div></div>`).join('');
+      $('#aprLista').innerHTML=rows.map(r=>{
+        const alta=this.esAlta(r), n=Math.abs(Number(r.cantidad)||0), b=MET[r.sku];
+        const stockInfo=b?` · en stock ahora: ${b.disp+b.madurando} (${b.disp} disp.)`:'';
+        return `
+        <div class="card" style="margin-bottom:10px;border-left:4px solid ${alta?'var(--green)':'var(--red)'}"><div style="display:flex;align-items:center;gap:14px;padding:14px 18px">
+          <div style="flex:1"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;background:${alta?'#E4EDE6':'#F7E1DC'};color:${alta?'var(--green)':'var(--red)'}">${alta?'ALTA +':'BAJA −'}${n} uds</span>
+            <span style="font-family:'JetBrains Mono';font-weight:700">${esc(r.sku)}</span></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(users[r.solicitado_por]||'—')} · ${r.created_at?new Date(r.created_at).toLocaleString('es-ES'):''}${alta?(r.madurar?' · que maduren':' · disponibles ya'):''}${stockInfo}</div>
+            ${r.nota?`<div style="font-size:12px;color:var(--ink2);margin-top:4px">“${esc(r.nota)}”</div>`:''}</div>
+          <button class="chip" style="background:var(--green)" onclick="Apr.resolver(${r.id},'aprobado',this)">Aprobar</button>
+          <button class="chip" style="background:var(--red)" onclick="Apr.resolver(${r.id},'rechazado',this)">Rechazar</button>
+        </div></div>`;}).join('');
     }catch(e){ $('#aprLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
   },
-  async resolver(id,estado){
+  async marcar(id,campos,soloSi){
+    const upd=c=>{ let q=sb.from('ajustes_inventario').update(c).eq('id',id); if(soloSi)q=q.eq('estado',soloSi); return q.select(); };
+    let r=await upd(campos);
+    if(r.error && /resuelto_at/.test(r.error.message||'')){ const c=Object.assign({},campos); delete c.resuelto_at; r=await upd(c); }
+    if(r.error) throw r.error;
+    return r.data||[];
+  },
+  async resolver(id,estado,btn){
+    if(this._busy) return; this._busy=true;
+    if(btn) btn.disabled=true;
     try{
+      // primero se marca como resuelto, y SOLO si seguía pendiente: así un doble clic (o dos
+      // personas de oficina a la vez) no aplica el mismo ajuste dos veces al stock
+      const marcadas=await this.marcar(id,{estado,resuelto_at:new Date().toISOString()},'pendiente');
+      if(!marcadas.length){ toast('Esta solicitud ya estaba resuelta','err'); this.reload(); return; }
       if(estado==='aprobado'){
-        // traer el ajuste para aplicarlo de verdad al stock
-        const {data:aj}=await sb.from('ajustes_inventario').select('*').eq('id',id).single();
-        if(aj){
-          const sku=aj.sku, cant=Math.abs(aj.cantidad||0), esAlta=(aj.cantidad||0)>0;
-          const now=new Date().toISOString();
-          if(esAlta){
-            // ALTA: crear unidades en stock (con la OT AJUSTE)
-            const ot=otInventario();
-            const {error:eo}=await sb.from('ordenes').upsert({ot,sku,nombre:'AJUSTE INVENTARIO (aprobado)',cantidad:cant,lanzada_at:now,fabricada_at:now,estado:'cerrada',cerrada_at:now},{onConflict:'ot'}); if(eo)throw eo;
-            const rows=[]; for(let i=0;i<cant;i++)rows.push({id:`${ot}-${sku.slice(0,6)}-${Date.now()}${i}`,sku,estado:'stock',fabricada_at:now,lanzada_at:now,ot});
-            const {error}=await sb.from('unidades').insert(rows); if(error)throw error;
+        const aj=marcadas[0];
+        try{
+          const sku=aj.sku, cant=Math.abs(Number(aj.cantidad)||0);
+          if(this.esAlta(aj)){
+            // "que maduren" desmarcado en Planta: disponibles ya (fabricadas hace más que la maduración)
+            const fab=aj.madurar===false?new Date(Date.now()-(CFG.maduracion||0)*86400000-60000).toISOString():null;
+            await crearUnidadesAjuste(sku,cant,'AJUSTE INVENTARIO (aprobado)',fab);
           }else{
             // BAJA: borrar del stock (FIFO, las más antiguas)
-            const {data}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(cant);
+            const {data,error}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(cant);
+            if(error)throw error;
             const ids=(data||[]).map(u=>u.id);
-            if(ids.length<cant){ toast(`Solo hay ${ids.length} en stock, no se pueden dar de baja ${cant}`,'err'); return; }
-            const {error}=await sb.from('unidades').delete().in('id',ids); if(error)throw error;
+            if(ids.length<cant) throw new Error(`Solo hay ${ids.length} en stock, no se pueden dar de baja ${cant}`);
+            await borrarUnidades(ids);
           }
+        }catch(e){
+          await this.marcar(id,{estado:'pendiente',resuelto_at:null}).catch(()=>{}); // deshacer: vuelve a pendiente
+          throw e;
         }
       }
-      await sb.from('ajustes_inventario').update({estado,resuelto_at:new Date().toISOString()}).eq('id',id);
       toast(estado==='aprobado'?'✓ Aprobado y aplicado al stock':'Rechazado', estado==='aprobado'?'ok':'');
       this.reload(); await refrescarMet(true); render();
-    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+    }catch(e){ toast('Error: '+(e.message||e),'err'); this.reload(); }
+    finally{ this._busy=false; }
   }
 };
+
+// crea n unidades en stock por un ajuste de inventario, dentro de la OT del día (OTINVaaaammdd)
+async function crearUnidadesAjuste(sku,n,nombreOT,fabricadaAt){
+  const now=new Date().toISOString(), ot=otInventario();
+  // si la OT del día ya existe se le suma la cantidad (antes el upsert la sobrescribía con el último ajuste)
+  const {data:ex,error:ee}=await sb.from('ordenes').select('ot,cantidad').eq('ot',ot).maybeSingle();
+  if(ee)throw ee;
+  if(ex) chk(await sb.from('ordenes').update({cantidad:(Number(ex.cantidad)||0)+n}).eq('ot',ot));
+  else chk(await sb.from('ordenes').insert({ot,sku,nombre:nombreOT,cantidad:n,lanzada_at:now,fabricada_at:now,estado:'cerrada',cerrada_at:now}));
+  const base=Date.now(), rows=[];
+  for(let i=0;i<n;i++) rows.push({id:`${ot}-${sku.slice(0,6)}-${base}-${i}`,sku,estado:'stock',fabricada_at:fabricadaAt||now,lanzada_at:now,ot});
+  chk(await sb.from('unidades').insert(rows));
+}
 
 
 // ============================================================
@@ -3326,21 +3411,21 @@ const Pers = {
   async crearCat(){
     const nombre=$('#catNom').value.trim(); if(!nombre)return;
     const orden=(this.cats.length?Math.max(...this.cats.map(c=>c.orden)):0)+1;
-    try{ await sb.from('config_categorias').insert({nombre,orden,activo:true}); $('#catNom').value=''; toast('✓ Categoría creada','ok'); this.load(); }
+    try{ chk(await sb.from('config_categorias').insert({nombre,orden,activo:true})); $('#catNom').value=''; toast('✓ Categoría creada','ok'); this.load(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async crearOp(catId){
     const inp=document.getElementById('op_'+catId); const nombre=(inp.value||'').trim(); if(!nombre)return;
     const orden=this.opsDe(catId).length+1;
-    try{ await sb.from('config_opciones').insert({categoria_id:catId,nombre,orden,activo:true}); inp.value=''; toast('✓ Opción añadida','ok'); this.load(); }
+    try{ chk(await sb.from('config_opciones').insert({categoria_id:catId,nombre,orden,activo:true})); inp.value=''; toast('✓ Opción añadida','ok'); this.load(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async borrarCat(id,nom){ if(!confirm('¿Borrar la categoría "'+nom+'" y todas sus opciones?'))return;
-    try{ await sb.from('config_categorias').delete().eq('id',id); toast('Categoría borrada','ok'); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
-  async borrarOp(id){ try{ await sb.from('config_opciones').delete().eq('id',id); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
+    try{ chk(await sb.from('config_categorias').delete().eq('id',id)); toast('Categoría borrada','ok'); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  async borrarOp(id){ try{ chk(await sb.from('config_opciones').delete().eq('id',id)); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
   async subir(id){ const i=this.cats.findIndex(c=>c.id===id); if(i<=0)return; await this._swap(this.cats[i],this.cats[i-1]); },
   async bajar(id){ const i=this.cats.findIndex(c=>c.id===id); if(i<0||i>=this.cats.length-1)return; await this._swap(this.cats[i],this.cats[i+1]); },
-  async _swap(a,b){ try{ await Promise.all([sb.from('config_categorias').update({orden:b.orden}).eq('id',a.id),sb.from('config_categorias').update({orden:a.orden}).eq('id',b.id)]); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } }
+  async _swap(a,b){ try{ (await Promise.all([sb.from('config_categorias').update({orden:b.orden}).eq('id',a.id),sb.from('config_categorias').update({orden:a.orden}).eq('id',b.id)])).forEach(chk); this.load(); }catch(e){ toast('Error: '+(e.message||e),'err'); } }
 };
 
 // ============================================================
@@ -3369,15 +3454,15 @@ const NucCat = {
   async crearCat(){
     if(!Auth.esAdmin()){ toast('No tienes permisos','err'); return; }
     const inp=$('#sinNucNom'); const nombre=(inp.value||'').trim(); if(!nombre)return;
-    try{ await sb.from('categorias_sin_nucleo').insert({nombre,activo:true}); inp.value=''; toast('✓ Categoría creada','ok'); this.load(); }
+    try{ chk(await sb.from('categorias_sin_nucleo').insert({nombre,activo:true})); inp.value=''; toast('✓ Categoría creada','ok'); this.load(); }
     catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async borrarCat(id,nom){
     if(!Auth.esAdmin()){ toast('No tienes permisos','err'); return; }
     if(!confirm('¿Borrar la categoría "'+nom+'"? Los modelos que la tenían seguirán marcados como "sin núcleo" pero sin categoría, hasta que la vuelvas a asignar.'))return;
     try{
-      await sb.from('modelos').update({categoria_sin_nucleo_id:null}).eq('categoria_sin_nucleo_id',id);
-      await sb.from('categorias_sin_nucleo').delete().eq('id',id);
+      chk(await sb.from('modelos').update({categoria_sin_nucleo_id:null}).eq('categoria_sin_nucleo_id',id));
+      chk(await sb.from('categorias_sin_nucleo').delete().eq('id',id));
       toast('Categoría borrada','ok'); this.load();
       if(Catalogo.loaded) Catalogo.load();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
@@ -3558,16 +3643,16 @@ async function guardarCosteMaterial(sku,costeMO){
 // anula una OT de núcleo: borra sus reservas y unidades, marca la orden anulada
 async function anularOTPorNumero(ot,now){
   now=now||new Date().toISOString();
-  await sb.from('reservas').delete().eq('ot',ot);
+  chk(await sb.from('reservas').delete().eq('ot',ot));
   // respeta lo que ya esté fabricado (o consumido): solo se borran las unidades pendientes.
   // si queda algo fabricado, la OT se cierra con esa cantidad en vez de anularse del todo.
-  const {data:uds}=await sb.from('unidades').select('id,estado').eq('ot',ot);
-  const fabricadas=(uds||[]).filter(u=>u.estado==='stock'||u.estado==='consumida').length;
-  await sb.from('unidades').delete().eq('ot',ot).eq('estado','pendiente');
+  const uds=await selectWhere('unidades','id,estado',q=>q.eq('ot',ot));
+  const fabricadas=uds.filter(u=>u.estado==='stock'||u.estado==='consumida').length;
+  await borrarUnidades(uds.filter(u=>u.estado==='pendiente').map(u=>u.id));
   if(fabricadas>0){
-    await sb.from('ordenes').update({estado:'cerrada',cantidad:fabricadas,cerrada_at:now}).eq('ot',ot);
+    chk(await sb.from('ordenes').update({estado:'cerrada',cantidad:fabricadas,cerrada_at:now}).eq('ot',ot));
   }else{
-    await sb.from('ordenes').update({estado:'anulada',cerrada_at:now}).eq('ot',ot);
+    chk(await sb.from('ordenes').update({estado:'anulada',cerrada_at:now}).eq('ot',ot));
   }
 }
 
