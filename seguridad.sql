@@ -9,8 +9,9 @@
 -- Con este script:
 --   - Se puede seguir leyendo/insertando/actualizando todo igual que ahora
 --     (las apps no dejan de funcionar).
---   - DELETE solo se permite en 'reservas' y 'fabricacion_eventos'
---     (las únicas tablas donde la app borra filas hoy).
+--   - DELETE solo se permite en 'reservas', 'fabricacion_eventos' y 'unidades'
+--     (las tablas donde la app borra filas: Oficina borra unidades al
+--     cerrar/anular OT y al dar de baja inventario).
 --   - En el resto de tablas, DELETE queda bloqueado a nivel de base de
 --     datos, aunque alguien tenga la clave anon y la use directamente.
 --
@@ -47,6 +48,9 @@ create policy "anon_delete" on public.reservas for delete to anon using (true);
 
 drop policy if exists "anon_delete" on public.fabricacion_eventos;
 create policy "anon_delete" on public.fabricacion_eventos for delete to anon using (true);
+
+drop policy if exists "anon_delete" on public.unidades;
+create policy "anon_delete" on public.unidades for delete to anon using (true);
 
 -- Nota: si en el futuro añades una tabla nueva, tendrás que darle
 -- las mismas políticas (o añadirla a la lista de arriba y re-ejecutar).
