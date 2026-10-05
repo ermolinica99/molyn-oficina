@@ -608,7 +608,10 @@ async function calcularMetricas(){
   const pActivos=selectWhere('unidades','sku,estado,fabricada_at',q=>q.neq('estado','consumida'));
   const pConsumo=selectWhere('unidades','sku,consumida_at',q=>q.eq('estado','consumida').gte('consumida_at',cutoff));
   const pReservas=(async()=>{ try{const r=await selectWhere('reservas','sku,cantidad,estado');return r.filter(x=>x.estado==='pendiente'||x.estado==null);}catch(e){return [];} })();
-  const [prods,activos,consumo,res]=await Promise.all([pProds,pActivos,pConsumo,pReservas]);
+  // núcleos que usa algún modelo del catálogo (para no contar núcleos antiguos sin uso)
+  const pUsados=(async()=>{ try{return await selectWhere('modelos','sku_nucleo',q=>q.not('sku_nucleo','is',null));}catch(e){return null;} })();
+  const [prods,activos,consumo,res,usadosRows]=await Promise.all([pProds,pActivos,pConsumo,pReservas,pUsados]);
+  const usados=usadosRows?new Set(usadosRows.map(r=>r.sku_nucleo)):null;
 
   // nombres de programa: los del catálogo importado ("N013 · Nombre") mandan sobre la lista fija,
   // y un programa nuevo aparece aunque no tenga nombre (Dashboard y lotes por programa)
@@ -646,6 +649,8 @@ async function calcularMetricas(){
     b.ROP=Math.ceil(b.D*mad);
     b.bajoMin=(!b.personalizado)&&b.saldo<b.ROP;
     b.reponer=b.bajoMin?(b.ROP-b.saldo):0;
+    // en uso: lo usa algún modelo, o aún tiene unidades/reservas vivas, o está forzado a diario
+    b.enUso=!usados||usados.has(b.sku)||b.stock>0||b.fabricando>0||b.pend>0||b.forzado;
   });
   return m;
 }
@@ -679,7 +684,7 @@ function medidaDe(sku){
 }
 
 function filtrar(){
-  let rs=Object.values(MET);
+  let rs=metEnUso();
   const q=$('#search').value.toLowerCase().trim();
   if(q) rs=rs.filter(b=>b.sku.toLowerCase().includes(q)||(b.nombre||'').toLowerCase().includes(q));
   else if(KPI==='stock') rs=rs.filter(b=>(b.disp+b.madurando)>0);
@@ -722,8 +727,10 @@ function layoutDash(){
 if(!window._dashResize){ window._dashResize=true; window.addEventListener('resize',()=>{ if(typeof layoutDash==='function') layoutDash(); }); }
 
 // ---- render ----
+// el Dashboard solo cuenta los núcleos en uso (los antiguos sin modelo ni stock se ocultan, no se borran)
+function metEnUso(){ return Object.values(MET).filter(b=>b.enUso!==false); }
 function render(){
-  const arr=Object.values(MET);
+  const arr=metEnUso();
   const disp=arr.reduce((s,b)=>s+b.disp,0),madur=arr.reduce((s,b)=>s+b.madurando,0),fab=arr.reduce((s,b)=>s+b.fabricando,0);
   const bajo=arr.filter(b=>b.bajoMin),negs=arr.filter(b=>b.saldo<0);
   const stock=disp+madur,defi=negs.reduce((s,b)=>s+b.saldo,0);
@@ -879,7 +886,7 @@ function render(){
   $('#gridTitle').textContent=titulo;
   const rs=filtrar();
   $('#gridCount').textContent=rs.length;
-  const medidas=[...new Set(Object.values(MET).map(b=>medidaDe(b.sku)).filter(Boolean))].sort((a,b)=>{
+  const medidas=[...new Set(metEnUso().map(b=>medidaDe(b.sku)).filter(Boolean))].sort((a,b)=>{
     const [aw,al]=a.split('x').map(Number), [bw,bl]=b.split('x').map(Number);
     return aw-bw||al-bl;
   });
@@ -1150,7 +1157,7 @@ const Prod = {
     // núcleos que SÍ corresponden a demanda real del parte (para no etiquetarles el nº de parte a los demás)
     this.demandaSkus=new Set(Object.keys(demanda));
     // núcleos bajo mínimo no incluidos (reposición automática, no pedida por este parte)
-    Object.values(MET).forEach(b=>{ if(b.bajoMin && !(b.sku in cant) && !(b.sku in demanda)){
+    Object.values(MET).forEach(b=>{ if(b.bajoMin && b.enUso!==false && !(b.sku in cant) && !(b.sku in demanda)){
       const lz=this.redondearLote(b.reponer,this.loteDe(b.sku)); if(lz>0){ cant[b.sku]=lz; tipo[b.sku]='stock'; } }});
     // sumar manual (tampoco es demanda del parte: se añadió a mano)
     for(const s in this.manual){ if(this.manual[s]>0){ cant[s]=(cant[s]||0)+this.manual[s]; if(!tipo[s])tipo[s]=this.manualTipo[s]||'stock'; } }
