@@ -1044,7 +1044,9 @@ const Prod = {
     await this.cargarCostesPuesto(); // barato: siempre al día, aunque el resto ya esté cacheado
     if(this.refs) return;
     try{
-      const modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id');
+      let modelos;
+      try{ modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id,especial'); this.hayEspecial=true; }
+      catch(e){ modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id'); this.hayEspecial=false; }
       this.modelosMap = {}; modelos.forEach(m=>this.modelosMap[m.sku_pf]=m);
       const prods = await selectAll('productos','sku,nombre,coste_material');
       this.prodMap = {}; this.costeMat={}; prods.forEach(p=>{ this.prodMap[p.sku]=p.nombre||p.sku; this.costeMat[p.sku]=Number(p.coste_material||0)||0; });
@@ -1126,7 +1128,7 @@ const Prod = {
         const desc=f.descParte||(m?m.nombre:'')||'';
         return {sku_pf:f.sku_pf, cant:f.cant, descParte:desc, descBase:desc,
           nombre:m?m.nombre:'', medida:m?m.medida:'', sku_nucleo:m?m.sku_nucleo:null,
-          sin_nucleo:m?!!m.sin_nucleo:false, categoria_sin_nucleo_id:m?m.categoria_sin_nucleo_id:null, configs:[]};});
+          sin_nucleo:m?!!m.sin_nucleo:false, categoria_sin_nucleo_id:m?m.categoria_sin_nucleo_id:null, especial:m?!!m.especial:false, configs:[]};});
       $('#prodSub').textContent = num?('Parte '+num+' · '+this.lineas.length+' líneas'):(this.lineas.length+' líneas');
       const faltan=[...new Set(this.lineas.filter(l=>!l.sku_nucleo && !l.sin_nucleo).map(l=>l.sku_pf))];
       $('#prodAviso').innerHTML = faltan.length?
@@ -1180,6 +1182,7 @@ const Prod = {
         <div style="font-size:11px;color:${l.sin_nucleo?'var(--pur)':'var(--muted)'};font-family:'JetBrains Mono'">${nucCell}</div>
         <div style="text-align:center"><div style="font-size:8px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow'">Cant.</div>
           <input type="number" min="0" value="${l.cant}" data-i="${i}" class="mcant" onclick="event.stopPropagation()" style="width:56px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:center;font-family:inherit"></div>
+        <button class="chip" style="padding:8px 10px;${l.especial?'background:#1B4F72;color:#fff':'background:var(--surf2);color:var(--muted)'}" title="Especial (externo): sale en un parte aparte. Se recuerda para este modelo." onclick="event.stopPropagation();Prod.toggleEspecial(${i})">${l.especial?'★ Especial':'☆ Especial'}</button>
         <button class="chip" style="background:#EEE4F2;color:#7A3E8C;padding:8px 10px" title="Dividir por configuración" onclick="event.stopPropagation();Prod.abrirConfig(${i})">⚙</button>
       </div>`;
     }).join('');
@@ -1253,7 +1256,7 @@ const Prod = {
   addModeloDesde(m,n){
     n=Math.max(1,n||1);
     this.lineas.push({sku_pf:m.sku_pf,cant:n,descParte:m.nombre||'',descBase:m.nombre||'',nombre:m.nombre||'',medida:m.medida||'',
-      sku_nucleo:m.sku_nucleo||null,sin_nucleo:!!m.sin_nucleo,categoria_sin_nucleo_id:m.categoria_sin_nucleo_id||null,configs:[]});
+      sku_nucleo:m.sku_nucleo||null,sin_nucleo:!!m.sin_nucleo,categoria_sin_nucleo_id:m.categoria_sin_nucleo_id||null,especial:!!(this.modelosMap[m.sku_pf]||m).especial,configs:[]});
     this.recompute();
   },
   // ventana emergente para buscar un modelo en el catálogo y añadirlo al parte
@@ -1283,6 +1286,22 @@ const Prod = {
       this.lineas.forEach(x=>{ if(x.sku_pf===m.sku_pf){ x.sku_nucleo=m.sku_nucleo; x.sin_nucleo=m.sin_nucleo; x.categoria_sin_nucleo_id=m.categoria_sin_nucleo_id; }});
       this.recompute();
     });
+  },
+
+  // marca/desmarca un modelo como ESPECIAL (externo): se guarda en el modelo, así la próxima vez
+  // que entre en un parte ya sale marcado; sus líneas salen en hojas de parte aparte
+  async toggleEspecial(i){
+    const l=this.lineas[i]; if(!l)return;
+    const val=!l.especial;
+    try{
+      const {error}=await sb.from('modelos').update({especial:val}).eq('sku_pf',l.sku_pf);
+      if(error)throw error;
+    }catch(e){ toast('No se pudo guardar. ¿Ejecutaste modelos_especial.sql en Supabase? '+(e.message||e),'err'); return; }
+    this.lineas.forEach(x=>{ if(x.sku_pf===l.sku_pf) x.especial=val; });
+    if(this.modelosMap[l.sku_pf]) this.modelosMap[l.sku_pf].especial=val;
+    if(typeof Catalogo!=='undefined' && Catalogo.map && Catalogo.map[l.sku_pf]) Catalogo.map[l.sku_pf].especial=val;
+    this.render();
+    toast(val?'★ '+l.sku_pf+' marcado como especial (externo)':l.sku_pf+' ya no es especial','ok');
   },
 
   // ---- dividir una línea por configuración (etiquetas, asas, enrollado…) ----
@@ -1466,7 +1485,7 @@ const Prod = {
     this.lineas.forEach(l=>{ if(l.cant<=0)return;
       let rest=l.cant;
       const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
-      const base={sku_pf:l.sku_pf,desc:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,nucleo:l.sku_nucleo};
+      const base={sku_pf:l.sku_pf,desc:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,nucleo:l.sku_nucleo,especial:!!l.especial};
       // marcado explícitamente "sin núcleo": va aparte, no pasa por el reparto FIFO de núcleos
       if(l.sin_nucleo){ bD.push({...base,cant:rest}); return; }
       const p=(l.sku_nucleo&&pools[l.sku_nucleo])?pools[l.sku_nucleo]:{disp:[],madur:[],fabri:[]};
@@ -1534,9 +1553,13 @@ const Prod = {
       return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
         <table><tr>${head}</tr>${rows}<tr class="tot"><td colspan="${colspan}">TOTAL</td><td class="n">${t}</td></tr></table>`;
     };
-    const h1=hojaMod('Parte · Modelos con núcleo DISPONIBLE','Se puede fabricar ya (OT indicada).',bA,false);
-    const h2=hojaMod('Parte · Modelos EN MADURACIÓN','El núcleo ya está fabricado pero aún no disponible.',bB,true);
-    const h3=hojaMod('Parte · Modelos PENDIENTES de fabricar','Se ha lanzado / está en curso la OT indicada.',bC,true);
+    // los modelos ESPECIALES (externos) salen en sus propias hojas: consumen los mismos núcleos, pero van en otro parte
+    const norm=a=>a.filter(x=>!x.especial), espe=a=>a.filter(x=>x.especial);
+    const h1=hojaMod('Parte · Modelos con núcleo DISPONIBLE','Se puede fabricar ya (OT indicada).',norm(bA),false);
+    const h2=hojaMod('Parte · Modelos EN MADURACIÓN','El núcleo ya está fabricado pero aún no disponible.',norm(bB),true);
+    const h3=hojaMod('Parte · Modelos PENDIENTES de fabricar','Se ha lanzado / está en curso la OT indicada.',norm(bC),true);
+    const hE1=hojaMod('Parte ESPECIALES · Núcleo DISPONIBLE','Modelos especiales (externos). Se pueden fabricar ya (OT indicada).',espe(bA),false);
+    const hE2=hojaMod('Parte ESPECIALES · Núcleo NO disponible','Modelos especiales (externos). El núcleo está madurando o pendiente de fabricar.',[...espe(bB),...espe(bC)],true);
     // hoja aparte para los modelos marcados como "sin núcleo" (colchonetas, etc.): no requieren fabricar núcleo
     const h4=(()=>{
       const arr=bD||[]; if(!arr.length)return'';
@@ -1545,7 +1568,7 @@ const Prod = {
       return `<div class="pb"></div><h1>Parte · Colchones SIN NÚCLEO</h1><div class="meta">No requieren fabricación de núcleo. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
         <table><tr><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="2">TOTAL</td><td class="n">${t}</td></tr></table>`;
     })();
-    ventanaImpresion(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}${h4}
+    ventanaImpresion(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}${h4}${hE1}${hE2}
       <script>setTimeout(()=>window.print(),500);<\/script></body></html>`, 'Parte '+ref);
   },
 
