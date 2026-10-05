@@ -3149,7 +3149,7 @@ async function crearUnidadesAjuste(sku,n,nombreOT,fabricadaAt){
 //  ALTA MASIVA (importar catálogo desde Excel)
 // ============================================================
 const Alta = {
-  modelos:[], nucleosNuevos:[],
+  modelos:[], nucleos:[], nucleosNuevos:[],
 
   norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); },
   pick(row, keys){ for(const k of keys){ const kk=this.norm(k); for(const col in row){ if(this.norm(col)===kk) return String(row[col]).trim(); } } return ''; },
@@ -3175,23 +3175,29 @@ const Alta = {
           sku_nucleo:(this.pick(d,['sku nucleos','sku nucleo','sku_nucleo','nucleo'])||'').toUpperCase()||null
         });
       });
-      // núcleos referenciados
+      // núcleos referenciados (nombre/descripcion vacíos = la celda venía vacía en el Excel)
       const nucMap={};
       rows.forEach(d=>{
         const sku=(this.pick(d,['sku nucleos','sku nucleo','sku_nucleo','nucleo'])||'').toUpperCase();
         if(!sku)return;
-        const nombre=this.pick(d,['descripcion nucleos','descripcion nucleo'])||sku;
+        const nombre=this.pick(d,['descripcion nucleos','descripcion nucleo']);
         const prog=this.pick(d,['programa nucleos','programa']);
         const progDesc=this.pick(d,['descripcion programa nucleos']);
-        const desc=prog&&progDesc?`${prog} · ${progDesc}`:(progDesc||prog||nombre);
+        const desc=prog&&progDesc?`${prog} · ${progDesc}`:(progDesc||prog);
         if(!nucMap[sku])nucMap[sku]={sku,nombre,descripcion:desc};
       });
       if(!this.modelos.length){ toast('No se detectaron modelos. Revisa la cabecera (CÓDIGOS PF).','err'); return; }
-      // ¿qué núcleos faltan?
+      // ¿qué núcleos faltan y cuáles ya existen (se actualizan)?
       const existentes=new Set(Object.keys(MET));
-      this.nucleosNuevos=Object.values(nucMap).filter(n=>!existentes.has(n.sku));
+      this.nucleos=Object.values(nucMap);
+      this.nucleosNuevos=this.nucleos.filter(n=>!existentes.has(n.sku));
+      const nucAct=this.nucleos.length-this.nucleosNuevos.length;
+      // ¿qué modelos ya existen y cuáles cambian de núcleo?
+      const exMod={}; (await selectAll('modelos','sku_pf,sku_nucleo')).forEach(m=>{exMod[m.sku_pf]=m;});
+      const modAct=this.modelos.filter(m=>exMod[m.sku_pf]).length;
+      const cambian=this.modelos.filter(m=>exMod[m.sku_pf]&&m.sku_nucleo&&exMod[m.sku_pf].sku_nucleo!==m.sku_nucleo).length;
       this.render();
-      $('#altaAviso').innerHTML=`<div style="background:#F5E7DF;color:#8a4426;border-left:4px solid var(--terra);border-radius:9px;padding:10px 14px;margin-bottom:10px;font-size:13px"><b>${this.modelos.length}</b> modelos listos para importar${this.nucleosNuevos.length?` · se crearán <b>${this.nucleosNuevos.length}</b> núcleos nuevos`:''}. Revisa la tabla y pulsa Importar.</div>`;
+      $('#altaAviso').innerHTML=`<div style="background:#F5E7DF;color:#8a4426;border-left:4px solid var(--terra);border-radius:9px;padding:10px 14px;margin-bottom:10px;font-size:13px"><b>${this.modelos.length}</b> modelos listos para importar (${this.modelos.length-modAct} nuevos · ${modAct} se actualizan${cambian?` · <b>${cambian}</b> cambian de núcleo`:''})${this.nucleosNuevos.length?` · se crearán <b>${this.nucleosNuevos.length}</b> núcleos nuevos`:''}${nucAct?` · se actualizarán ${nucAct} núcleos existentes`:''}. Las celdas vacías no borran lo que ya hay. Revisa la tabla y pulsa Importar.</div>`;
       const btn=$('#btnImportar'); btn.disabled=false; btn.style.opacity=1;
     }catch(e){ toast('Error al leer el archivo: '+(e.message||e),'err'); }
   },
@@ -3212,24 +3218,38 @@ const Alta = {
 
   async importar(){
     if(!this.modelos.length)return;
-    if(!confirm(`¿Importar ${this.modelos.length} modelos${this.nucleosNuevos.length?` y crear ${this.nucleosNuevos.length} núcleos nuevos`:''}?`))return;
+    if(!confirm(`¿Importar ${this.modelos.length} modelos${this.nucleosNuevos.length?` y crear ${this.nucleosNuevos.length} núcleos nuevos`:''}? Los modelos y núcleos que ya existen se actualizarán con los datos del Excel.`))return;
     const btn=$('#btnImportar'); btn.disabled=true; btn.textContent='Importando…';
     try{
-      // 1. crear núcleos que falten (productos)
-      if(this.nucleosNuevos.length){
-        for(let i=0;i<this.nucleosNuevos.length;i+=200){
-          const {error}=await sb.from('productos').upsert(this.nucleosNuevos.slice(i,i+200),{onConflict:'sku'});
-          if(error)throw error;
-        }
+      // 1. crear núcleos que falten y actualizar los existentes (productos)
+      //    una celda vacía en el Excel conserva el valor que ya había
+      const exProd={}; (await selectAll('productos','sku,nombre,descripcion')).forEach(p=>{exProd[p.sku]=p;});
+      const nuc=this.nucleos.map(n=>{
+        const ex=exProd[n.sku]||{};
+        const nombre=n.nombre||ex.nombre||n.sku;
+        return {sku:n.sku,nombre,descripcion:n.descripcion||ex.descripcion||nombre};
+      });
+      for(let i=0;i<nuc.length;i+=200){
+        const {error}=await sb.from('productos').upsert(nuc.slice(i,i+200),{onConflict:'sku'});
+        if(error)throw error;
       }
-      // 2. upsert modelos
-      const mod=this.modelos.map(m=>({sku_pf:m.sku_pf,nombre:m.nombre,medida:m.medida,sku_nucleo:m.sku_nucleo}));
+      // 2. upsert modelos: si el Excel trae núcleo, el modelo pasa a usar ese núcleo
+      //    (y deja de estar marcado "sin núcleo"); las celdas vacías no borran lo que había
+      const exMod={}; (await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id')).forEach(m=>{exMod[m.sku_pf]=m;});
+      const mod=this.modelos.map(m=>{
+        const ex=exMod[m.sku_pf]||{};
+        const conNuc=!!m.sku_nucleo;
+        return {sku_pf:m.sku_pf,nombre:m.nombre||ex.nombre||'',medida:m.medida||ex.medida||'',
+          sku_nucleo:m.sku_nucleo||ex.sku_nucleo||null,
+          sin_nucleo:conNuc?false:!!ex.sin_nucleo,
+          categoria_sin_nucleo_id:conNuc?null:(ex.categoria_sin_nucleo_id||null)};
+      });
       for(let i=0;i<mod.length;i+=200){
         const {error}=await sb.from('modelos').upsert(mod.slice(i,i+200),{onConflict:'sku_pf'});
         if(error)throw error;
       }
       toast(`✓ ${this.modelos.length} modelos importados`+(this.nucleosNuevos.length?` · ${this.nucleosNuevos.length} núcleos creados`:''),'ok');
-      this.modelos=[];this.nucleosNuevos=[];
+      this.modelos=[];this.nucleos=[];this.nucleosNuevos=[];
       $('#altaTabla').innerHTML='';$('#altaAviso').innerHTML='';
       btn.textContent='Importar';btn.style.opacity=.5;
       // refrescar métricas y referencias de producción
