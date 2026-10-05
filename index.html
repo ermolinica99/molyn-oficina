@@ -555,6 +555,8 @@ async function idsPendientesDeOT(ot){
 }
 
 const PROG_DESC={N001:'Extra Firm',N002:'040',N003:'030',N004:'V50',N005:'Medium',N006:'V65/32',N007:'V65/40',N008:'V80 Soft',N009:'V80/40',N010:'Abatible',N011:'Kids',N012:'Articulado'};
+// texto bajo el código del núcleo: medida + nombre (si el nombre aporta algo distinto del código)
+function etiquetaNuc(b){const med=medida(b.sku), nom=(b.nombre&&b.nombre!==b.sku)?b.nombre:''; return [med,nom].filter(Boolean).join(' · ');}
 function progDe(p){const m=(p.descripcion||p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
 function medida(sku){const rest=String(sku||'').replace(/^N\d{3}/,'');const m=rest.match(/(\d{2,3})\s*[xX]\s*(\d{3})/);return m?`Medida ${m[1]} × ${m[2]}`:''}
 
@@ -608,6 +610,13 @@ async function calcularMetricas(){
   const pReservas=(async()=>{ try{const r=await selectWhere('reservas','sku,cantidad,estado');return r.filter(x=>x.estado==='pendiente'||x.estado==null);}catch(e){return [];} })();
   const [prods,activos,consumo,res]=await Promise.all([pProds,pActivos,pConsumo,pReservas]);
 
+  // nombres de programa: los del catálogo importado ("N013 · Nombre") mandan sobre la lista fija,
+  // y un programa nuevo aparece aunque no tenga nombre (Dashboard y lotes por programa)
+  prods.forEach(p=>{
+    const d=String(p.descripcion||'').match(/^\s*(N\d{3})\s*·\s*(.+)$/);
+    if(d) PROG_DESC[d[1]]=d[2].trim();
+    const pr=progDe(p); if(pr!=='—' && !(pr in PROG_DESC)) PROG_DESC[pr]='';
+  });
   const pend={};res.forEach(r=>{pend[r.sku]=(pend[r.sku]||0)+(r.cantidad||0)});
   const m={};
   prods.forEach(p=>{m[p.sku]={sku:p.sku,nombre:p.nombre||'',prog:progDe(p),stock:0,disp:0,madurando:0,fabricando:0,dias:{},cons28:0,forzado:!!p.forzar_diario};});
@@ -793,7 +802,7 @@ function render(){
         return `<div style="cursor:pointer" onclick="open_detalle('${esc(b.sku).replace(/'/g,"")}')">
           <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
             <span class="mono" style="font-size:12px;font-weight:700">${esc(b.sku)}</span>
-            <span style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(medida(b.sku)||b.nombre||'')}</span>
+            <span style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(etiquetaNuc(b))}</span>
             <span class="mono" style="margin-left:auto;font-size:13px;font-weight:700;color:${c}">${dias(x.d)} d</span>
           </div>
           <div style="height:7px;background:#EDEAE2;overflow:hidden;border-radius:2px"><div style="width:${pct(Math.max(x.d,0)/maxD)}%;height:100%;background:${c}"></div></div>
@@ -814,7 +823,7 @@ function render(){
       ${repo.length?repo.map(b=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #EDEAE2;cursor:pointer" onclick="open_detalle('${esc(b.sku).replace(/'/g,"")}')">
         <div style="min-width:0;flex:1">
           <div class="mono" style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.sku)}</div>
-          <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(medida(b.sku)||b.nombre||'')}</div>
+          <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(etiquetaNuc(b))}</div>
         </div>
         <div class="mono" style="font-size:15px;font-weight:700;color:var(--pur)">${Math.abs(b.saldo)}</div>
       </div>`).join(''):'<div class="vacio" style="padding:14px 16px">Ningún núcleo en negativo. Todo cubierto.</div>'}
@@ -899,7 +908,7 @@ function cardN(b){
   const forz=b.forzado;
   const cls=forz?'forz':(b.personalizado?'':'diario');
   const tag=forz?'<span class="tag forz">Diario (forzado)</span>':(b.personalizado?'<span class="tag pers">Personalizado</span>':'<span class="tag diario">Diario</span>');
-  const med=medida(b.sku)||esc(b.nombre||'');
+  const med=etiquetaNuc(b);
   return `<div class="nc ${cls} nc-click" data-sku="${esc(b.sku)}" style="cursor:pointer">
     <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(med)}</div></div>${tag}</div>
     <div class="nb">
@@ -2351,7 +2360,7 @@ const Inv = {
     rs=rs.slice(0,120); // no pintar 272 de golpe si no hay búsqueda
     $('#invLista').innerHTML=rs.length?rs.map(b=>`
       <div class="nc ${b.forzado?'forz':(b.personalizado?'':'diario')}">
-        <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(medida(b.sku)||b.nombre||'')}</div></div></div>
+        <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(etiquetaNuc(b))}</div></div></div>
         <div class="nb">
           <div class="saldo"><span class="big ${(b.disp+b.madurando)<=0?'zero':''}">${b.disp+b.madurando}</span><span class="sl">EN STOCK<br>disp+madur</span></div>
           <div style="display:flex;gap:8px;align-items:center">
