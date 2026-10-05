@@ -3206,7 +3206,7 @@ const Alta = {
       const modAct=this.modelos.filter(m=>exMod[m.sku_pf]).length;
       const cambian=this.modelos.filter(m=>exMod[m.sku_pf]&&m.sku_nucleo&&exMod[m.sku_pf].sku_nucleo!==m.sku_nucleo).length;
       this.render();
-      $('#altaAviso').innerHTML=`<div style="background:#F5E7DF;color:#8a4426;border-left:4px solid var(--terra);border-radius:9px;padding:10px 14px;margin-bottom:10px;font-size:13px"><b>${this.modelos.length}</b> modelos listos para importar (${this.modelos.length-modAct} nuevos · ${modAct} se actualizan${cambian?` · <b>${cambian}</b> cambian de núcleo`:''})${this.nucleosNuevos.length?` · se crearán <b>${this.nucleosNuevos.length}</b> núcleos nuevos`:''}${nucAct?` · se actualizarán ${nucAct} núcleos existentes`:''}. Las celdas vacías no borran lo que ya hay. Revisa la tabla y pulsa Importar.</div>`;
+      $('#altaAviso').innerHTML=`<div style="background:#F5E7DF;color:#8a4426;border-left:4px solid var(--terra);border-radius:9px;padding:10px 14px;margin-bottom:10px;font-size:13px"><b>${this.modelos.length}</b> modelos listos para importar (${this.modelos.length-modAct} nuevos · ${modAct} se actualizan${cambian?` · <b>${cambian}</b> cambian de núcleo (sus reservas pendientes pasan al nuevo)`:''})${this.nucleosNuevos.length?` · se crearán <b>${this.nucleosNuevos.length}</b> núcleos nuevos`:''}${nucAct?` · se actualizarán ${nucAct} núcleos existentes`:''}. Las celdas vacías no borran lo que ya hay. Revisa la tabla y pulsa Importar.</div>`;
       const btn=$('#btnImportar'); btn.disabled=false; btn.style.opacity=1;
     }catch(e){ toast('Error al leer el archivo: '+(e.message||e),'err'); }
   },
@@ -3227,7 +3227,7 @@ const Alta = {
 
   async importar(){
     if(!this.modelos.length)return;
-    if(!confirm(`¿Importar ${this.modelos.length} modelos${this.nucleosNuevos.length?` y crear ${this.nucleosNuevos.length} núcleos nuevos`:''}? Los modelos y núcleos que ya existen se actualizarán con los datos del Excel.`))return;
+    if(!confirm(`¿Importar ${this.modelos.length} modelos${this.nucleosNuevos.length?` y crear ${this.nucleosNuevos.length} núcleos nuevos`:''}? Los modelos y núcleos que ya existen se actualizarán con los datos del Excel, y las reservas pendientes de los modelos que cambian de núcleo pasarán al núcleo nuevo.`))return;
     const btn=$('#btnImportar'); btn.disabled=true; btn.textContent='Importando…';
     try{
       // 1. crear núcleos que falten y actualizar los existentes (productos)
@@ -3257,7 +3257,18 @@ const Alta = {
         const {error}=await sb.from('modelos').upsert(mod.slice(i,i+200),{onConflict:'sku_pf'});
         if(error)throw error;
       }
-      toast(`✓ ${this.modelos.length} modelos importados`+(this.nucleosNuevos.length?` · ${this.nucleosNuevos.length} núcleos creados`:''),'ok');
+      // 3. modelos que cambian de núcleo: sus reservas aún sin consumir pasan al núcleo nuevo
+      //    (se sueltan de la OT del núcleo antiguo, cuyas unidades quedan libres)
+      let movidas=0;
+      for(const m of this.modelos){
+        const antes=(exMod[m.sku_pf]||{}).sku_nucleo;
+        if(!m.sku_nucleo||!antes||antes===m.sku_nucleo)continue;
+        const {data,error}=await sb.from('reservas').update({sku:m.sku_nucleo,ot:null})
+          .eq('sku_pf',m.sku_pf).eq('sku',antes).or('estado.eq.pendiente,estado.is.null').select('id');
+        if(error)throw error;
+        movidas+=(data||[]).length;
+      }
+      toast(`✓ ${this.modelos.length} modelos importados`+(this.nucleosNuevos.length?` · ${this.nucleosNuevos.length} núcleos creados`:'')+(movidas?` · ${movidas} reservas pasadas al núcleo nuevo`:''),'ok');
       this.modelos=[];this.nucleos=[];this.nucleosNuevos=[];
       $('#altaTabla').innerHTML='';$('#altaAviso').innerHTML='';
       btn.textContent='Importar';btn.style.opacity=.5;
