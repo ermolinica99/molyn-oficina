@@ -3170,14 +3170,20 @@ const Apr = {
   }
 };
 
-// crea n unidades en stock por un ajuste de inventario, dentro de la OT del día (OTINVaaaammdd)
+// crea n unidades en stock por un ajuste de inventario, dentro de la OT de inventario del día de ESE núcleo:
+// OTINVaaaammdd para el primer núcleo del día y OTINVaaaammdd-2, -3… para los siguientes
+// (antes era una sola OT por día para todos los núcleos y solo se veía en el primero)
 async function crearUnidadesAjuste(sku,n,nombreOT,fabricadaAt){
-  const now=new Date().toISOString(), ot=otInventario();
-  // si la OT del día ya existe se le suma la cantidad (antes el upsert la sobrescribía con el último ajuste)
-  const {data:ex,error:ee}=await sb.from('ordenes').select('ot,cantidad').eq('ot',ot).maybeSingle();
+  const now=new Date().toISOString(), otDia=otInventario();
+  const {data:ots,error:ee}=await sb.from('ordenes').select('ot,sku,cantidad').like('ot',otDia+'%');
   if(ee)throw ee;
-  if(ex) chk(await sb.from('ordenes').update({cantidad:(Number(ex.cantidad)||0)+n}).eq('ot',ot));
-  else chk(await sb.from('ordenes').insert({ot,sku,nombre:nombreOT,cantidad:n,lanzada_at:now,fabricada_at:now,estado:'cerrada',cerrada_at:now}));
+  const mia=(ots||[]).find(o=>o.sku===sku);
+  let ot;
+  if(mia){ ot=mia.ot; chk(await sb.from('ordenes').update({cantidad:(Number(mia.cantidad)||0)+n}).eq('ot',ot)); }
+  else{
+    const usadas=new Set((ots||[]).map(o=>o.ot)); ot=otDia; for(let k=2;usadas.has(ot);k++) ot=otDia+'-'+k;
+    chk(await sb.from('ordenes').insert({ot,sku,nombre:nombreOT,cantidad:n,lanzada_at:now,fabricada_at:now,estado:'cerrada',cerrada_at:now}));
+  }
   const base=Date.now(), rows=[];
   for(let i=0;i<n;i++) rows.push({id:`${ot}-${sku.slice(0,6)}-${base}-${i}`,sku,estado:'stock',fabricada_at:fabricadaAt||now,lanzada_at:now,ot});
   chk(await sb.from('unidades').insert(rows));
@@ -3327,6 +3333,10 @@ async function open_detalle(sku,nombre){
     const now=new Date(), mad=CFG.maduracion*86400000;
     // OT activas (con stock o pendiente)
     const udByOt={}; uds.forEach(u=>{(udByOt[u.ot]=udByOt[u.ot]||[]).push(u);});
+    // OT con unidades de este núcleo cuya orden figura con otro SKU: las OT de inventario (OTINVaaaammdd)
+    // eran una por día para todos los núcleos y la orden se quedaba con el SKU del primero
+    const faltan=Object.keys(udByOt).filter(ot=>ot && ot!=='null' && !ords.some(o=>o.ot===ot));
+    if(faltan.length){ const {data:extra}=await sb.from('ordenes').select('*').in('ot',faltan); (extra||[]).forEach(o=>ords.push(o)); ords.sort((a,b)=>String(a.ot).localeCompare(String(b.ot))); }
     const activas=ords.filter(o=>{ const us=udByOt[o.ot]||[]; return us.some(u=>u.estado==='stock'||u.estado==='pendiente'); });
     const abiertas=activas.filter(o=>o.estado==='abierta'), otras=activas.filter(o=>o.estado!=='abierta');
     // ---- coste estimado (mano de obra + material) · solo visible para administración ----
@@ -3362,7 +3372,7 @@ async function open_detalle(sku,nombre){
         <div class="mini"><div><div class="v" style="color:var(--terra)">${disp}</div><div class="k">Disponible</div></div>
         <div><div class="v" style="color:var(--blue)">${madur}</div><div class="k">Madurando</div></div>
         <div><div class="v">${pend}</div><div class="k">Pendiente</div></div>
-        <div><div class="v">${o.cantidad||us.length}</div><div class="k">Total OT</div></div></div>
+        <div><div class="v">${o.sku===sku?(o.cantidad||us.length):us.length}</div><div class="k">Total OT</div></div></div>
         ${(disp+madur+pend)>0?`<button class="chip qr-ot" data-ot="${esc(o.ot)}" style="background:var(--blue);margin-top:10px;font-size:12px;padding:7px 12px">🏷️ Etiquetas QR de esta OT</button>`:''}
         </div>`;
     };
@@ -3413,7 +3423,7 @@ async function open_detalle(sku,nombre){
     const body=$('#modalBody');
     body.querySelectorAll('.qr-ot').forEach(btn=>btn.addEventListener('click',async()=>{
       const ot=btn.dataset.ot;
-      const us=(await sb.from('unidades').select('id,sku,ot,estado,lanzada_at').eq('ot',ot)).data||[];
+      const us=(await sb.from('unidades').select('id,sku,ot,estado,lanzada_at').eq('ot',ot).eq('sku',sku)).data||[];
       const imp=us.filter(u=>u.estado==='stock'||u.estado==='pendiente').map(u=>({id:u.id,sku:u.sku,ot:u.ot,nombre,lanzada_at:u.lanzada_at}));
       if(!imp.length){ toast('No hay unidades imprimibles en esta OT','err'); return; }
       Prod.parteNum=''; Prod.imprimirEtiquetas(imp);
