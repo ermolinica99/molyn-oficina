@@ -311,6 +311,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         <div style="flex:1"></div>
         <button class="chip" style="background:var(--green)" onclick="OT.accion('fabricar')">Fabricar</button>
         <button class="chip" style="background:var(--ink)" onclick="OT.accion('cerrar')">Cerrar</button>
+        <button class="chip" style="background:var(--terra)" onclick="OT.ajustarSel()" title="Quitar unidades pendientes que no se van a fabricar (p. ej. lanzada con 19 y salieron 18)">Ajustar cantidad</button>
         <button class="chip" style="background:var(--blue)" onclick="OT.accion('qr')">Reimprimir QR</button>
         <button class="chip" style="background:var(--red)" onclick="OT.accion('anular')">Anular</button>
       </div>
@@ -1879,6 +1880,73 @@ const OT = {
 
   selected(){ return this.rows.filter(r=>this.sel.has(r.ot)); },
 
+  // ---- ajustar la cantidad de UNA OT: elegir qué unidades pendientes sobran ----
+  ajustarSel(){
+    const sel=this.selected();
+    if(sel.length!==1){ toast('Selecciona una sola OT para ajustar su cantidad','err'); return; }
+    this.abrirAjuste(sel[0].ot,1,null);
+  },
+  async abrirAjuste(ot,nQuitar,reqId){
+    abrirModal('Ajustar cantidad · '+ot,'');
+    try{
+      const [{data:ord,error:e0},uds]=await Promise.all([
+        sb.from('ordenes').select('ot,sku,nombre,cantidad').eq('ot',ot).maybeSingle(),
+        selectWhere('unidades','id,estado',q=>q.eq('ot',ot))]);
+      if(e0)throw e0;
+      if(!ord) throw new Error('No existe la OT '+ot);
+      $('#modalSub').textContent=ord.sku;
+      const pend=uds.filter(u=>u.estado==='pendiente').map(u=>u.id).sort();
+      const hechas=uds.length-pend.length, cant=Number(ord.cantidad)||uds.length;
+      this._aj={ot,reqId,cant};
+      if(!pend.length){ $('#modalBody').innerHTML='<div class="vacio">Esta OT no tiene unidades pendientes: no hay nada que quitar.</div>'; return; }
+      const n=Math.min(Math.max(1,nQuitar||1),pend.length);
+      const marcadas=new Set(pend.slice(-n));
+      $('#modalBody').innerHTML=`
+        ${reqId?`<div style="background:#F5E7DF;color:var(--terra-d);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px">Petición del encargado: sobran <b>${nQuitar}</b> etiqueta${nQuitar==1?'':'s'} en esta OT.</div>`:''}
+        <div class="mini" style="margin-bottom:14px"><div><div class="v">${cant}</div><div class="k">Total OT</div></div>
+          <div><div class="v" style="color:var(--green)">${hechas}</div><div class="k">Fabricadas</div></div>
+          <div><div class="v" style="color:var(--blue)">${pend.length}</div><div class="k">Pendientes</div></div></div>
+        <div style="font-size:13px;color:var(--ink2);margin-bottom:8px">Marca las etiquetas que <b>sobran</b> (unidades que no se van a fabricar). Se quitan de la OT y su cantidad baja.</div>
+        <div style="max-height:40vh;overflow:auto;border:1px solid var(--border);border-radius:10px">
+          ${pend.map(id=>`<label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer">
+            <input type="checkbox" class="ajchk" data-id="${esc(id)}" ${marcadas.has(id)?'checked':''} style="width:16px;height:16px;accent-color:var(--terra)">
+            <span style="font-family:'JetBrains Mono';font-size:13px">${esc(id)}</span></label>`).join('')}
+        </div>
+        <div id="ajResumen" style="margin:12px 0;font-size:14px"></div>
+        <div style="display:flex;gap:8px">
+          <button class="chip" style="flex:1;padding:12px;background:var(--terra)" onclick="OT.aplicarAjuste(this)">Quitar las marcadas</button>
+          <button class="chip" style="padding:12px;background:var(--surf2);color:var(--ink)" onclick="cerrarModal()">Cancelar</button>
+        </div>`;
+      const resumen=()=>{ const k=document.querySelectorAll('#modalBody .ajchk:checked').length;
+        $('#ajResumen').innerHTML=k?`Se quitan <b>${k}</b> → la OT queda en <b>${Math.max(0,cant-k)}</b> uds${k===pend.length?' y se cierra':''}.`:'<span style="color:var(--muted)">No hay ninguna marcada.</span>'; };
+      $('#modalBody').querySelectorAll('.ajchk').forEach(c=>c.addEventListener('change',resumen));
+      resumen();
+    }catch(e){ $('#modalBody').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  async aplicarAjuste(btn){
+    const aj=this._aj; if(!aj) return;
+    const ids=[...document.querySelectorAll('#modalBody .ajchk:checked')].map(c=>c.dataset.id);
+    if(!ids.length){ toast('Marca al menos una unidad','err'); return; }
+    if(!confirm(`¿Quitar ${ids.length} unidad${ids.length===1?'':'es'} pendiente${ids.length===1?'':'s'} de ${aj.ot}?`)) return;
+    btn.disabled=true;
+    let marcada=false;
+    try{
+      // si viene de una petición de planta, se marca resuelta primero (y solo si seguía pendiente)
+      if(aj.reqId){
+        const m=await Apr.marcar(aj.reqId,{estado:'aprobado',resuelto_at:new Date().toISOString()},'pendiente');
+        if(!m.length){ toast('Esa petición ya estaba resuelta','err'); btn.disabled=false; Avisos.check(); return; }
+        marcada=true;
+      }
+      await ajustarOT(aj.ot,ids);
+      cerrarModal();
+      toast(`✓ ${aj.ot}: quitadas ${ids.length} uds. Rompe ${ids.length===1?'la etiqueta':'las etiquetas'} ${ids.join(', ')}`,'ok');
+      await this.reload(); await refrescarMet(true); render();
+    }catch(e){
+      if(marcada) await Apr.marcar(aj.reqId,{estado:'pendiente',resuelto_at:null}).catch(()=>{});
+      toast('Error: '+(e.message||e),'err'); btn.disabled=false;
+    }finally{ Avisos.check(); }
+  },
+
   async accion(tipo){
     const sel=this.selected();
     if(!sel.length){ toast('Selecciona al menos una OT','err'); return; }
@@ -2420,8 +2488,9 @@ const Inv = {
     if(this._busy) return; this._busy=true;
     try{
       const now=new Date().toISOString();
+      let nuevas=[];
       if(signo>0){
-        await crearUnidadesAjuste(sku,n,'AJUSTE INVENTARIO ('+motivo+')');
+        nuevas=await crearUnidadesAjuste(sku,n,'AJUSTE INVENTARIO ('+motivo+')');
       }else{
         const {data,error}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(n);
         if(error)throw error;
@@ -2437,6 +2506,7 @@ const Inv = {
       if(r.error) console.warn('No se pudo registrar el ajuste en el historial:',r.error.message);
       toast(`✓ ${signo>0?'Alta':'Baja'} de ${n} uds · ${motivo}`,'ok');
       await refrescarMet(true); this.paint(); render();
+      if(nuevas.length && confirm(`¿Imprimir ahora ${nuevas.length===1?'la etiqueta':'las '+nuevas.length+' etiquetas'} de ${sku}?`)) imprimirEtiquetasNuevas(nuevas);
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
     finally{ this._busy=false; }
   }
@@ -3114,6 +3184,16 @@ const Apr = {
       const uids=[...new Set(rows.map(r=>r.solicitado_por).filter(Boolean))];
       const users={}; if(uids.length){ const {data:us}=await sb.from('usuarios').select('id,nombre').in('id',uids); (us||[]).forEach(u=>users[u.id]=u.nombre); }
       $('#aprLista').innerHTML=rows.map(r=>{
+        if(r.tipo==='ot_menos'){ const n=Math.abs(Number(r.cantidad)||0); return `
+        <div class="card" style="margin-bottom:10px;border-left:4px solid var(--terra)"><div style="display:flex;align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;background:#F5E7DF;color:var(--terra)">OT · SOBRAN ${n} ETIQUETA${n===1?'':'S'}</span>
+            <span style="font-family:'JetBrains Mono';font-weight:700">${esc(r.ot||'—')}</span><span style="font-family:'JetBrains Mono';font-size:12px;color:var(--muted)">${esc(r.sku)}</span></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(users[r.solicitado_por]||'—')} · ${r.created_at?new Date(r.created_at).toLocaleString('es-ES'):''} · salieron menos núcleos de los lanzados</div>
+            ${r.nota?`<div style="font-size:12px;color:var(--ink2);margin-top:4px">“${esc(r.nota)}”</div>`:''}</div>
+          <button class="chip" style="background:var(--terra)" onclick="Apr.resolver(${r.id},'aprobado',this)">Quitar ${n} de la OT</button>
+          <button class="chip" style="background:var(--ink)" onclick="Apr.ajustarAMano(${r.id})">Ajustar a mano</button>
+          <button class="chip" style="background:var(--red)" onclick="Apr.resolver(${r.id},'rechazado',this)">Rechazar</button>
+        </div></div>`; }
         const alta=this.esAlta(r), n=Math.abs(Number(r.cantidad)||0), b=MET[r.sku];
         const stockInfo=b?` · en stock ahora: ${b.disp+b.madurando} (${b.disp} disp.)`:'';
         return `
@@ -3142,14 +3222,22 @@ const Apr = {
       // personas de oficina a la vez) no aplica el mismo ajuste dos veces al stock
       const marcadas=await this.marcar(id,{estado,resuelto_at:new Date().toISOString()},'pendiente');
       if(!marcadas.length){ toast('Esta solicitud ya estaba resuelta','err'); this.reload(); return; }
+      let nuevas=[], msg='✓ Aprobado y aplicado al stock';
       if(estado==='aprobado'){
         const aj=marcadas[0];
         try{
           const sku=aj.sku, cant=Math.abs(Number(aj.cantidad)||0);
-          if(this.esAlta(aj)){
+          if(aj.tipo==='ot_menos'){
+            // salieron menos núcleos: se quitan de la OT las últimas unidades pendientes (las etiquetas sobrantes)
+            const pend=(await selectWhere('unidades','id',q=>q.eq('ot',aj.ot).eq('estado','pendiente'))).map(u=>u.id).sort();
+            if(!pend.length) throw new Error(`La OT ${aj.ot} ya no tiene unidades pendientes`);
+            const ids=pend.slice(-Math.min(cant,pend.length));
+            await ajustarOT(aj.ot,ids);
+            msg=`✓ ${aj.ot}: quitadas ${ids.length} uds. Rompe ${ids.length===1?'la etiqueta':'las etiquetas'} ${ids.join(', ')}`;
+          }else if(this.esAlta(aj)){
             // "que maduren" desmarcado en Planta: disponibles ya (fabricadas hace más que la maduración)
             const fab=aj.madurar===false?new Date(Date.now()-(CFG.maduracion||0)*86400000-60000).toISOString():null;
-            await crearUnidadesAjuste(sku,cant,'AJUSTE INVENTARIO (aprobado)',fab);
+            nuevas=await crearUnidadesAjuste(sku,cant,'AJUSTE INVENTARIO (aprobado)',fab);
           }else{
             // BAJA: borrar del stock (FIFO, las más antiguas)
             const {data,error}=await sb.from('unidades').select('id,fabricada_at').eq('sku',sku).eq('estado','stock').order('fabricada_at').limit(cant);
@@ -3163,10 +3251,72 @@ const Apr = {
           throw e;
         }
       }
-      toast(estado==='aprobado'?'✓ Aprobado y aplicado al stock':'Rechazado', estado==='aprobado'?'ok':'');
+      toast(estado==='aprobado'?msg:'Rechazado', estado==='aprobado'?'ok':'');
+      // alta aprobada: se imprimen SOLO las etiquetas de las unidades nuevas
+      if(nuevas.length) imprimirEtiquetasNuevas(nuevas);
       this.reload(); await refrescarMet(true); render();
+      if(typeof OT!=='undefined' && $('#view-ot') && $('#view-ot').style.display!=='none') OT.reload();
     }catch(e){ toast('Error: '+(e.message||e),'err'); this.reload(); }
-    finally{ this._busy=false; }
+    finally{ this._busy=false; Avisos.check(); }
+  },
+  // abre la OT de la petición para elegir a mano qué unidades quitar
+  async ajustarAMano(id){
+    const {data:r,error}=await sb.from('ajustes_inventario').select('*').eq('id',id).maybeSingle();
+    if(error||!r){ toast('No se encontró la petición','err'); return; }
+    if(r.estado!=='pendiente'){ toast('Esta petición ya está resuelta','err'); Avisos.check(); return; }
+    nav('ot'); OT.abrirAjuste(r.ot,Math.abs(Number(r.cantidad)||1),r.id);
+  }
+};
+
+// ============================================================
+//  AVISOS: peticiones de planta pendientes (aviso flotante + contador en Aprobaciones)
+// ============================================================
+const Avisos = {
+  rows:[], vistos:new Set(), cerrado:false, timer:null, users:null,
+  start(){ if(this.timer) return; this.check(); this.timer=setInterval(()=>this.check(),30000); },
+  async check(){
+    try{
+      const {data,error}=await sb.from('ajustes_inventario').select('*').eq('estado','pendiente').order('created_at',{ascending:false}).limit(20);
+      if(error) return;
+      this.rows=data||[];
+      if(!this.users){ this.users={}; try{ const {data:us}=await sb.from('usuarios').select('id,nombre'); (us||[]).forEach(u=>this.users[u.id]=u.nombre); }catch(e){} }
+      const nb=$('#navApr'); let bd=$('#aprBadge');
+      if(nb && !bd){ bd=document.createElement('span'); bd.id='aprBadge'; bd.style.cssText='margin-left:auto;background:var(--red);color:#fff;border-radius:20px;font-size:11px;font-weight:800;padding:2px 8px;line-height:1.4'; nb.appendChild(bd); }
+      if(bd){ bd.textContent=this.rows.length; bd.style.display=this.rows.length?'':'none'; }
+      if(this.rows.some(r=>!this.vistos.has(r.id))) this.cerrado=false;
+      this.pintar();
+    }catch(e){}
+  },
+  cerrar(){ this.rows.forEach(r=>this.vistos.add(r.id)); this.cerrado=true; this.pintar(); },
+  pintar(){
+    let el=$('#avisosPanel');
+    if(!this.rows.length || this.cerrado){ if(el) el.remove(); return; }
+    if(!el){ el=document.createElement('div'); el.id='avisosPanel';
+      el.style.cssText='position:fixed;right:20px;top:16px;z-index:1400;background:#fff;border:2px solid var(--terra);border-radius:14px;padding:12px 14px;box-shadow:0 12px 40px rgba(0,0,0,.22);width:360px;max-width:calc(100vw - 40px);font-size:13px';
+      document.body.appendChild(el); }
+    const admin=Auth.esAdmin();
+    const btn=(txt,bg,js)=>`<button class="chip" style="background:${bg};padding:7px 10px;font-size:12px" onclick="${js}">${txt}</button>`;
+    const fila=r=>{
+      const n=Math.abs(Number(r.cantidad)||0), quien=esc(this.users[r.solicitado_por]||'Planta');
+      let tit, acc;
+      if(r.tipo==='ot_menos'){
+        tit=`<b>${esc(r.ot||'OT')}</b>: sobran ${n} etiqueta${n===1?'':'s'} (salieron menos)`;
+        acc=btn('Quitar '+n,'var(--terra)',`Apr.resolver(${r.id},'aprobado',this)`)+btn('Ajustar a mano','var(--ink)',`Apr.ajustarAMano(${r.id})`);
+      }else if(Apr.esAlta(r)){
+        tit=`Alta de <b>${n}</b> · <span style="font-family:'JetBrains Mono'">${esc(r.sku)}</span>`;
+        acc=admin?btn('Dar de alta e imprimir','var(--green)',`Apr.resolver(${r.id},'aprobado',this)`):'<span style="color:var(--muted)">La aprueba un administrador</span>';
+      }else{
+        tit=`Baja de <b>${n}</b> · <span style="font-family:'JetBrains Mono'">${esc(r.sku)}</span>`;
+        acc=admin?btn('Aprobar baja','var(--red)',`Apr.resolver(${r.id},'aprobado',this)`):'<span style="color:var(--muted)">La aprueba un administrador</span>';
+      }
+      return `<div style="padding:9px 0;border-top:1px solid var(--border)"><div>${tit}</div>
+        <div style="font-size:11px;color:var(--muted);margin:2px 0 7px">${quien}${r.created_at?' · '+new Date(r.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}${r.nota?' · “'+esc(r.nota)+'”':''}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${acc}</div></div>`;
+    };
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px;color:var(--terra)">Peticiones de planta (${this.rows.length})</b>
+        <button onclick="Avisos.cerrar()" title="Ocultar hasta la próxima petición" style="margin-left:auto;border:none;background:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div>
+      ${this.rows.slice(0,3).map(fila).join('')}
+      ${admin?`<div style="border-top:1px solid var(--border);padding-top:8px;text-align:right"><a href="#" onclick="event.preventDefault();nav('apr')" style="color:var(--terra);font-weight:700">Ver todas en Aprobaciones</a></div>`:''}`;
   }
 };
 
@@ -3187,6 +3337,29 @@ async function crearUnidadesAjuste(sku,n,nombreOT,fabricadaAt){
   const base=Date.now(), rows=[];
   for(let i=0;i<n;i++) rows.push({id:`${ot}-${sku.slice(0,6)}-${base}-${i}`,sku,estado:'stock',fabricada_at:fabricadaAt||now,lanzada_at:now,ot});
   chk(await sb.from('unidades').insert(rows));
+  return rows;
+}
+
+// imprime las etiquetas QR de unas unidades recién dadas de alta (solo esas)
+function imprimirEtiquetasNuevas(rows){
+  if(!rows||!rows.length) return;
+  Prod.parteNum='';
+  Prod.imprimirEtiquetas(rows.map(u=>({id:u.id,sku:u.sku,ot:u.ot,lanzada_at:u.lanzada_at,nombre:(MET[u.sku]&&MET[u.sku].nombre)||u.sku})));
+}
+
+// quita unidades PENDIENTES concretas de una OT y deja su cantidad corregida (p. ej. lanzada con 19 y
+// salieron 18). Si ya no le queda nada pendiente se cierra, o se anula si no llegó a fabricarse ninguna.
+async function ajustarOT(ot,ids){
+  if(!ids.length) return 0;
+  const {data:ord,error:e0}=await sb.from('ordenes').select('cantidad').eq('ot',ot).maybeSingle();
+  if(e0)throw e0;
+  await borrarUnidades(ids);
+  const uds=await selectWhere('unidades','id,estado',q=>q.eq('ot',ot));
+  const pend=uds.filter(u=>u.estado==='pendiente').length;
+  const cambios={cantidad:Math.max(0,(Number(ord&&ord.cantidad)||0)-ids.length)};
+  if(!pend){ cambios.estado=uds.length?'cerrada':'anulada'; cambios.cerrada_at=new Date().toISOString(); }
+  chk(await sb.from('ordenes').update(cambios).eq('ot',ot));
+  return ids.length;
 }
 
 
@@ -3756,6 +3929,7 @@ async function boot(){
     MET=await calcularMetricas(); _metTs=Date.now();
     $('#conn').innerHTML='<b>Conectado</b>'+Object.keys(MET).length+' núcleos';
     render();
+    Avisos.start(); // peticiones de planta pendientes
   }catch(e){
     $('#conn').innerHTML='<b>Error de conexión</b>'+esc(e.message||'');
     $('#grid').innerHTML='<div class="vacio">Error al cargar: '+esc(e.message||e)+'</div>';
