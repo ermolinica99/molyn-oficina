@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estándar · Etiquetas que no cuadran con el corte</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Narrow:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: una columna de pasos numerados; cada paso = instrucción + maqueta de la pantalla de la tablet con el sitio a tocar marcado.
+   Aspecto único y claro a propósito (se comparte como imagen), con los colores de MOLYN. */
+:root{
+  --ink:#1B1A17; --ink2:#4A463F; --muted:#8A8478; --paper:#F4F2ED; --card:#FFFFFF; --line:#E2DED4;
+  --terra:#B85C38; --terra-soft:#F5E7DF; --ok:#2F7D4F; --ok-soft:#E3F0E8; --blue:#1A73E8; --off:#C9C4BA;
+  --display:'Archivo', 'Arial Narrow', Arial, sans-serif;
+  --body:'Archivo', Arial, Helvetica, sans-serif;
+  --narrow:'Archivo Narrow', 'Arial Narrow', Arial, sans-serif;
+  --mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);margin:0}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:28px 40px;display:flex;flex-direction:column;gap:22px}
+
+header{display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--narrow);font-weight:700;letter-spacing:.12em;font-size:13px;color:var(--ink2);text-transform:uppercase}
+.brand i{width:22px;height:22px;border-radius:6px;background:var(--terra);display:inline-block}
+h1{font-family:var(--display);font-weight:900;font-size:clamp(30px,7vw,46px);line-height:1.02;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--terra)}
+.err{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:15px;color:var(--ink2)}
+.err code{font-family:var(--mono);font-size:13px;background:#C62828;color:#fff;padding:6px 10px;border-radius:8px}
+.lead{font-size:16px;line-height:1.5;color:var(--ink2);margin:0;max-width:62ch}
+
+.step{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:grid;grid-template-columns:1fr;gap:14px}
+.sh{display:flex;gap:14px;align-items:flex-start}
+.num{flex:none;width:44px;height:44px;border-radius:50%;background:var(--ink);color:#fff;font-family:var(--display);font-weight:900;font-size:22px;display:grid;place-items:center}
+.sh h2{font-family:var(--display);font-weight:800;font-size:21px;margin:2px 0 4px;line-height:1.15;text-wrap:balance}
+.sh p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.path{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.path span{font-family:var(--narrow);font-weight:700;font-size:14px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+.path b{color:var(--muted);font-weight:700}
+.path span.hit{background:var(--terra);border-color:var(--terra);color:#fff}
+
+/* maquetas de pantalla */
+.screen{border:8px solid #2A2826;border-radius:18px;background:#F7F7F8;overflow:hidden;font-family:Roboto, 'Archivo', Arial, sans-serif;color:#1F1F1F;max-width:100%}
+.bar{display:flex;align-items:center;gap:10px;background:#fff;padding:10px 12px;border-bottom:1px solid #E5E5E5}
+.omni{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#F1F3F4;border-radius:999px;padding:8px 12px;font-size:14px;color:#3C4043;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tune{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#fff;position:relative}
+.dots{font-size:20px;color:#5F6368;line-height:1}
+.sheet{background:#fff;margin:12px;border-radius:14px;padding:6px 0;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.sheet .t{font-size:13px;font-weight:700;color:#5F6368;padding:10px 16px 4px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:15px}
+.row .ic{width:22px;text-align:center;color:#5F6368}
+.row .lbl{flex:1;min-width:0}
+.row small{display:block;color:#6B6B6B;font-size:12.5px;margin-top:2px}
+.sw{width:42px;height:24px;border-radius:999px;background:var(--blue);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.hl{outline:3px solid var(--terra);outline-offset:-3px;border-radius:12px;background:var(--terra-soft)}
+.tap{display:inline-flex;align-items:center;gap:4px;font-family:var(--narrow);font-weight:700;font-size:12px;color:#fff;background:var(--terra);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.ring{outline:3px solid var(--terra);outline-offset:2px}
+
+.settings{background:#F6F6F6;padding:14px}
+.settings .ttl{font-size:20px;font-weight:700;margin:4px 6px 12px}
+.group{background:#fff;border-radius:20px;overflow:hidden}
+.radio{width:22px;height:22px;border-radius:50%;border:2px solid #9AA0A6;flex:none;position:relative}
+.radio.on{border-color:var(--blue)}
+.radio.on::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--blue)}
+
+.qs{background:#2B2B2E;padding:16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tile{border-radius:16px;background:#3D3D42;color:#D9D9DE;font-size:11.5px;text-align:center;padding:12px 4px;display:flex;flex-direction:column;align-items:center;gap:6px;line-height:1.2}
+.tile .g{width:26px;height:26px;border-radius:50%;background:#55555C}
+.tile.on{background:#8AB4F8;color:#0B2A55}
+.tile.on .g{background:#1A73E8}
+
+.prompt{background:#fff;margin:14px;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+.prompt .q{font-size:16px;line-height:1.35}
+.btn{border-radius:999px;padding:11px 14px;text-align:center;font-weight:600;font-size:14px;border:1px solid #DADCE0;color:#1A73E8;background:#fff}
+.btn.main{background:#1A73E8;color:#fff;border-color:#1A73E8}
+
+.note{display:flex;gap:12px;align-items:flex-start;background:var(--ok-soft);border:1px solid #BFDCCB;border-radius:16px;padding:16px;font-size:15px;line-height:1.5;color:#1E4D31}
+.note b{color:#163B25}
+.note .k{font-family:var(--mono);font-size:13px;background:#fff;border:1px solid #BFDCCB;border-radius:6px;padding:2px 6px}
+footer{font-size:13px;color:var(--muted);text-align:center}
+
+@media (min-width:640px){
+  .step{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:center;padding:22px}
+}
+</style>
+<style>
+.case{display:flex;align-items:center;gap:12px;background:var(--ink);color:#fff;border-radius:14px;padding:14px 18px}
+.case .tag{font-family:var(--display);font-weight:900;font-size:26px;width:44px;height:44px;border-radius:12px;background:var(--terra);display:grid;place-items:center;flex:none}
+.case h2{margin:0;font-family:var(--display);font-weight:800;font-size:21px;line-height:1.15;text-wrap:balance}
+.case p{margin:2px 0 0;color:#D8D3C8;font-size:14px}
+.serie{background:#fff;border:2px solid var(--terra);border-radius:14px;margin:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.serie .ot{font-family:var(--mono);font-weight:700;font-size:15px}
+.serie .ssub{font-size:13px;color:#6B6B6B}
+.stepper{display:flex;align-items:center;gap:10px;justify-content:center}
+.stepper span{width:40px;height:40px;border-radius:10px;background:#EDEAE2;display:grid;place-items:center;font-weight:800;font-size:20px}
+.stepper b{font-family:var(--mono);font-size:22px;min-width:40px;text-align:center}
+.bigbtn{border-radius:12px;padding:12px;text-align:center;font-weight:800;font-size:15px}
+.bigbtn.ok{background:#2F7D4F;color:#fff}.bigbtn.ghost{background:#EDEAE2;color:#3C3A35}.bigbtn.ink{background:#1B1A17;color:#fff}
+.segs{display:flex;gap:8px}.segs div{flex:1;border:2px solid #E2DED4;border-radius:10px;padding:10px 6px;text-align:center;font-weight:700;font-size:13.5px}
+.segs .on{background:var(--terra);border-color:var(--terra);color:#fff}
+.fld{border:2px solid #E2DED4;border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:14px;background:#fff}
+.modal{background:#fff;margin:12px;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.modal h4{margin:0;font-size:17px}
+.rules{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.rules h2{font-family:var(--display);font-weight:800;font-size:20px;margin:0}
+.rules ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px;line-height:1.45;color:var(--ink2)}
+.flow{display:flex;flex-direction:column;gap:12px}
+</style>
+<style>
+/* impresión en A4: cada paso entero en la misma hoja, con los colores de pantalla */
+@page{size:A4;margin:10mm}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff}
+  .wrap{max-width:none;padding-block:0}
+  .step,.rules,.case{break-inside:avoid}
+  .case{break-after:avoid;padding:8px 12px}
+  .case .tag{width:34px;height:34px;font-size:20px}
+  .case h2{font-size:17px}
+  .wrap{gap:9px}
+  h1{font-size:30px}
+  .lead{font-size:13px}
+  .step{padding:8px 14px;gap:12px;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  .num{width:32px;height:32px;font-size:17px}
+  .sh h2{font-size:16px;margin:0 0 2px}
+  .sh p{font-size:12.5px}
+  .screen{border-width:5px;zoom:.72}
+  .rules{padding:12px 16px}
+  .rules ul{font-size:13px}
+}
+</style>
+</head><body>
+<div class="wrap">
+  <header>
+    <div class="brand"><i></i>MOLYN · Estándar del puesto</div>
+    <h1>Las etiquetas no cuadran con el corte: <em>así se hace</em></h1>
+    <p class="lead">Cada núcleo lleva su etiqueta y cada etiqueta, su núcleo. Si al cortar salen menos o más de las lanzadas, se avisa a oficina desde la tablet. No se apunta la cantidad lanzada: se apunta la que sale de verdad.</p>
+  </header>
+
+  <div class="case"><div class="tag">A</div><div><h2>Salen MENOS de los lanzados</h2><p>Ejemplo: OT de 19 y salen 18. Sobra 1 etiqueta.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">1</div><div>
+      <h2>Termina solo las que han salido</h2>
+      <p>En el lote pulsa <b>Terminar solo algunas</b>, deja el número en las que han salido de verdad (18) y pulsa <b>Terminar 18 de 19</b>.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="serie"><div class="ot">OT00022 · lote de 19 uds</div><div class="ssub">040 160x200 · Llevas 1:24:10 con este lote</div>
+        <div class="bigbtn ghost">Terminar solo algunas</div>
+        <div class="stepper"><span>−</span><b>18</b><span>+</span></div>
+        <div class="bigbtn ok ring">✓ Terminar 18 de 19</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">2</div><div>
+      <h2>Avisa a oficina</h2>
+      <p>Pulsa <b>Avisar a oficina</b> › <b>Sobran etiquetas</b>. Escribe la OT y cuántas sobran (1) y pulsa <b>Enviar a oficina</b>.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><h4>Avisar a oficina</h4>
+        <div class="segs"><div class="on ring">Sobran etiquetas</div><div class="">Salió de más</div></div>
+        <div class="fld">OT00022</div>
+        <div style="display:flex;gap:10px;align-items:center"><div class="fld" style="width:70px;text-align:center">1</div><b style="font-size:14px">etiquetas que sobran</b></div>
+        <div class="bigbtn ink ring">Enviar a oficina</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">3</div><div>
+      <h2>Aparta la etiqueta que sobra</h2>
+      <p>No la pegues en otro núcleo. Cuando oficina la quite de la OT, <b>rómpela</b>.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="display:flex;align-items:center;gap:12px"><div class="fld" style="flex:1">OT00022-0019</div><div class="bigbtn" style="background:#C62828;color:#fff">Romper</div></div><div style="font-size:12.5px;color:#6B6B6B">Oficina te dice qué etiqueta quitó.</div></div></div>
+  </section>
+
+  <div class="case"><div class="tag">B</div><div><h2>Sale UNO DE MÁS</h2><p>Ejemplo: OT de 19 y salen 20. Hay 1 núcleo sin etiqueta.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">1</div><div>
+      <h2>Termina el lote completo</h2>
+      <p>Pulsa <b>Terminar las 19</b> como siempre.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="serie"><div class="ot">OT00022 · lote de 19 uds</div><div class="bigbtn ok ring">✓ Terminar las 19</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">2</div><div>
+      <h2>Pon el núcleo de más aparte</h2>
+      <p>Sin etiqueta no se puede llevar al almacén ni consumir. Déjalo a un lado.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal" style="align-items:center"><div style="font-size:44px">⬜</div><div style="font-weight:700">Núcleo sin etiqueta: aparte</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">3</div><div>
+      <h2>Avisa a oficina</h2>
+      <p><b>Avisar a oficina</b> › <b>Salió de más</b>. Escribe la OT y cuántos han salido de más (1) y pulsa <b>Enviar a oficina</b>.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><h4>Avisar a oficina</h4>
+        <div class="segs"><div class="">Sobran etiquetas</div><div class="on ring">Salió de más</div></div>
+        <div class="fld">OT00022</div>
+        <div style="display:flex;gap:10px;align-items:center"><div class="fld" style="width:70px;text-align:center">1</div><b style="font-size:14px">núcleos de más</b></div>
+        <div class="bigbtn ink ring">Enviar a oficina</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">4</div><div>
+      <h2>Pega la etiqueta nueva</h2>
+      <p>Oficina lo da de alta e imprime <b>solo esa etiqueta</b>. Pégala y ya puede ir al almacén.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="fld" style="text-align:center;font-size:16px">▦ QR · N002160X200040<br>OTINV20261009</div><div class="bigbtn ok">Pegar en el núcleo de más</div></div></div>
+  </section>
+
+  <div class="case"><div class="tag">C</div><div><h2>Se pierde o se rompe una etiqueta</h2><p>El núcleo existe pero no tiene etiqueta.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">1</div><div>
+      <h2>Avisa al encargado</h2>
+      <p>Dile el núcleo y la OT. Oficina la vuelve a imprimir desde el núcleo y se rompen las que sobren de esa impresión.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="font-weight:800;font-size:15px">Dile al encargado:</div><div class="fld">Núcleo: N002160X200040</div><div class="fld">OT: OT00022</div><div class="bigbtn ink">Oficina reimprime la etiqueta</div></div></div>
+  </section>
+
+  <div class="rules">
+    <h2>Reglas del puesto</h2>
+    <ul>
+      <li>Apunta siempre <b>lo que sale de verdad</b>, no lo que se lanzó.</li>
+      <li><b>Nunca</b> pegues una etiqueta de otra OT o de otro núcleo.</li>
+      <li>No tires ninguna etiqueta hasta que oficina lo confirme.</li>
+      <li>Un núcleo sin etiqueta no se puede consumir: avisa en el momento, no al final del día.</li>
+    </ul>
+  </div>
+  <footer>Si dudas, para y pregunta al encargado.</footer>
+</div>
+
+<script>
+// ?print=1 → abre el diálogo de imprimir (desde ahí se puede "Guardar como PDF")
+if(/[?&]print=1/.test(location.search)){
+  window.addEventListener('load',()=>{ (document.fonts&&document.fonts.ready||Promise.resolve()).then(()=>setTimeout(()=>window.print(),300)); });
+}
+</script>
+</body></html>
