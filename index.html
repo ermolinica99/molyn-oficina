@@ -585,7 +585,7 @@ let PROG=null;
 // ---- carga de datos ----
 async function cargarConfig(){
   try{const {data}=await sb.from('config').select('*').eq('id',1).single();
-    if(data){CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;LOTE_DFLT=data.lote??10;CFG.coste_hora_operario=parseFloat(data.coste_hora_operario||0)||0;}}catch(e){}
+    if(data){CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;CFG.dias_fabricacion=data.dias_fabricacion??0;LOTE_DFLT=data.lote??10;CFG.coste_hora_operario=parseFloat(data.coste_hora_operario||0)||0;}}catch(e){}
   try{const {data:lt}=await sb.from('lotes_programa').select('programa,lote');(lt||[]).forEach(r=>LOTES[r.programa]=r.lote);}catch(e){}
 }
 // orden estable para paginar: sin ORDER BY, Postgres puede devolver las filas en distinto orden en
@@ -2068,7 +2068,7 @@ const Conf = {
       };
       const {error}=await sb.from('config').update(cfg).eq('id',1);
       if(error)throw error;
-      CFG.dias_historico=cfg.dias_historico;CFG.umbral_semanal=cfg.umbral_semanal;CFG.maduracion=cfg.maduracion;
+      CFG.dias_historico=cfg.dias_historico;CFG.umbral_semanal=cfg.umbral_semanal;CFG.maduracion=cfg.maduracion;CFG.dias_fabricacion=cfg.dias_fabricacion;
       Object.assign(this.raw,cfg);
       toast('✓ Guardado','ok');
       await refrescarMet(true); render();
@@ -3305,6 +3305,8 @@ const Apr = {
 // ============================================================
 // Para añadir uno nuevo: crear su página en estandares/ y añadir una línea aquí (y en Planta).
 const ESTANDARES=[
+  {archivo:'estandares/lanzar-produccion.html', titulo:'Lanzar la producción',
+   problema:'Del parte del ERP a las OT: comprobaciones previas, los pasos en Producción, cómo calcula la app cuántos núcleos lanzar, las variables que influyen y qué hacer si algo no cuadra.'},
   {archivo:'estandares/etiquetas.html', titulo:'Las etiquetas no cuadran con el corte',
    problema:'Salen menos núcleos que etiquetas (19 lanzados, salen 18), sale uno de más, o se pierde o se rompe una etiqueta.'},
 ];
