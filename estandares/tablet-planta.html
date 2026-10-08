@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estándar · La tablet de planta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Narrow:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: una columna de pasos numerados; cada paso = instrucción + maqueta de la pantalla de la tablet con el sitio a tocar marcado.
+   Aspecto único y claro a propósito (se comparte como imagen), con los colores de MOLYN. */
+:root{
+  --ink:#1B1A17; --ink2:#4A463F; --muted:#8A8478; --paper:#F4F2ED; --card:#FFFFFF; --line:#E2DED4;
+  --terra:#B85C38; --terra-soft:#F5E7DF; --ok:#2F7D4F; --ok-soft:#E3F0E8; --blue:#1A73E8; --off:#C9C4BA;
+  --display:'Archivo', 'Arial Narrow', Arial, sans-serif;
+  --body:'Archivo', Arial, Helvetica, sans-serif;
+  --narrow:'Archivo Narrow', 'Arial Narrow', Arial, sans-serif;
+  --mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);margin:0}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:28px 40px;display:flex;flex-direction:column;gap:22px}
+
+header{display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--narrow);font-weight:700;letter-spacing:.12em;font-size:13px;color:var(--ink2);text-transform:uppercase}
+.brand i{width:22px;height:22px;border-radius:6px;background:var(--terra);display:inline-block}
+h1{font-family:var(--display);font-weight:900;font-size:clamp(30px,7vw,46px);line-height:1.02;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--terra)}
+.err{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:15px;color:var(--ink2)}
+.err code{font-family:var(--mono);font-size:13px;background:#C62828;color:#fff;padding:6px 10px;border-radius:8px}
+.lead{font-size:16px;line-height:1.5;color:var(--ink2);margin:0;max-width:62ch}
+
+.step{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:grid;grid-template-columns:1fr;gap:14px}
+.sh{display:flex;gap:14px;align-items:flex-start}
+.num{flex:none;width:44px;height:44px;border-radius:50%;background:var(--ink);color:#fff;font-family:var(--display);font-weight:900;font-size:22px;display:grid;place-items:center}
+.sh h2{font-family:var(--display);font-weight:800;font-size:21px;margin:2px 0 4px;line-height:1.15;text-wrap:balance}
+.sh p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.path{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.path span{font-family:var(--narrow);font-weight:700;font-size:14px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+.path b{color:var(--muted);font-weight:700}
+.path span.hit{background:var(--terra);border-color:var(--terra);color:#fff}
+
+/* maquetas de pantalla */
+.screen{border:8px solid #2A2826;border-radius:18px;background:#F7F7F8;overflow:hidden;font-family:Roboto, 'Archivo', Arial, sans-serif;color:#1F1F1F;max-width:100%}
+.bar{display:flex;align-items:center;gap:10px;background:#fff;padding:10px 12px;border-bottom:1px solid #E5E5E5}
+.omni{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#F1F3F4;border-radius:999px;padding:8px 12px;font-size:14px;color:#3C4043;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tune{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#fff;position:relative}
+.dots{font-size:20px;color:#5F6368;line-height:1}
+.sheet{background:#fff;margin:12px;border-radius:14px;padding:6px 0;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.sheet .t{font-size:13px;font-weight:700;color:#5F6368;padding:10px 16px 4px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:15px}
+.row .ic{width:22px;text-align:center;color:#5F6368}
+.row .lbl{flex:1;min-width:0}
+.row small{display:block;color:#6B6B6B;font-size:12.5px;margin-top:2px}
+.sw{width:42px;height:24px;border-radius:999px;background:var(--blue);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.hl{outline:3px solid var(--terra);outline-offset:-3px;border-radius:12px;background:var(--terra-soft)}
+.tap{display:inline-flex;align-items:center;gap:4px;font-family:var(--narrow);font-weight:700;font-size:12px;color:#fff;background:var(--terra);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.ring{outline:3px solid var(--terra);outline-offset:2px}
+
+.settings{background:#F6F6F6;padding:14px}
+.settings .ttl{font-size:20px;font-weight:700;margin:4px 6px 12px}
+.group{background:#fff;border-radius:20px;overflow:hidden}
+.radio{width:22px;height:22px;border-radius:50%;border:2px solid #9AA0A6;flex:none;position:relative}
+.radio.on{border-color:var(--blue)}
+.radio.on::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--blue)}
+
+.qs{background:#2B2B2E;padding:16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tile{border-radius:16px;background:#3D3D42;color:#D9D9DE;font-size:11.5px;text-align:center;padding:12px 4px;display:flex;flex-direction:column;align-items:center;gap:6px;line-height:1.2}
+.tile .g{width:26px;height:26px;border-radius:50%;background:#55555C}
+.tile.on{background:#8AB4F8;color:#0B2A55}
+.tile.on .g{background:#1A73E8}
+
+.prompt{background:#fff;margin:14px;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+.prompt .q{font-size:16px;line-height:1.35}
+.btn{border-radius:999px;padding:11px 14px;text-align:center;font-weight:600;font-size:14px;border:1px solid #DADCE0;color:#1A73E8;background:#fff}
+.btn.main{background:#1A73E8;color:#fff;border-color:#1A73E8}
+
+.note{display:flex;gap:12px;align-items:flex-start;background:var(--ok-soft);border:1px solid #BFDCCB;border-radius:16px;padding:16px;font-size:15px;line-height:1.5;color:#1E4D31}
+.note b{color:#163B25}
+.note .k{font-family:var(--mono);font-size:13px;background:#fff;border:1px solid #BFDCCB;border-radius:6px;padding:2px 6px}
+footer{font-size:13px;color:var(--muted);text-align:center}
+
+@media (min-width:640px){
+  .step{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:center;padding:22px}
+}
+</style>
+<style>
+.case{display:flex;align-items:center;gap:12px;background:var(--ink);color:#fff;border-radius:14px;padding:14px 18px}
+.case .tag{font-family:var(--display);font-weight:900;font-size:26px;width:44px;height:44px;border-radius:12px;background:var(--terra);display:grid;place-items:center;flex:none}
+.case h2{margin:0;font-family:var(--display);font-weight:800;font-size:21px;line-height:1.15;text-wrap:balance}
+.case p{margin:2px 0 0;color:#D8D3C8;font-size:14px}
+.serie{background:#fff;border:2px solid var(--terra);border-radius:14px;margin:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.serie .ot{font-family:var(--mono);font-weight:700;font-size:15px}
+.serie .ssub{font-size:13px;color:#6B6B6B}
+.stepper{display:flex;align-items:center;gap:10px;justify-content:center}
+.stepper span{width:40px;height:40px;border-radius:10px;background:#EDEAE2;display:grid;place-items:center;font-weight:800;font-size:20px}
+.stepper b{font-family:var(--mono);font-size:22px;min-width:40px;text-align:center}
+.bigbtn{border-radius:12px;padding:12px;text-align:center;font-weight:800;font-size:15px}
+.bigbtn.ok{background:#2F7D4F;color:#fff}.bigbtn.ghost{background:#EDEAE2;color:#3C3A35}.bigbtn.ink{background:#1B1A17;color:#fff}
+.segs{display:flex;gap:8px}.segs div{flex:1;border:2px solid #E2DED4;border-radius:10px;padding:10px 6px;text-align:center;font-weight:700;font-size:13.5px}
+.segs .on{background:var(--terra);border-color:var(--terra);color:#fff}
+.fld{border:2px solid #E2DED4;border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:14px;background:#fff}
+.modal{background:#fff;margin:12px;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.modal h4{margin:0;font-size:17px}
+.rules{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.rules h2{font-family:var(--display);font-weight:800;font-size:20px;margin:0}
+.rules ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px;line-height:1.45;color:var(--ink2)}
+.flow{display:flex;flex-direction:column;gap:12px}
+</style>
+<style>
+/* impresión en A4: cada paso entero en la misma hoja, con los colores de pantalla */
+@page{size:A4;margin:10mm}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff}
+  .wrap{max-width:none;padding-block:0}
+  .step,.rules,.case{break-inside:avoid}
+  .case{break-after:avoid;padding:8px 12px}
+  .case .tag{width:34px;height:34px;font-size:20px}
+  .case h2{font-size:17px}
+  .wrap{gap:9px}
+  h1{font-size:30px}
+  .lead{font-size:13px}
+  .step{padding:8px 14px;gap:12px;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  .num{width:32px;height:32px;font-size:17px}
+  .sh h2{font-size:16px;margin:0 0 2px}
+  .sh p{font-size:12.5px}
+  .screen{border-width:5px;zoom:.72}
+  .rules{padding:12px 16px}
+  .rules ul{font-size:13px}
+}
+</style>
+<style>
+.blk{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.blk h2{font-family:var(--display);font-weight:800;font-size:21px;margin:0;text-wrap:balance}
+.blk>p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.check{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.check li{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45}
+.check li::before{content:"";flex:none;width:18px;height:18px;border:2px solid var(--ink);border-radius:4px;margin-top:2px}
+.tw{overflow-x:auto}
+table.tb{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+.tb th{background:var(--ink);color:#fff;text-align:left;padding:9px 10px;font-family:var(--narrow);letter-spacing:.04em;text-transform:uppercase;font-size:12.5px}
+.tb td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.4}
+.tb tr:nth-child(even) td{background:var(--paper)}
+.tb td:first-child{font-weight:700}
+.calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.calc>div{border:2px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14.5px;line-height:1.45}
+.calc h3{margin:0;font-size:17px;font-family:var(--display);font-weight:800}
+.calc .f{font-family:var(--mono);font-size:13px;background:var(--paper);border-radius:8px;padding:8px 10px;line-height:1.6}
+.calc .r{font-weight:800;color:var(--terra)}
+.pill{display:inline-block;font-family:var(--narrow);font-weight:700;font-size:12.5px;border-radius:999px;padding:2px 9px;background:var(--terra-soft);color:var(--terra)}
+.hoja{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.45}
+.hoja b.n{flex:none;font-family:var(--mono);background:var(--ink);color:#fff;border-radius:6px;padding:1px 7px;font-size:12px;margin-top:2px}
+@media print{
+  .blk{break-inside:auto;padding:12px 16px}
+  .blk h2{break-after:avoid}
+  .tb tr,.hoja,.calc>div,.check li{break-inside:avoid}
+  .tb{font-size:11.5px;min-width:0}
+  .tb th,.tb td{padding:5px 7px}
+  .calc>div{font-size:12.5px;padding:10px}
+  .check li,.hoja{font-size:12.5px}
+}
+</style>
+</head><body>
+<div class="wrap">
+  <header>
+    <div class="brand"><i></i>MOLYN · Estándar de planta</div>
+    <h1>La tablet de planta: <em>qué hacer si algo falla</em></h1>
+    <p class="lead">La app de planta guarda el trabajo aunque no haya red y lo envía cuando vuelve. Aquí está qué significa cada color de la barra de arriba y qué hacer con la cámara, la pantalla, la sesión y las actualizaciones.</p>
+  </header>
+
+  <div class="case"><div class="tag">1</div><div><h2>La barra de arriba</h2><p>Te dice si lo que haces ya está guardado en oficina.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">1</div><div>
+      <h2>Verde · Conectado</h2>
+      <p>Todo enviado. Trabaja normal.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="display:flex;align-items:center;gap:8px;border-radius:10px;padding:10px 12px;font-weight:700;font-size:14px;background:#DFEEE3;color:#1F5A31">● Conectado</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">2</div><div>
+      <h2>Naranja · «N sin enviar»</h2>
+      <p>Hay cosas guardadas en la tablet esperando a enviarse. Suele pasar tras un corte de red. Pulsa <b>Sincronizar ahora</b> o espera.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="display:flex;align-items:center;gap:8px;border-radius:10px;padding:10px 12px;font-weight:700;font-size:14px;background:#F8EBD2;color:#8A5E12">● 3 sin enviar<span style="margin-left:auto;background:#fff;color:#1B1A17;border-radius:8px;padding:4px 8px;font-size:12px">Sincronizar ahora</span></div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">3</div><div>
+      <h2>Gris · «Sin conexión»</h2>
+      <p>No hay red. <b>Sigue trabajando</b>: todo se guarda en la tablet y se envía solo al volver la red. No pulses Salir.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="display:flex;align-items:center;gap:8px;border-radius:10px;padding:10px 12px;font-weight:700;font-size:14px;background:#E9E6DF;color:#3A3730">● Sin conexión · 5 sin enviar</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">4</div><div>
+      <h2>Rojo · «errores sin guardar»</h2>
+      <p>La tablet lo intentó 5 veces y no pudo guardar algo. <b>Avisa a oficina</b>. No pulses Salir ni borres datos de Chrome: se perdería.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="display:flex;align-items:center;gap:8px;border-radius:10px;padding:10px 12px;font-weight:700;font-size:14px;background:#F8E2DC;color:#B23A22">● 1 error sin guardar — avisa a oficina</div></div></div>
+  </section>
+  <div class="case"><div class="tag">2</div><div><h2>Problemas habituales</h2><p>Qué hacer en cada caso.</p></div></div>
+  <div class="blk">
+    <h2>La cámara no abre («Permission denied»)</h2>
+    <ul class="check"><li><span>En Chrome, icono a la izquierda de la dirección › <b>Permisos</b> › <b>Cámara</b> › Permitir.</span></li><li><span>Ajustes de la tablet › Aplicaciones › <b>Chrome</b> (y <b>MOLYN</b> si está en la pantalla de inicio) › Permisos › Cámara › Permitir mientras se usa.</span></li><li><span>Panel rápido (deslizar dos veces desde arriba): <b>Acceso a cámara</b> encendido.</span></li><li><span>Cierra Chrome del todo y vuelve a abrir. Mientras tanto, escribe el código de la etiqueta a mano y pulsa <b>Enviar</b>.</span></li></ul>
+  </div>
+  <div class="blk">
+    <h2>La pantalla y los cronómetros</h2>
+    <ul class="check"><li><span>Con la app abierta la pantalla <b>no se apaga</b>. Si se bloquea, los cronómetros y el envío de datos se paran.</span></li><li><span>Deja la tablet <b>enchufada</b> y con la app delante, también de noche.</span></li></ul>
+  </div>
+  <div class="blk">
+    <h2>La sesión</h2>
+    <ul class="check"><li><span><b>Puesto:</b> la sesión se queda guardada; al reiniciar la tablet no pide el PIN. <b>Salir</b> la cierra (avisa si hay trabajo en curso).</span></li><li><span><b>Encargado:</b> la sesión dura mientras la app está abierta; al cerrarla pide el PIN otra vez.</span></li><li><span>El PIN es de cada uno o de cada puesto: no lo compartas.</span></li></ul>
+  </div>
+  <div class="blk">
+    <h2>Actualizar la app</h2>
+    <ul class="check"><li><span>Cuando oficina avise de una versión nueva: cierra la app del todo (botón de apps recientes) y vuelve a abrirla con red.</span></li><li><span>Sin red la app abre igual con la última versión guardada.</span></li></ul>
+  </div>
+  <div class="blk">
+    <h2>Mensajes al entrar</h2>
+    <div class="tw"><table class="tb"><tr><th>Mensaje</th><th>Qué hacer</th></tr><tr><td>«No se pudo conectar con el servidor»</td><td>Comprueba el wifi y recarga. Si ya habías entrado antes, la lista de usuarios guardada sigue funcionando.</td></tr><tr><td>«Este usuario ya no está activo»</td><td>Oficina lo desactivó: elige tu usuario o pide que lo reactiven.</td></tr><tr><td>PIN incorrecto o «Demasiados intentos. Espera 30 s»</td><td>Espera y vuelve a probar. Si lo has olvidado, oficina lo ve en Configuración › Puestos de trabajo o Usuarios.</td></tr></table></div>
+  </div>
+  <div class="blk">
+    <h2>Reglas</h2>
+    <ul class="check"><li><span>No borres los datos de Chrome ni desinstales la app con cosas sin enviar.</span></li><li><span>Si algo raro pasa y la barra está en rojo, haz una foto de la pantalla y avisa a oficina.</span></li></ul>
+  </div>
+  <footer>Si no sabes qué pasa: foto de la pantalla y aviso a oficina. No cierres ni borres nada.</footer>
+</div>
+<script>
+// ?print=1 → abre el diálogo de imprimir (desde ahí se puede "Guardar como PDF")
+if(/[?&]print=1/.test(location.search)){
+  window.addEventListener('load',()=>{ (document.fonts&&document.fonts.ready||Promise.resolve()).then(()=>setTimeout(()=>window.print(),300)); });
+}
+</script>
+</body></html>
