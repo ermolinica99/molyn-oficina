@@ -190,6 +190,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
     <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
     <button class="nav" id="navCatalogo" onclick="nav('catalogo')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>Producto</span></button>
+    <button class="nav" id="navEst" onclick="nav('est')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg><span>Estándares</span></button>
     <div class="grp">Análisis</div>
     <button class="nav" id="navProdv" onclick="nav('prodv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10l4 4"/><circle cx="12" cy="12" r="10"/></svg><span>Productividad</span></button>
     <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempo por núcleo</span></button>
@@ -480,6 +481,18 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         <input id="tskuSearch" placeholder="Buscar núcleo…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div class="card"><div id="tskuTabla"></div></div>
+    </div>
+
+    <div class="content" id="view-est" style="display:none">
+      <div><div class="h1">Estándares de trabajo</div><div class="h1sub">Qué hacer cuando pasa un problema concreto. Se pueden ver aquí o imprimir (también como PDF) para dejarlos en los puestos.</div></div>
+      <div id="estLista" style="display:flex;flex-direction:column;gap:10px;margin-top:14px"></div>
+      <div id="estVisor" class="card" style="display:none;margin-top:14px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
+          <b id="estVisorTit" style="flex:1"></b>
+          <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Est.cerrar()">Cerrar</button>
+        </div>
+        <iframe id="estFrame" title="Estándar de trabajo" style="width:100%;height:78vh;border:0;background:#fff"></iframe>
+      </div>
     </div>
 
     <div class="content" id="view-apr" style="display:none">
@@ -966,13 +979,13 @@ const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes','cSinNucleo'
 function nav(v){
   const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',
     cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',cSinNucleo:'Colchones sin núcleo',
-    inv:'Inventario físico',catalogo:'Producto',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',catalogo:'navCatalogo',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+    inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  const todas=['dash','prod','partes','ot','inv','catalogo','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
+  const todas=['dash','prod','partes','ot','inv','catalogo','est','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
   todas.forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
@@ -986,6 +999,7 @@ function nav(v){
   if(v==='prod') Prod.init();
   if(v==='partes') Partes.reload();
   if(v==='ot') OT.reload();
+  if(v==='est') Est.pintar();
   if(v==='cDiario') Conf.load();
   if(v==='cLotes') Conf.load();
   if(v==='cTurnos') Turnos.reload();
@@ -3283,6 +3297,30 @@ const Apr = {
     if(error||!r){ toast('No se encontró la petición','err'); return; }
     if(r.estado!=='pendiente'){ toast('Esta petición ya está resuelta','err'); Avisos.check(); return; }
     nav('ot'); OT.abrirAjuste(r.ot,Math.abs(Number(r.cantidad)||1),r.id);
+  }
+};
+
+// ============================================================
+//  ESTÁNDARES de trabajo (las mismas páginas que ve Planta, en estandares/)
+// ============================================================
+// Para añadir uno nuevo: crear su página en estandares/ y añadir una línea aquí (y en Planta).
+const ESTANDARES=[
+  {archivo:'estandares/etiquetas.html', titulo:'Las etiquetas no cuadran con el corte',
+   problema:'Salen menos núcleos que etiquetas (19 lanzados, salen 18), sale uno de más, o se pierde o se rompe una etiqueta.'},
+];
+const Est={
+  pintar(){
+    $('#estLista').innerHTML=ESTANDARES.map((e,i)=>`<div class="card" style="margin:0;display:flex;align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px"><div style="font-weight:800;font-size:15px">${esc(e.titulo)}</div><div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(e.problema)}</div></div>
+      <button class="chip" style="background:var(--ink)" onclick="Est.ver(${i})">Ver</button>
+      <button class="chip" style="background:var(--terra)" onclick="Est.imprimir(${i})">Imprimir / PDF</button></div>`).join('');
+  },
+  ver(i){ const e=ESTANDARES[i]; $('#estVisorTit').textContent=e.titulo; $('#estFrame').src=e.archivo; $('#estVisor').style.display='block'; $('#estVisor').scrollIntoView({behavior:'smooth'}); },
+  cerrar(){ $('#estVisor').style.display='none'; $('#estFrame').src='about:blank'; },
+  // abre el estándar en otra pestaña con el diálogo de imprimir; ahí se elige la impresora o "Guardar como PDF"
+  imprimir(i){
+    const w=window.open(ESTANDARES[i].archivo+'?print=1','_blank');
+    if(!w) toast('El navegador bloqueó la ventana: permite las ventanas emergentes para esta web','err');
   }
 };
 
