@@ -3183,6 +3183,9 @@ const Apr = {
       // nombres de usuario
       const uids=[...new Set(rows.map(r=>r.solicitado_por).filter(Boolean))];
       const users={}; if(uids.length){ const {data:us}=await sb.from('usuarios').select('id,nombre').in('id',uids); (us||[]).forEach(u=>users[u.id]=u.nombre); }
+      // peticiones enviadas desde un puesto (trabajador): se muestran con el nombre del puesto
+      const pids=[...new Set(rows.map(r=>r.puesto_id).filter(Boolean))];
+      if(pids.length){ const {data:ps}=await sb.from('puestos_trabajo').select('id,nombre').in('id',pids); (ps||[]).forEach(p=>{ rows.filter(r=>r.puesto_id===p.id&&!r.solicitado_por).forEach(r=>{ r.solicitado_por='p'+p.id; users['p'+p.id]='Puesto '+p.nombre; }); }); }
       $('#aprLista').innerHTML=rows.map(r=>{
         if(r.tipo==='ot_menos'){ const n=Math.abs(Number(r.cantidad)||0); return `
         <div class="card" style="margin-bottom:10px;border-left:4px solid var(--terra)"><div style="display:flex;align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap">
@@ -3202,7 +3205,7 @@ const Apr = {
             <span style="font-family:'JetBrains Mono';font-weight:700">${esc(r.sku)}</span></div>
             <div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(users[r.solicitado_por]||'—')} · ${r.created_at?new Date(r.created_at).toLocaleString('es-ES'):''}${alta?(r.madurar?' · que maduren':' · disponibles ya'):''}${stockInfo}</div>
             ${r.nota?`<div style="font-size:12px;color:var(--ink2);margin-top:4px">“${esc(r.nota)}”</div>`:''}</div>
-          <button class="chip" style="background:var(--green)" onclick="Apr.resolver(${r.id},'aprobado',this)">Aprobar</button>
+          <button class="chip" style="background:var(--green)" onclick="${alta?`Apr.preguntarAlta(${r.id})`:`Apr.resolver(${r.id},'aprobado',this)`}">Aprobar</button>
           <button class="chip" style="background:var(--red)" onclick="Apr.resolver(${r.id},'rechazado',this)">Rechazar</button>
         </div></div>`;}).join('');
     }catch(e){ $('#aprLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
@@ -3214,7 +3217,22 @@ const Apr = {
     if(r.error) throw r.error;
     return r.data||[];
   },
-  async resolver(id,estado,btn){
+  // al aprobar un ALTA se pregunta si imprimir ya la etiqueta de las unidades nuevas
+  async preguntarAlta(id){
+    const {data:r}=await sb.from('ajustes_inventario').select('*').eq('id',id).maybeSingle();
+    if(!r || r.estado!=='pendiente'){ toast('Esta solicitud ya estaba resuelta','err'); this.reload(); Avisos.check(); return; }
+    const n=Math.abs(Number(r.cantidad)||0);
+    abrirModal('Aprobar alta',r.sku);
+    $('#modalBody').innerHTML=`<div style="font-size:15px;margin-bottom:6px">Alta de <b>${n}</b> ud${n===1?'':'s'} de <b style="font-family:'JetBrains Mono'">${esc(r.sku)}</b>${r.ot?' · '+esc(r.ot):''}</div>
+      ${r.nota?`<div style="font-size:13px;color:var(--muted);margin-bottom:10px">“${esc(r.nota)}”</div>`:''}
+      <div style="font-size:16px;font-weight:700;margin:14px 0">¿Imprimir ${n===1?'la etiqueta':'las '+n+' etiquetas'}?</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="chip" style="padding:12px;background:var(--green)" onclick="cerrarModal();Apr.resolver(${id},'aprobado',null,true)">Sí, aprobar e imprimir</button>
+        <button class="chip" style="padding:12px;background:var(--ink)" onclick="cerrarModal();Apr.resolver(${id},'aprobado',null,false)">Aprobar sin imprimir</button>
+        <button class="chip" style="padding:12px;background:var(--surf2);color:var(--ink)" onclick="cerrarModal()">Cancelar</button>
+      </div>`;
+  },
+  async resolver(id,estado,btn,imprimir=true){
     if(this._busy) return; this._busy=true;
     if(btn) btn.disabled=true;
     try{
@@ -3253,7 +3271,7 @@ const Apr = {
       }
       toast(estado==='aprobado'?msg:'Rechazado', estado==='aprobado'?'ok':'');
       // alta aprobada: se imprimen SOLO las etiquetas de las unidades nuevas
-      if(nuevas.length) imprimirEtiquetasNuevas(nuevas);
+      if(nuevas.length && imprimir) imprimirEtiquetasNuevas(nuevas);
       this.reload(); await refrescarMet(true); render();
       if(typeof OT!=='undefined' && $('#view-ot') && $('#view-ot').style.display!=='none') OT.reload();
     }catch(e){ toast('Error: '+(e.message||e),'err'); this.reload(); }
@@ -3272,7 +3290,7 @@ const Apr = {
 //  AVISOS: peticiones de planta pendientes (aviso flotante + contador en Aprobaciones)
 // ============================================================
 const Avisos = {
-  rows:[], vistos:new Set(), cerrado:false, timer:null, users:null,
+  rows:[], vistos:new Set(), cerrado:false, timer:null, users:null, puestos:null,
   start(){ if(this.timer) return; this.check(); this.timer=setInterval(()=>this.check(),30000); },
   async check(){
     try{
@@ -3280,6 +3298,7 @@ const Avisos = {
       if(error) return;
       this.rows=data||[];
       if(!this.users){ this.users={}; try{ const {data:us}=await sb.from('usuarios').select('id,nombre'); (us||[]).forEach(u=>this.users[u.id]=u.nombre); }catch(e){} }
+      if(!this.puestos){ this.puestos={}; try{ const {data:ps}=await sb.from('puestos_trabajo').select('id,nombre'); (ps||[]).forEach(p=>this.puestos[p.id]=p.nombre); }catch(e){} }
       const nb=$('#navApr'); let bd=$('#aprBadge');
       if(nb && !bd){ bd=document.createElement('span'); bd.id='aprBadge'; bd.style.cssText='margin-left:auto;background:var(--red);color:#fff;border-radius:20px;font-size:11px;font-weight:800;padding:2px 8px;line-height:1.4'; nb.appendChild(bd); }
       if(bd){ bd.textContent=this.rows.length; bd.style.display=this.rows.length?'':'none'; }
@@ -3297,14 +3316,14 @@ const Avisos = {
     const admin=Auth.esAdmin();
     const btn=(txt,bg,js)=>`<button class="chip" style="background:${bg};padding:7px 10px;font-size:12px" onclick="${js}">${txt}</button>`;
     const fila=r=>{
-      const n=Math.abs(Number(r.cantidad)||0), quien=esc(this.users[r.solicitado_por]||'Planta');
+      const n=Math.abs(Number(r.cantidad)||0), quien=esc(this.users[r.solicitado_por]||(r.puesto_id&&this.puestos[r.puesto_id]?'Puesto '+this.puestos[r.puesto_id]:'Planta'));
       let tit, acc;
       if(r.tipo==='ot_menos'){
         tit=`<b>${esc(r.ot||'OT')}</b>: sobran ${n} etiqueta${n===1?'':'s'} (salieron menos)`;
         acc=btn('Quitar '+n,'var(--terra)',`Apr.resolver(${r.id},'aprobado',this)`)+btn('Ajustar a mano','var(--ink)',`Apr.ajustarAMano(${r.id})`);
       }else if(Apr.esAlta(r)){
-        tit=`Alta de <b>${n}</b> · <span style="font-family:'JetBrains Mono'">${esc(r.sku)}</span>`;
-        acc=admin?btn('Dar de alta e imprimir','var(--green)',`Apr.resolver(${r.id},'aprobado',this)`):'<span style="color:var(--muted)">La aprueba un administrador</span>';
+        tit=`Alta de <b>${n}</b> · <span style="font-family:'JetBrains Mono'">${esc(r.sku)}</span>${r.ot?' · '+esc(r.ot):''}`;
+        acc=admin?btn('Aprobar alta','var(--green)',`Apr.preguntarAlta(${r.id})`):'<span style="color:var(--muted)">La aprueba un administrador</span>';
       }else{
         tit=`Baja de <b>${n}</b> · <span style="font-family:'JetBrains Mono'">${esc(r.sku)}</span>`;
         acc=admin?btn('Aprobar baja','var(--red)',`Apr.resolver(${r.id},'aprobado',this)`):'<span style="color:var(--muted)">La aprueba un administrador</span>';
