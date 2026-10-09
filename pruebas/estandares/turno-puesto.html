@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estándar · Turno en el puesto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Narrow:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: una columna de pasos numerados; cada paso = instrucción + maqueta de la pantalla de la tablet con el sitio a tocar marcado.
+   Aspecto único y claro a propósito (se comparte como imagen), con los colores de MOLYN. */
+:root{
+  --ink:#1B1A17; --ink2:#4A463F; --muted:#8A8478; --paper:#F4F2ED; --card:#FFFFFF; --line:#E2DED4;
+  --terra:#B85C38; --terra-soft:#F5E7DF; --ok:#2F7D4F; --ok-soft:#E3F0E8; --blue:#1A73E8; --off:#C9C4BA;
+  --display:'Archivo', 'Arial Narrow', Arial, sans-serif;
+  --body:'Archivo', Arial, Helvetica, sans-serif;
+  --narrow:'Archivo Narrow', 'Arial Narrow', Arial, sans-serif;
+  --mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);margin:0}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:28px 40px;display:flex;flex-direction:column;gap:22px}
+
+header{display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--narrow);font-weight:700;letter-spacing:.12em;font-size:13px;color:var(--ink2);text-transform:uppercase}
+.brand i{width:22px;height:22px;border-radius:6px;background:var(--terra);display:inline-block}
+h1{font-family:var(--display);font-weight:900;font-size:clamp(30px,7vw,46px);line-height:1.02;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--terra)}
+.err{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:15px;color:var(--ink2)}
+.err code{font-family:var(--mono);font-size:13px;background:#C62828;color:#fff;padding:6px 10px;border-radius:8px}
+.lead{font-size:16px;line-height:1.5;color:var(--ink2);margin:0;max-width:62ch}
+
+.step{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:grid;grid-template-columns:1fr;gap:14px}
+.sh{display:flex;gap:14px;align-items:flex-start}
+.num{flex:none;width:44px;height:44px;border-radius:50%;background:var(--ink);color:#fff;font-family:var(--display);font-weight:900;font-size:22px;display:grid;place-items:center}
+.sh h2{font-family:var(--display);font-weight:800;font-size:21px;margin:2px 0 4px;line-height:1.15;text-wrap:balance}
+.sh p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.path{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.path span{font-family:var(--narrow);font-weight:700;font-size:14px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+.path b{color:var(--muted);font-weight:700}
+.path span.hit{background:var(--terra);border-color:var(--terra);color:#fff}
+
+/* maquetas de pantalla */
+.screen{border:8px solid #2A2826;border-radius:18px;background:#F7F7F8;overflow:hidden;font-family:Roboto, 'Archivo', Arial, sans-serif;color:#1F1F1F;max-width:100%}
+.bar{display:flex;align-items:center;gap:10px;background:#fff;padding:10px 12px;border-bottom:1px solid #E5E5E5}
+.omni{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#F1F3F4;border-radius:999px;padding:8px 12px;font-size:14px;color:#3C4043;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tune{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#fff;position:relative}
+.dots{font-size:20px;color:#5F6368;line-height:1}
+.sheet{background:#fff;margin:12px;border-radius:14px;padding:6px 0;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.sheet .t{font-size:13px;font-weight:700;color:#5F6368;padding:10px 16px 4px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:15px}
+.row .ic{width:22px;text-align:center;color:#5F6368}
+.row .lbl{flex:1;min-width:0}
+.row small{display:block;color:#6B6B6B;font-size:12.5px;margin-top:2px}
+.sw{width:42px;height:24px;border-radius:999px;background:var(--blue);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.hl{outline:3px solid var(--terra);outline-offset:-3px;border-radius:12px;background:var(--terra-soft)}
+.tap{display:inline-flex;align-items:center;gap:4px;font-family:var(--narrow);font-weight:700;font-size:12px;color:#fff;background:var(--terra);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.ring{outline:3px solid var(--terra);outline-offset:2px}
+
+.settings{background:#F6F6F6;padding:14px}
+.settings .ttl{font-size:20px;font-weight:700;margin:4px 6px 12px}
+.group{background:#fff;border-radius:20px;overflow:hidden}
+.radio{width:22px;height:22px;border-radius:50%;border:2px solid #9AA0A6;flex:none;position:relative}
+.radio.on{border-color:var(--blue)}
+.radio.on::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--blue)}
+
+.qs{background:#2B2B2E;padding:16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tile{border-radius:16px;background:#3D3D42;color:#D9D9DE;font-size:11.5px;text-align:center;padding:12px 4px;display:flex;flex-direction:column;align-items:center;gap:6px;line-height:1.2}
+.tile .g{width:26px;height:26px;border-radius:50%;background:#55555C}
+.tile.on{background:#8AB4F8;color:#0B2A55}
+.tile.on .g{background:#1A73E8}
+
+.prompt{background:#fff;margin:14px;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+.prompt .q{font-size:16px;line-height:1.35}
+.btn{border-radius:999px;padding:11px 14px;text-align:center;font-weight:600;font-size:14px;border:1px solid #DADCE0;color:#1A73E8;background:#fff}
+.btn.main{background:#1A73E8;color:#fff;border-color:#1A73E8}
+
+.note{display:flex;gap:12px;align-items:flex-start;background:var(--ok-soft);border:1px solid #BFDCCB;border-radius:16px;padding:16px;font-size:15px;line-height:1.5;color:#1E4D31}
+.note b{color:#163B25}
+.note .k{font-family:var(--mono);font-size:13px;background:#fff;border:1px solid #BFDCCB;border-radius:6px;padding:2px 6px}
+footer{font-size:13px;color:var(--muted);text-align:center}
+
+@media (min-width:640px){
+  .step{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:center;padding:22px}
+}
+</style>
+<style>
+.case{display:flex;align-items:center;gap:12px;background:var(--ink);color:#fff;border-radius:14px;padding:14px 18px}
+.case .tag{font-family:var(--display);font-weight:900;font-size:26px;width:44px;height:44px;border-radius:12px;background:var(--terra);display:grid;place-items:center;flex:none}
+.case h2{margin:0;font-family:var(--display);font-weight:800;font-size:21px;line-height:1.15;text-wrap:balance}
+.case p{margin:2px 0 0;color:#D8D3C8;font-size:14px}
+.serie{background:#fff;border:2px solid var(--terra);border-radius:14px;margin:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.serie .ot{font-family:var(--mono);font-weight:700;font-size:15px}
+.serie .ssub{font-size:13px;color:#6B6B6B}
+.stepper{display:flex;align-items:center;gap:10px;justify-content:center}
+.stepper span{width:40px;height:40px;border-radius:10px;background:#EDEAE2;display:grid;place-items:center;font-weight:800;font-size:20px}
+.stepper b{font-family:var(--mono);font-size:22px;min-width:40px;text-align:center}
+.bigbtn{border-radius:12px;padding:12px;text-align:center;font-weight:800;font-size:15px}
+.bigbtn.ok{background:#2F7D4F;color:#fff}.bigbtn.ghost{background:#EDEAE2;color:#3C3A35}.bigbtn.ink{background:#1B1A17;color:#fff}
+.segs{display:flex;gap:8px}.segs div{flex:1;border:2px solid #E2DED4;border-radius:10px;padding:10px 6px;text-align:center;font-weight:700;font-size:13.5px}
+.segs .on{background:var(--terra);border-color:var(--terra);color:#fff}
+.fld{border:2px solid #E2DED4;border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:14px;background:#fff}
+.modal{background:#fff;margin:12px;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.modal h4{margin:0;font-size:17px}
+.rules{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.rules h2{font-family:var(--display);font-weight:800;font-size:20px;margin:0}
+.rules ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px;line-height:1.45;color:var(--ink2)}
+.flow{display:flex;flex-direction:column;gap:12px}
+</style>
+<style>
+/* impresión en A4: cada paso entero en la misma hoja, con los colores de pantalla */
+@page{size:A4;margin:10mm}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff}
+  .wrap{max-width:none;padding-block:0}
+  .step,.rules,.case{break-inside:avoid}
+  .case{break-after:avoid;padding:8px 12px}
+  .case .tag{width:34px;height:34px;font-size:20px}
+  .case h2{font-size:17px}
+  .wrap{gap:9px}
+  h1{font-size:30px}
+  .lead{font-size:13px}
+  .step{padding:8px 14px;gap:12px;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  .num{width:32px;height:32px;font-size:17px}
+  .sh h2{font-size:16px;margin:0 0 2px}
+  .sh p{font-size:12.5px}
+  .screen{border-width:5px;zoom:.72}
+  .rules{padding:12px 16px}
+  .rules ul{font-size:13px}
+}
+</style>
+<style>
+.blk{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.blk h2{font-family:var(--display);font-weight:800;font-size:21px;margin:0;text-wrap:balance}
+.blk>p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.check{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.check li{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45}
+.check li::before{content:"";flex:none;width:18px;height:18px;border:2px solid var(--ink);border-radius:4px;margin-top:2px}
+.tw{overflow-x:auto}
+table.tb{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+.tb th{background:var(--ink);color:#fff;text-align:left;padding:9px 10px;font-family:var(--narrow);letter-spacing:.04em;text-transform:uppercase;font-size:12.5px}
+.tb td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.4}
+.tb tr:nth-child(even) td{background:var(--paper)}
+.tb td:first-child{font-weight:700}
+.calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.calc>div{border:2px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14.5px;line-height:1.45}
+.calc h3{margin:0;font-size:17px;font-family:var(--display);font-weight:800}
+.calc .f{font-family:var(--mono);font-size:13px;background:var(--paper);border-radius:8px;padding:8px 10px;line-height:1.6}
+.calc .r{font-weight:800;color:var(--terra)}
+.pill{display:inline-block;font-family:var(--narrow);font-weight:700;font-size:12.5px;border-radius:999px;padding:2px 9px;background:var(--terra-soft);color:var(--terra)}
+.hoja{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.45}
+.hoja b.n{flex:none;font-family:var(--mono);background:var(--ink);color:#fff;border-radius:6px;padding:1px 7px;font-size:12px;margin-top:2px}
+@media print{
+  .blk{break-inside:auto;padding:12px 16px}
+  .blk h2{break-after:avoid}
+  .tb tr,.hoja,.calc>div,.check li{break-inside:avoid}
+  .tb{font-size:11.5px;min-width:0}
+  .tb th,.tb td{padding:5px 7px}
+  .calc>div{font-size:12.5px;padding:10px}
+  .check li,.hoja{font-size:12.5px}
+}
+</style>
+</head><body>
+<div class="wrap">
+  <header>
+    <div class="brand"><i></i>MOLYN · Estándar del puesto</div>
+    <h1>Turno en el puesto: <em>de Comenzar a Finalizar</em></h1>
+    <p class="lead">Todo el trabajo del puesto se apunta en la tablet. Lo que no se registra no cuenta: ni para el stock ni para la productividad del puesto.</p>
+  </header>
+
+  <div class="case"><div class="tag">1</div><div><h2>Al empezar</h2><p>Antes de escanear la primera etiqueta.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">1</div><div>
+      <h2>Comienza el turno</h2>
+      <p>Pulsa el botón verde <b>Comenzar turno</b>. Sin turno no se puede escanear. Hasta que escanees la primera etiqueta, el tiempo cuenta como <b>Preparación</b>.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="bigbtn ok ring">▶ Comenzar turno</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">2</div><div>
+      <h2>Si sale «Se quedó trabajo abierto»</h2>
+      <p>Es un lote o una unidad que quedó sin cerrar otro día. Elige: <b>Registrar las terminadas</b> (pon cuántas se hicieron, por ejemplo 5 de 11), <b>Reiniciar la cuenta</b> o <b>Decidir más tarde</b> si tienes que preguntar al encargado.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="font-weight:800">Ojo: se quedó trabajo abierto</div><div style="font-size:13px">OT00030 · 11 uds pendientes · ¿Cuántas se terminaron?</div><div class="stepper"><b>5</b><span style="width:auto;padding:0 8px;background:none">de 11</span></div><div class="bigbtn ink ring">Registrar las terminadas</div><div class="bigbtn ghost">Reiniciar la cuenta</div></div></div>
+  </section>
+  <div class="case"><div class="tag">2</div><div><h2>Fabricar</h2><p>Un lote por OT. El cronómetro cuenta el lote entero.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">3</div><div>
+      <h2>Escanea una etiqueta de la OT</h2>
+      <p>Con <b>Cámara</b> o escribiendo el código y pulsando <b>Enviar</b>. Se abre el <b>lote</b> con todas las unidades pendientes de esa OT. No hace falta escanear cada etiqueta.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="display:flex;gap:8px"><div class="fld" style="flex:1">OT00022-0001</div><div class="bigbtn" style="background:#B85C38;color:#fff">Enviar</div></div><div class="bigbtn ghost">📷 Cámara</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">4</div><div>
+      <h2>Termina el lote con lo que ha salido de verdad</h2>
+      <p>Si han salido todas: <b>Terminar las N</b>. Si han salido menos: <b>Terminar solo algunas</b>, ajusta con − / + y pulsa <b>Terminar X de N</b>. Si salen menos o más que las etiquetas, sigue el estándar <b>«Las etiquetas no cuadran con el corte»</b>.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="serie"><div class="ot">OT00022 · lote de 19 uds</div><div class="ssub">040 160x200 · Llevas 1:24:10 con este lote</div><div class="bigbtn ok">✓ Terminar las 19</div><div class="bigbtn ghost">Terminar solo algunas</div><div class="stepper"><span>−</span><b>18</b><span>+</span></div><div class="bigbtn ok ring">✓ Terminar 18 de 19</div></div></div>
+  </section>
+  <div class="case"><div class="tag">3</div><div><h2>Paradas</h2><p>Todo lo que no es fabricar se apunta como parada.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">5</div><div>
+      <h2>Pulsa Parada y elige el motivo</h2>
+      <p><b>Desayuno, Comida, Avería, Falta material, Retrabajo, Cambio de puesto u Otro.</b> Mientras dura la parada no se puede escanear. Al volver, pulsa <b>Reanudar</b>. El tiempo en <b>Retrabajo</b> no cuenta en el tiempo del lote.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="segs"><div>☕ Desayuno</div><div>🍽 Comida</div></div><div class="segs"><div class="on ring">🔧 Avería</div><div>📦 Falta material</div></div><div class="segs"><div>↻ Retrabajo</div><div>⇄ Cambio de puesto</div></div></div></div>
+  </section>
+  <div class="blk">
+    <h2>Paradas automáticas</h2>
+    <ul class="check"><li><span><b>Inactividad:</b> si pasan <b>3 minutos</b> sin ningún lote ni unidad en fabricación, la app abre una parada sola.</span></li><li><span><b>Preparación:</b> al terminar un lote, el tiempo hasta escanear la siguiente OT cuenta como preparación.</span></li><li><span>Las dos se cierran solas al escanear. Si la parada es por otro motivo (desayuno, avería…), elígelo tú: así se sabe por qué se paró.</span></li></ul>
+  </div>
+  <div class="case"><div class="tag">4</div><div><h2>Al acabar la jornada</h2><p>Que no quede nada abierto para mañana.</p></div></div>
+  <section class="step" style="grid-template-columns:1fr">
+    <div class="sh"><div class="num">6</div><div>
+      <h2>Cierra el lote</h2>
+      <p>Termina el lote (todas o solo algunas). Comprueba que <b>En fabricación</b> queda vacío. Si quedó algo a medias, mejor «Terminar solo algunas» con las hechas que dejarlo abierto.</p>
+    </div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">7</div><div>
+      <h2>Finaliza el turno</h2>
+      <p>Si hay una parada tuya activa, pulsa <b>Reanudar</b> primero. Pulsa <b>Finalizar</b>: sale el resumen del turno (tiempo, paradas, productivo, ocupación y unidades hechas). Si avisa de que hay un lote abierto, cancélalo y ciérralo antes.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="font-weight:800">Turno finalizado</div><div class="fld" style="font-size:13px;line-height:1.6">Turno 8:00 · Paradas 0:45<br>Productivo 7:15 · Ocupación 91 %<br>Hechas 55</div></div></div>
+  </section>
+  <section class="step" style="grid-template-columns:1fr">
+    <div class="sh"><div class="num">8</div><div>
+      <h2>Deja la tablet lista</h2>
+      <p>Con la app abierta y <b>enchufada</b>. No pulses <b>Salir</b>: la sesión del puesto se queda guardada para mañana.</p>
+    </div></div>
+  </section>
+  <div class="blk">
+    <h2>Mensajes y qué hacer</h2>
+    <div class="tw"><table class="tb"><tr><th>Mensaje</th><th>Qué significa</th><th>Qué hacer</th></tr><tr><td>«Comienza el turno primero»</td><td>No hay turno abierto.</td><td>Pulsa Comenzar turno.</td></tr><tr><td>«Hay una parada activa. Reanuda para seguir.»</td><td>Estás en una parada (desayuno, avería…).</td><td>Pulsa Reanudar.</td></tr><tr><td>«Tienes un lote en curso. Ciérralo con los botones.»</td><td>Ya hay un lote abierto.</td><td>Termínalo (todas o algunas) antes de escanear otra OT.</td></tr><tr><td>«Esa unidad ya está fabricada»</td><td>Esa etiqueta ya se registró.</td><td>Comprueba la OT; si la etiqueta está repetida, avisa al encargado.</td></tr><tr><td>«Código no reconocido»</td><td>El código no existe.</td><td>Revisa que esté bien escrito; si es una etiqueta rota, avisa al encargado.</td></tr><tr><td>La cámara no abre</td><td>La tablet no da permiso a la cámara.</td><td>Escribe el código a mano y avisa al encargado para dar el permiso.</td></tr><tr><td>Barra de arriba «sin conexión» o «pendiente»</td><td>No hay red.</td><td>Sigue trabajando: se guarda en la tablet y se envía sola al volver la red. No pulses Salir.</td></tr></table></div>
+  </div>
+  <footer>Si dudas, pregunta al encargado antes de cerrar o reiniciar nada.</footer>
+</div>
+<script>
+// ?print=1 → abre el diálogo de imprimir (desde ahí se puede "Guardar como PDF")
+if(/[?&]print=1/.test(location.search)){
+  window.addEventListener('load',()=>{ (document.fonts&&document.fonts.ready||Promise.resolve()).then(()=>setTimeout(()=>window.print(),300)); });
+}
+</script>
+</body></html>

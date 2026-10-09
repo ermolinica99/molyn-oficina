@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estándar · Recuento de stock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Narrow:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: una columna de pasos numerados; cada paso = instrucción + maqueta de la pantalla de la tablet con el sitio a tocar marcado.
+   Aspecto único y claro a propósito (se comparte como imagen), con los colores de MOLYN. */
+:root{
+  --ink:#1B1A17; --ink2:#4A463F; --muted:#8A8478; --paper:#F4F2ED; --card:#FFFFFF; --line:#E2DED4;
+  --terra:#B85C38; --terra-soft:#F5E7DF; --ok:#2F7D4F; --ok-soft:#E3F0E8; --blue:#1A73E8; --off:#C9C4BA;
+  --display:'Archivo', 'Arial Narrow', Arial, sans-serif;
+  --body:'Archivo', Arial, Helvetica, sans-serif;
+  --narrow:'Archivo Narrow', 'Arial Narrow', Arial, sans-serif;
+  --mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);margin:0}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:28px 40px;display:flex;flex-direction:column;gap:22px}
+
+header{display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--narrow);font-weight:700;letter-spacing:.12em;font-size:13px;color:var(--ink2);text-transform:uppercase}
+.brand i{width:22px;height:22px;border-radius:6px;background:var(--terra);display:inline-block}
+h1{font-family:var(--display);font-weight:900;font-size:clamp(30px,7vw,46px);line-height:1.02;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--terra)}
+.err{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:15px;color:var(--ink2)}
+.err code{font-family:var(--mono);font-size:13px;background:#C62828;color:#fff;padding:6px 10px;border-radius:8px}
+.lead{font-size:16px;line-height:1.5;color:var(--ink2);margin:0;max-width:62ch}
+
+.step{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:grid;grid-template-columns:1fr;gap:14px}
+.sh{display:flex;gap:14px;align-items:flex-start}
+.num{flex:none;width:44px;height:44px;border-radius:50%;background:var(--ink);color:#fff;font-family:var(--display);font-weight:900;font-size:22px;display:grid;place-items:center}
+.sh h2{font-family:var(--display);font-weight:800;font-size:21px;margin:2px 0 4px;line-height:1.15;text-wrap:balance}
+.sh p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.path{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.path span{font-family:var(--narrow);font-weight:700;font-size:14px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+.path b{color:var(--muted);font-weight:700}
+.path span.hit{background:var(--terra);border-color:var(--terra);color:#fff}
+
+/* maquetas de pantalla */
+.screen{border:8px solid #2A2826;border-radius:18px;background:#F7F7F8;overflow:hidden;font-family:Roboto, 'Archivo', Arial, sans-serif;color:#1F1F1F;max-width:100%}
+.bar{display:flex;align-items:center;gap:10px;background:#fff;padding:10px 12px;border-bottom:1px solid #E5E5E5}
+.omni{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#F1F3F4;border-radius:999px;padding:8px 12px;font-size:14px;color:#3C4043;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tune{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#fff;position:relative}
+.dots{font-size:20px;color:#5F6368;line-height:1}
+.sheet{background:#fff;margin:12px;border-radius:14px;padding:6px 0;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.sheet .t{font-size:13px;font-weight:700;color:#5F6368;padding:10px 16px 4px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:15px}
+.row .ic{width:22px;text-align:center;color:#5F6368}
+.row .lbl{flex:1;min-width:0}
+.row small{display:block;color:#6B6B6B;font-size:12.5px;margin-top:2px}
+.sw{width:42px;height:24px;border-radius:999px;background:var(--blue);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.hl{outline:3px solid var(--terra);outline-offset:-3px;border-radius:12px;background:var(--terra-soft)}
+.tap{display:inline-flex;align-items:center;gap:4px;font-family:var(--narrow);font-weight:700;font-size:12px;color:#fff;background:var(--terra);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.ring{outline:3px solid var(--terra);outline-offset:2px}
+
+.settings{background:#F6F6F6;padding:14px}
+.settings .ttl{font-size:20px;font-weight:700;margin:4px 6px 12px}
+.group{background:#fff;border-radius:20px;overflow:hidden}
+.radio{width:22px;height:22px;border-radius:50%;border:2px solid #9AA0A6;flex:none;position:relative}
+.radio.on{border-color:var(--blue)}
+.radio.on::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--blue)}
+
+.qs{background:#2B2B2E;padding:16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tile{border-radius:16px;background:#3D3D42;color:#D9D9DE;font-size:11.5px;text-align:center;padding:12px 4px;display:flex;flex-direction:column;align-items:center;gap:6px;line-height:1.2}
+.tile .g{width:26px;height:26px;border-radius:50%;background:#55555C}
+.tile.on{background:#8AB4F8;color:#0B2A55}
+.tile.on .g{background:#1A73E8}
+
+.prompt{background:#fff;margin:14px;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+.prompt .q{font-size:16px;line-height:1.35}
+.btn{border-radius:999px;padding:11px 14px;text-align:center;font-weight:600;font-size:14px;border:1px solid #DADCE0;color:#1A73E8;background:#fff}
+.btn.main{background:#1A73E8;color:#fff;border-color:#1A73E8}
+
+.note{display:flex;gap:12px;align-items:flex-start;background:var(--ok-soft);border:1px solid #BFDCCB;border-radius:16px;padding:16px;font-size:15px;line-height:1.5;color:#1E4D31}
+.note b{color:#163B25}
+.note .k{font-family:var(--mono);font-size:13px;background:#fff;border:1px solid #BFDCCB;border-radius:6px;padding:2px 6px}
+footer{font-size:13px;color:var(--muted);text-align:center}
+
+@media (min-width:640px){
+  .step{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:center;padding:22px}
+}
+</style>
+<style>
+.case{display:flex;align-items:center;gap:12px;background:var(--ink);color:#fff;border-radius:14px;padding:14px 18px}
+.case .tag{font-family:var(--display);font-weight:900;font-size:26px;width:44px;height:44px;border-radius:12px;background:var(--terra);display:grid;place-items:center;flex:none}
+.case h2{margin:0;font-family:var(--display);font-weight:800;font-size:21px;line-height:1.15;text-wrap:balance}
+.case p{margin:2px 0 0;color:#D8D3C8;font-size:14px}
+.serie{background:#fff;border:2px solid var(--terra);border-radius:14px;margin:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.serie .ot{font-family:var(--mono);font-weight:700;font-size:15px}
+.serie .ssub{font-size:13px;color:#6B6B6B}
+.stepper{display:flex;align-items:center;gap:10px;justify-content:center}
+.stepper span{width:40px;height:40px;border-radius:10px;background:#EDEAE2;display:grid;place-items:center;font-weight:800;font-size:20px}
+.stepper b{font-family:var(--mono);font-size:22px;min-width:40px;text-align:center}
+.bigbtn{border-radius:12px;padding:12px;text-align:center;font-weight:800;font-size:15px}
+.bigbtn.ok{background:#2F7D4F;color:#fff}.bigbtn.ghost{background:#EDEAE2;color:#3C3A35}.bigbtn.ink{background:#1B1A17;color:#fff}
+.segs{display:flex;gap:8px}.segs div{flex:1;border:2px solid #E2DED4;border-radius:10px;padding:10px 6px;text-align:center;font-weight:700;font-size:13.5px}
+.segs .on{background:var(--terra);border-color:var(--terra);color:#fff}
+.fld{border:2px solid #E2DED4;border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:14px;background:#fff}
+.modal{background:#fff;margin:12px;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.modal h4{margin:0;font-size:17px}
+.rules{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.rules h2{font-family:var(--display);font-weight:800;font-size:20px;margin:0}
+.rules ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px;line-height:1.45;color:var(--ink2)}
+.flow{display:flex;flex-direction:column;gap:12px}
+</style>
+<style>
+/* impresión en A4: cada paso entero en la misma hoja, con los colores de pantalla */
+@page{size:A4;margin:10mm}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff}
+  .wrap{max-width:none;padding-block:0}
+  .step,.rules,.case{break-inside:avoid}
+  .case{break-after:avoid;padding:8px 12px}
+  .case .tag{width:34px;height:34px;font-size:20px}
+  .case h2{font-size:17px}
+  .wrap{gap:9px}
+  h1{font-size:30px}
+  .lead{font-size:13px}
+  .step{padding:8px 14px;gap:12px;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  .num{width:32px;height:32px;font-size:17px}
+  .sh h2{font-size:16px;margin:0 0 2px}
+  .sh p{font-size:12.5px}
+  .screen{border-width:5px;zoom:.72}
+  .rules{padding:12px 16px}
+  .rules ul{font-size:13px}
+}
+</style>
+<style>
+.blk{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.blk h2{font-family:var(--display);font-weight:800;font-size:21px;margin:0;text-wrap:balance}
+.blk>p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.check{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.check li{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45}
+.check li::before{content:"";flex:none;width:18px;height:18px;border:2px solid var(--ink);border-radius:4px;margin-top:2px}
+.tw{overflow-x:auto}
+table.tb{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+.tb th{background:var(--ink);color:#fff;text-align:left;padding:9px 10px;font-family:var(--narrow);letter-spacing:.04em;text-transform:uppercase;font-size:12.5px}
+.tb td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.4}
+.tb tr:nth-child(even) td{background:var(--paper)}
+.tb td:first-child{font-weight:700}
+.calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.calc>div{border:2px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14.5px;line-height:1.45}
+.calc h3{margin:0;font-size:17px;font-family:var(--display);font-weight:800}
+.calc .f{font-family:var(--mono);font-size:13px;background:var(--paper);border-radius:8px;padding:8px 10px;line-height:1.6}
+.calc .r{font-weight:800;color:var(--terra)}
+.pill{display:inline-block;font-family:var(--narrow);font-weight:700;font-size:12.5px;border-radius:999px;padding:2px 9px;background:var(--terra-soft);color:var(--terra)}
+.hoja{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.45}
+.hoja b.n{flex:none;font-family:var(--mono);background:var(--ink);color:#fff;border-radius:6px;padding:1px 7px;font-size:12px;margin-top:2px}
+@media print{
+  .blk{break-inside:auto;padding:12px 16px}
+  .blk h2{break-after:avoid}
+  .tb tr,.hoja,.calc>div,.check li{break-inside:avoid}
+  .tb{font-size:11.5px;min-width:0}
+  .tb th,.tb td{padding:5px 7px}
+  .calc>div{font-size:12.5px;padding:10px}
+  .check li,.hoja{font-size:12.5px}
+}
+</style>
+</head><body>
+<div class="wrap">
+  <header>
+    <div class="brand"><i></i>MOLYN · Estándar de encargado y oficina</div>
+    <h1>Recuento de stock: <em>lo que hay = lo que dice la app</em></h1>
+    <p class="lead">Cada semana se cuenta el almacén y se cuadra con la app. El encargado cuenta y pide los ajustes desde la tablet; oficina los aprueba e imprime las etiquetas que falten.</p>
+  </header>
+
+  <div class="blk">
+    <h2>Cuándo</h2>
+    <ul class="check"><li><span><b>Una vez por semana</b>, el mismo día (lo fija el encargado).</span></li><li><span>Y siempre que algo no cuadre: falta un núcleo para un parte, sobran etiquetas, el Dashboard no coincide con el almacén.</span></li></ul>
+  </div>
+  <div class="blk">
+    <h2>Antes de contar</h2>
+    <ul class="check"><li><span>Ningún puesto con un lote abierto (todo terminado).</span></li><li><span>La barra de arriba de las tablets en verde: nada pendiente de enviar.</span></li><li><span>Todos los núcleos que han salido, <b>consumidos</b> en la tablet.</span></li></ul>
+  </div>
+  <div class="case"><div class="tag">E</div><div><h2>Encargado: contar y pedir el ajuste</h2><p>Desde la tablet del encargado.</p></div></div>
+  <section class="step" style="grid-template-columns:1fr">
+    <div class="sh"><div class="num">1</div><div>
+      <h2>Cuenta por núcleo</h2>
+      <p>Cuenta lo que hay en el almacén por código de núcleo. Separa los <b>disponibles</b> y los que aún están <b>en maduración</b> (fecha «Disponible» de la etiqueta).</p>
+    </div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">2</div><div>
+      <h2>Compara con la app</h2>
+      <p>Pestaña <b>Stock</b>: cada núcleo con sus disponibles y en maduración. Apunta las diferencias.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="fld" style="font-size:13px;line-height:1.6">040 160x200 · N002160X200040<br>Disp 12 · Madur 4</div></div></div>
+  </section>
+  <section class="step" style="grid-template-columns:1fr">
+    <div class="sh"><div class="num">3</div><div>
+      <h2>Antes de ajustar, busca la causa</h2>
+      <p>Mira la tabla de abajo. Si faltan porque se usaron sin escanear, se <b>consumen</b>, no se dan de baja. Si es un lote mal cerrado, se corrige con su estándar.</p>
+    </div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">4</div><div>
+      <h2>Pide el alta o la baja</h2>
+      <p>Pestaña <b>Inventario</b>. <b>Sobran (alta)</b>: núcleo, cantidad y «Que maduren» si están recién hechos. <b>Faltan (baja)</b>: núcleo y cantidad. Escribe siempre una <b>nota</b> con el motivo y pulsa <b>Enviar a oficina</b>.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="segs"><div class="on ring">Sobran (alta)</div><div>Faltan (baja)</div></div><div class="fld">N002160X200040</div><div style="display:flex;gap:10px;align-items:center"><div class="fld" style="width:70px;text-align:center">2</div><b style="font-size:13px">☐ Que maduren</b></div><div class="fld">Recuento semanal: 2 sin etiqueta</div><div class="bigbtn ink">Enviar a oficina</div></div></div>
+  </section>
+  <section class="step" style="grid-template-columns:1fr">
+    <div class="sh"><div class="num">5</div><div>
+      <h2>Sigue la petición</h2>
+      <p>En <b>Mis solicitudes</b> ves si oficina la ha aprobado o rechazado.</p>
+    </div></div>
+  </section>
+  <div class="case"><div class="tag">O</div><div><h2>Oficina: aprobar</h2><p>Llega como aviso arriba a la derecha y en Aprobaciones.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">6</div><div>
+      <h2>Aprueba o rechaza</h2>
+      <p><b>Alta:</b> al aprobar pregunta «¿Imprimir la etiqueta?»; pulsa <b>Sí, aprobar e imprimir</b> y manda las etiquetas al almacén para pegarlas. <b>Baja:</b> se quitan las unidades <b>más antiguas</b> en stock de ese núcleo. Si no cuadra con lo que esperas, <b>Rechazar</b> y habla con el encargado.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="font-weight:800">¿Imprimir las 2 etiquetas?</div><div class="bigbtn ok ring">Sí, aprobar e imprimir</div><div class="bigbtn ink">Aprobar sin imprimir</div><div class="bigbtn ghost">Cancelar</div></div></div>
+  </section>
+  <section class="step" style="grid-template-columns:1fr">
+    <div class="sh"><div class="num">7</div><div>
+      <h2>Comprueba</h2>
+      <p>Después de aprobar, el stock del núcleo en el Dashboard y en la pestaña Stock tiene que coincidir con lo contado.</p>
+    </div></div>
+  </section>
+  <div class="blk">
+    <h2>Por qué no cuadra y qué hacer</h2>
+    <div class="tw"><table class="tb"><tr><th>Causa</th><th>Qué hacer</th></tr><tr><td>Núcleos usados sin escanear</td><td>Consumirlos en la tablet (estándar Consumir núcleos). No es una baja.</td></tr><tr><td>Lote cerrado con más o menos de los que salieron</td><td>Estándar «Las etiquetas no cuadran con el corte».</td></tr><tr><td>Núcleos sin etiqueta</td><td>Alta con «Que maduren» si son recientes; oficina imprime su etiqueta.</td></tr><tr><td>Rotos o defectuosos</td><td>Baja con nota «rotura».</td></tr><tr><td>Núcleo en otro sitio o mal colocado</td><td>Buscarlo antes de pedir una baja.</td></tr><tr><td>Diferencia que se repite cada semana</td><td>Abrir un 3C para encontrar la causa.</td></tr></table></div>
+  </div>
+  <div class="blk">
+    <h2>Oficina también puede ajustar directamente</h2>
+    <p>Oficina › <b>Inventario físico</b> › <b>+ Alta</b> / <b>− Baja</b> con su motivo (recuento, devolución, corrección de fabricación, rotura…). Queda registrado y no pasa por Aprobaciones. Una baja <b>no se puede deshacer</b>: si luego aparece el núcleo, hay que darlo de alta otra vez.</p>
+  </div>
+  <footer>Ningún ajuste sin nota: el motivo es lo que permite encontrar la causa.</footer>
+</div>
+<script>
+// ?print=1 → abre el diálogo de imprimir (desde ahí se puede "Guardar como PDF")
+if(/[?&]print=1/.test(location.search)){
+  window.addEventListener('load',()=>{ (document.fonts&&document.fonts.ready||Promise.resolve()).then(()=>setTimeout(()=>window.print(),300)); });
+}
+</script>
+</body></html>
