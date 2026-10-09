@@ -1,0 +1,42 @@
+name: Aplicar SQL a PRUEBAS
+
+# Aplica los cambios de base de datos que están en desarrollo (pruebas/sql/*.sql, por orden)
+# SOLO a la base de datos de PRUEBAS. Nunca toca la real. Se lanza a mano desde la pestaña Actions.
+on:
+  workflow_dispatch:
+
+jobs:
+  aplicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cliente de PostgreSQL 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Comprobar que el destino es la base de PRUEBAS
+        env:
+          REAL: ${{ secrets.SUPABASE_DB_URL }}
+          PRUEBAS: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          if [ -z "$PRUEBAS" ]; then echo "Falta el secreto SUPABASE_TEST_DB_URL (base de pruebas)." >&2; exit 1; fi
+          if [ -n "$REAL" ] && [ "$REAL" = "$PRUEBAS" ]; then echo "SUPABASE_TEST_DB_URL es igual a la base REAL. No se aplica nada." >&2; exit 1; fi
+          if echo "$PRUEBAS" | grep -q "kmfdywyeesybqqfmfxys"; then echo "SUPABASE_TEST_DB_URL apunta al proyecto REAL. No se aplica nada." >&2; exit 1; fi
+
+      - name: Aplicar pruebas/sql/*.sql
+        env:
+          PRUEBAS: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          shopt -s nullglob
+          for f in pruebas/sql/*.sql; do
+            echo "== $f"
+            /usr/lib/postgresql/17/bin/psql "$PRUEBAS" -v ON_ERROR_STOP=1 -f "$f"
+          done
+          echo "Listo. La base de PRUEBAS tiene los cambios en desarrollo."
