@@ -1503,12 +1503,12 @@ const Prod = {
       }catch(e){ toast('Error comprobando si el parte ya existe: '+(e.message||e),'err'); return; }
     }
     // producto final: una PF por línea del parte (fases en línea 3 Pegado → 2 Cosido → 1 Embalado)
-    const lineasPF=this.lineas.filter(l=>l.cant>0);
+    const lineasPF=this.lineas.map((l,li)=>({l,li})).filter(x=>x.l.cant>0);
     if(lineasPF.length){
       const {error:ePF}=await sb.from('pf_ordenes').select('pf').limit(1);
       if(ePF){ toast('Falta preparar la base de datos para el producto final: en GitHub → molyn-oficina → Actions → "Aplicar SQL a PRUEBAS". ('+(ePF.message||ePF)+')','err'); return; }
     }
-    if(!confirm(`¿Lanzar ${items.length} OT (${items.reduce((s,[,n])=>s+n,0)} uds)`+(lineasPF.length?` y ${lineasPF.length} PF de producto final (${lineasPF.reduce((s,l)=>s+l.cant,0)} colchones)`:'')+` y generar los partes?`)) return;
+    if(!confirm(`¿Lanzar ${items.length} OT (${items.reduce((s,[,n])=>s+n,0)} uds)`+(lineasPF.length?` y ${lineasPF.length} PF de producto final (${lineasPF.reduce((s,x)=>s+x.l.cant,0)} colchones)`:'')+` y generar los partes?`)) return;
     $('#btnLanzar').disabled=true; $('#btnLanzar').textContent='Lanzando…';
     try{
       const nucsDem=[...new Set(this.lineas.flatMap(l=>[l.sku_nucleo,skuTapa(l.sku_pf),skuPlat(l.sku_pf)]).filter(Boolean))];
@@ -1546,8 +1546,8 @@ const Prod = {
       this.repartirComp(pools,otByNuc).forEach(x=>res.push({parte_ref:this.parteNum||null,sku:x.sku,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:x.bloque}));
       if(res.length){ let e3=(await sb.from('reservas').insert(res)).error; if(e3)throw e3; }
       // PRODUCTO FINAL: una PF por línea, con una etiqueta por colchón (PF00001-0001…)
-      const pfRows=[], pfUds=[], lanzPF=new Date().toISOString();
-      for(const l of lineasPF){
+      const pfRows=[], pfUds=[], pfByLine={}, lanzPF=new Date().toISOString();
+      for(const {l,li} of lineasPF){
         const {data:pf,error:eN}=await sb.rpc('siguiente_pf'); if(eN)throw eN;
         const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
         const nombre=[l.nombre||(this.modelosMap[l.sku_pf]||{}).nombre||l.sku_pf,l.medida||''].filter(Boolean).join(' ');
@@ -1556,11 +1556,11 @@ const Prod = {
         let e4=(await sb.from('pf_ordenes').insert(row)).error; if(e4)throw e4;
         const uds=[]; for(let i=1;i<=l.cant;i++) uds.push({id:`${pf}-${String(i).padStart(4,'0')}`,pf,sku_pf:l.sku_pf,fase:'pegado'});
         for(let i=0;i<uds.length;i+=500){ let e5=(await sb.from('pf_unidades').insert(uds.slice(i,i+500))).error; if(e5)throw e5; }
-        pfRows.push(row);
+        pfRows.push(row); pfByLine[li]=pf;
         uds.forEach(u=>pfUds.push({id:u.id,pf,sku_pf:l.sku_pf,nombre,descripcion:row.descripcion,sku_nucleo:row.sku_nucleo,especial:row.especial,parte_ref:row.parte_ref}));
       }
       // documento de parte + etiquetas QR
-      const docParte=this.imprimirParte(nucRows,_bA,_bB,_bC,_bD,{pfRows});
+      const docParte=this.imprimirParte(nucRows,_bA,_bB,_bC,_bD,{pfByLine});
       // copia exacta del documento para poder reimprimirlo desde Partes lanzados
       if(this.parteNum){ try{ const {error}=await sb.from('partes_impresos').insert({parte_ref:this.parteNum,html:docParte}); if(error) console.warn('No se guardó la copia del parte:',error.message); }catch(e){} }
       this.imprimirEtiquetas(nuevos);
@@ -1640,10 +1640,10 @@ const Prod = {
   repartirFifo(pools,otByNuc){
     const bA=[],bB=[],bC=[],bD=[];
     const espDate=new Date(Date.now()+((CFG.dias_fabricacion||0)+CFG.maduracion)*86400000).toISOString();
-    this.lineas.forEach(l=>{ if(l.cant<=0)return;
+    this.lineas.forEach((l,li)=>{ if(l.cant<=0)return;
       let rest=l.cant;
       const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
-      const base={sku_pf:l.sku_pf,desc:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,nucleo:l.sku_nucleo,especial:!!l.especial};
+      const base={li,sku_pf:l.sku_pf,desc:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,nucleo:l.sku_nucleo,especial:!!l.especial};
       // marcado explícitamente "sin núcleo": va aparte, no pasa por el reparto FIFO de núcleos
       if(l.sin_nucleo){ bD.push({...base,cant:rest}); return; }
       const p=(l.sku_nucleo&&pools[l.sku_nucleo])?pools[l.sku_nucleo]:{disp:[],madur:[],fabri:[]};
@@ -1709,17 +1709,21 @@ const Prod = {
         <table><tr><th>OT</th><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${arr.map(x=>`<tr><td><b>${esc(x.ot)}</b></td><td>${esc(x.sku)}</td><td>${esc(x.nombre||'')}</td><td class="n">${x.cant}</td></tr>`).join('')}
         <tr class="tot"><td colspan="3">TOTAL</td><td class="n">${t}</td></tr></table>`; };
     const hojaT=hojaComp('tapa','Tapas'), hojaPl=hojaComp('platabanda','Platabandas');
-    // hojas de modelos por bloque
+    // hojas de modelos por bloque: cada línea lleva su PF de producto final (si se lanzó con PF)
+    const pfDe=x=>(opts.pfByLine&&x.li!=null&&opts.pfByLine[x.li])||'';
+    const conPF=!!(opts.pfByLine&&Object.keys(opts.pfByLine).length);
+    const thPF=conPF?'<th>PF</th>':'', tdPF=x=>conPF?`<td><b>${esc(pfDe(x)||'—')}</b></td>`:'';
+    const rutaPF=conPF?' Cada línea es una PF: 3 Pegado → 2 Cosido → 1 Embalado.':'';
     const hojaMod=(titulo,sub,arr,conFecha)=>{
       if(!arr.length)return'';
       const t=arr.reduce((s,x)=>s+x.cant,0);
-      const head=`<th>Código</th><th>Descripción</th><th>Núcleo</th><th>OT</th>${conFecha?'<th>Disponible</th>':''}<th class="n">Cant.</th>`;
+      const head=`${thPF}<th>Código</th><th>Descripción</th><th>Núcleo</th><th>OT</th>${conFecha?'<th>Disponible</th>':''}<th class="n">Cant.</th>`;
       const rows=arr.map(x=>{
         const dd=conFecha?(x.dispDate?new Date(x.dispDate).toLocaleDateString('es-ES'):'—'):'';
-        return `<tr class="${x.nucleo?'':'falta'}"><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td></tr>`;
+        return `<tr class="${x.nucleo?'':'falta'}">${tdPF(x)}<td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td></tr>`;
       }).join('');
-      const colspan=conFecha?5:4;
-      return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
+      const colspan=(conFecha?5:4)+(conPF?1:0);
+      return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub}${rutaPF} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
         <table><tr>${head}</tr>${rows}<tr class="tot"><td colspan="${colspan}">TOTAL</td><td class="n">${t}</td></tr></table>`;
     };
     // los modelos ESPECIALES (externos) salen en sus propias hojas: consumen los mismos núcleos, pero van en otro parte
@@ -1733,20 +1737,13 @@ const Prod = {
     const h4=(()=>{
       const arr=bD||[]; if(!arr.length)return'';
       const t=arr.reduce((s,x)=>s+x.cant,0);
-      const rows=arr.map(x=>`<tr><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td class="n">${x.cant}</td></tr>`).join('');
-      return `<div class="pb"></div><h1>Parte · Colchones SIN NÚCLEO</h1><div class="meta">No requieren fabricación de núcleo. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
-        <table><tr><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="2">TOTAL</td><td class="n">${t}</td></tr></table>`;
+      const rows=arr.map(x=>`<tr>${tdPF(x)}<td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td class="n">${x.cant}</td></tr>`).join('');
+      return `<div class="pb"></div><h1>Parte · Colchones SIN NÚCLEO</h1><div class="meta">No requieren fabricación de núcleo.${rutaPF} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
+        <table><tr>${thPF}<th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="${conPF?3:2}">TOTAL</td><td class="n">${t}</td></tr></table>`;
     })();
-    // hoja de PRODUCTO FINAL: fases en línea, cada colchón con su etiqueta PF
-    const hPF=(()=>{
-      const arr=opts.pfRows||[]; if(!arr.length) return '';
-      const t=arr.reduce((s,x)=>s+x.cantidad,0);
-      const rows=arr.map(x=>`<tr><td><b>${esc(x.pf)}</b></td><td>${esc(x.sku_pf)}</td><td>${esc(x.descripcion||x.nombre||'')}${x.especial?' <b>(especial)</b>':''}</td><td>${x.sku_nucleo?esc(x.sku_nucleo):'— sin núcleo'}</td><td class="n">${x.cantidad}</td></tr>`).join('');
-      return `<div class="pb"></div><h1>Parte · Producto final (en línea)</h1><div class="meta">Ruta de cada colchón: <b>3 Pegado</b> (núcleo + tapa + platabanda) → <b>2 Cosido</b> → <b>1 Embalado</b>. Cada colchón pasa a la siguiente en cuanto termina la anterior. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; PF: <b>${arr.length}</b> &nbsp; Colchones: <b>${t}</b></div>
-        <table><tr><th>PF</th><th>Modelo</th><th>Descripción</th><th>Núcleo</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="4">TOTAL</td><td class="n">${t}</td></tr></table>`;
-    })();
+    // cada línea de modelo es una PF de producto final (fases en línea 3 Pegado → 2 Cosido → 1 Embalado)
     const aviso=opts.aviso?`<div style="border:2px dashed #B85C38;color:#8a4426;padding:6px 10px;margin-bottom:8px;font-size:9pt">${esc(opts.aviso)}</div>`:'';
-    const html=`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${aviso}${hojaNuc}${hojaT}${hojaPl}${hPF}${h1}${h2}${h3}${h4}${hE1}${hE2}
+    const html=`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${aviso}${hojaNuc}${hojaT}${hojaPl}${h1}${h2}${h3}${h4}${hE1}${hE2}
       <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
     ventanaImpresion(html, 'Parte '+ref);
     return html;
