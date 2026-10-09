@@ -1434,7 +1434,9 @@ const Prod = {
       });
       if(res.length){ let e3=(await sb.from('reservas').insert(res)).error; if(e3)throw e3; }
       // documento de parte + etiquetas QR
-      this.imprimirParte(nucRows,_bA,_bB,_bC,_bD);
+      const docParte=this.imprimirParte(nucRows,_bA,_bB,_bC,_bD);
+      // copia exacta del documento para poder reimprimirlo desde Partes lanzados
+      if(this.parteNum){ try{ const {error}=await sb.from('partes_impresos').insert({parte_ref:this.parteNum,html:docParte}); if(error) console.warn('No se guardó la copia del parte:',error.message); }catch(e){} }
       this.imprimirEtiquetas(nuevos);
       // limpiar
       this.lineas=[];this.cant={};this.tipo={};this.manual={};this.manualTipo={};this.parteNum='';
@@ -1514,9 +1516,11 @@ const Prod = {
 
 
   // ---- documento de PARTE de fabricación imprimible ----
-  imprimirParte(nucRows, bA, bB, bC, bD){
-    const ref=this.parteNum||'—';
-    const fecha=new Date().toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  // opts (reimpresión): {ref, fecha, aviso}. Devuelve el HTML del documento para poder guardarlo.
+  imprimirParte(nucRows, bA, bB, bC, bD, opts){
+    opts=opts||{};
+    const ref=opts.ref||this.parteNum||'—';
+    const fecha=(opts.fecha?new Date(opts.fecha):new Date()).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
     const css=`<style>
       body{font-family:Arial,sans-serif;color:#1B1A17;margin:16px}
       h1{font-size:17pt;text-transform:uppercase;margin:0 0 4px}
@@ -1583,8 +1587,11 @@ const Prod = {
       return `<div class="pb"></div><h1>Parte · Colchones SIN NÚCLEO</h1><div class="meta">No requieren fabricación de núcleo. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
         <table><tr><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="2">TOTAL</td><td class="n">${t}</td></tr></table>`;
     })();
-    ventanaImpresion(`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${hojaNuc}${h1}${h2}${h3}${h4}${hE1}${hE2}
-      <script>setTimeout(()=>window.print(),500);<\/script></body></html>`, 'Parte '+ref);
+    const aviso=opts.aviso?`<div style="border:2px dashed #B85C38;color:#8a4426;padding:6px 10px;margin-bottom:8px;font-size:9pt">${esc(opts.aviso)}</div>`:'';
+    const html=`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${aviso}${hojaNuc}${h1}${h2}${h3}${h4}${hE1}${hE2}
+      <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
+    ventanaImpresion(html, 'Parte '+ref);
+    return html;
   },
 
   // ---- etiquetas QR (ventana imprimible) ----
@@ -1714,7 +1721,10 @@ const Partes = {
             <div style="font-weight:700;font-family:'JetBrains Mono'">Parte ${esc(g.parte_ref)}</div>
             <div style="font-size:11px;color:var(--muted)">${fecha} · ${Object.keys(porModelo).length} modelos · ${totalUds} uds</div>
           </div>
-          <button class="chip" style="background:var(--red)" onclick="Partes.anularParte('${esc(g.parte_ref)}')">Anular parte completo</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="chip" style="background:var(--ink)" onclick="Partes.reimprimir('${esc(g.parte_ref)}',this)">🖨 Reimprimir parte</button>
+            <button class="chip" style="background:var(--red)" onclick="Partes.anularParte('${esc(g.parte_ref)}')">Anular parte completo</button>
+          </div>
         </div>
         <div style="margin-top:10px;font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;letter-spacing:.5px">OT de núcleo implicadas</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px">${otsHtml||'<span style="color:var(--muted);font-size:12px">—</span>'}</div>
@@ -1730,6 +1740,32 @@ const Partes = {
       toast('✓ OT '+ot+' anulada','ok');
       await this.reload(); await refrescarMet(true); OT.reload(); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+
+  // vuelve a imprimir el documento del parte: la copia guardada al lanzar, o si no la hay (partes
+  // lanzados antes de guardar copias) uno reconstruido con las OT y reservas actuales
+  async reimprimir(parte_ref,btn){
+    if(btn) btn.disabled=true;
+    try{
+      try{
+        const {data,error}=await sb.from('partes_impresos').select('html').eq('parte_ref',parte_ref).order('created_at',{ascending:false}).limit(1);
+        if(!error && data && data.length){ ventanaImpresion(data[0].html,'Parte '+parte_ref); return; }
+      }catch(e){}
+      const [{data:ords,error:e1},{data:res,error:e2}]=await Promise.all([
+        sb.from('ordenes').select('ot,sku,nombre,cantidad,estado,lanzada_at').eq('parte_ref',parte_ref).order('ot'),
+        sb.from('reservas').select('sku,ot,sku_pf,cantidad,bloque,estado,created_at').eq('parte_ref',parte_ref).order('id')]);
+      if(e1)throw e1; if(e2)throw e2;
+      let mods=[];
+      try{ mods=await selectAll('modelos','sku_pf,nombre,especial'); }catch(e){ mods=await selectAll('modelos','sku_pf,nombre'); }
+      const mm={}; mods.forEach(m=>mm[m.sku_pf]=m);
+      const nucRows=(ords||[]).filter(o=>o.estado!=='anulada').map(o=>({ot:o.ot,sku:o.sku,nombre:o.nombre,cant:o.cantidad,tipo:(MET[o.sku]&&MET[o.sku].personalizado)?'personalizado':'stock'}));
+      const bloques={disponible:[],maduracion:[],pendiente:[]};
+      (res||[]).forEach(r=>{ const m=mm[r.sku_pf]||{}; (bloques[r.bloque]||bloques.pendiente).push({sku_pf:r.sku_pf,desc:m.nombre||'',nucleo:r.sku,ot:r.ot,cant:r.cantidad,especial:!!m.especial,dispDate:null}); });
+      const fecha=(res&&res[0]&&res[0].created_at)||(ords&&ords[0]&&ords[0].lanzada_at)||null;
+      Prod.imprimirParte(nucRows,bloques.disponible,bloques.maduracion,bloques.pendiente,[],{ref:parte_ref,fecha,
+        aviso:'Copia reconstruida con los datos actuales (este parte se lanzó antes de guardar copias). Las cantidades son las reservas que quedan; no incluye los modelos sin núcleo ni las fechas previstas.'});
+    }catch(e){ toast('Error al reimprimir: '+(e.message||e),'err'); }
+    finally{ if(btn) btn.disabled=false; }
   },
 
   async anularReservasModelo(parte_ref,sku_pf){
