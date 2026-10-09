@@ -207,12 +207,13 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navProd" onclick="nav('prod')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span>Producción</span></button>
     <button class="nav" id="navPartes" onclick="nav('partes')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Partes lanzados</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
+    <button class="nav" id="navPF" onclick="nav('pf')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 7v10M18 7v10"/></svg><span>Producto final</span></button>
     <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
     <button class="nav" id="navCatalogo" onclick="nav('catalogo')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>Producto</span></button>
     <button class="nav" id="navEst" onclick="nav('est')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg><span>Estándares</span></button>
     <div class="grp">Análisis</div>
     <button class="nav" id="navProdv" onclick="nav('prodv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10l4 4"/><circle cx="12" cy="12" r="10"/></svg><span>Productividad</span></button>
-    <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempo por núcleo</span></button>
+    <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempos</span></button>
     <button class="nav" id="navApr" onclick="nav('apr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span>Aprobaciones</span></button>
     <div class="grp">Ajustes</div>
     <button class="nav" id="navPers" onclick="nav('pers')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg><span>Personalización</span></button>
@@ -299,6 +300,19 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="card" style="margin-top:14px">
         <div id="prodPartes"><div class="loading">Cargando…</div></div>
       </div>
+    </div>
+
+    <div class="content" id="view-pf" style="display:none">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+        <div><div class="h1">Producto final</div><div class="h1sub">Colchones en línea: 3 Pegado → 2 Cosido → 1 Embalado. Cada colchón pasa a la siguiente fase en cuanto termina la anterior.</div></div>
+        <button class="chip" onclick="PFv.reload()" style="background:var(--surf2);color:var(--ink)">↻ Actualizar</button>
+      </div>
+      <div id="pfKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0"></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <div class="seg" id="pfTabs"></div>
+        <input id="pfSearch" placeholder="Buscar PF, modelo o parte…" oninput="PFv.paint()" style="flex:1;min-width:200px;max-width:380px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+      </div>
+      <div class="card"><div id="pfLista"></div></div>
     </div>
 
     <div class="content" id="view-ot" style="display:none">
@@ -430,6 +444,10 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="h1sub">Unidades que se fabrican por lote de cada programa</div>
       <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confLotes"></div></div>
       <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveLotes()">Guardar lotes</button>
+      <div class="h1" style="margin-top:28px;font-size:20px">Tiempos y puestos por fase</div>
+      <div class="h1sub">Tiempo teórico por unidad y puesto de cada fase del colchón (los núcleos van por programa, arriba). Se usa hasta tener tiempo aprendido.</div>
+      <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confFases"></div></div>
+      <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveFases()">Guardar fases</button>
       <div style="height:20px"></div>
     </div>
 
@@ -491,14 +509,16 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         <button id="prodvTabLive" class="on" onclick="Prodv.setMode('live')">En vivo</button>
         <button id="prodvTabTurno" onclick="Prodv.setMode('turno')">Turno</button>
       </div>
+      <div class="seg" id="prodvFases" style="margin-top:8px;flex-wrap:wrap"></div>
       <div id="prodvLista" style="margin-top:12px"></div>
     </div>
 
     <div class="content" id="view-tsku" style="display:none">
-      <div class="h1">Tiempo por núcleo</div>
-      <div class="h1sub">Tiempo medio de fabricación aprendido por núcleo</div>
+      <div class="h1">Tiempos</div>
+      <div class="h1sub">Tiempo medio aprendido por referencia, separado por fase del colchón</div>
+      <div class="seg" id="tskuFases" style="margin-top:10px;flex-wrap:wrap"></div>
       <div style="display:flex;gap:10px;margin:12px 0">
-        <input id="tskuSearch" placeholder="Buscar núcleo…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+        <input id="tskuSearch" placeholder="Buscar referencia…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div class="card"><div id="tskuTabla"></div></div>
     </div>
@@ -604,6 +624,21 @@ function madDiasDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):0; }
 // días de consumo que cubre el punto de pedido: los núcleos su maduración; tapas y platabandas 1 día
 function coberturaDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):1; }
 const TIPO_TXT={nucleo:'Núcleos',tapa:'Tapas',platabanda:'Platabandas'};
+// FASES del colchón para tiempos y puestos. Núcleos, tapas y platabandas son stock; pegado, cosido y
+// embalaje van en línea y sus tiempos se guardan con el código <modelo>_PEG / _COS / _EMB.
+// "clave" es la fila de lotes_programa donde se guardan su tiempo teórico y su puesto
+// (los núcleos los siguen teniendo por programa N001…).
+const FASES=[
+  {k:'nucleo',txt:'Núcleos'},
+  {k:'tapa',txt:'Tapas',suf:'_TAPA',clave:'TAPA'},
+  {k:'platabanda',txt:'Platabandas',suf:'_PTB',clave:'PTB'},
+  {k:'pegado',txt:'Pegado del colchón',suf:'_PEG',clave:'PEG'},
+  {k:'cosido',txt:'Cosido',suf:'_COS',clave:'COS'},
+  {k:'embalaje',txt:'Embalaje',suf:'_EMB',clave:'EMB'}];
+function faseDe(sku){ sku=String(sku||''); const f=FASES.find(f=>f.suf&&sku.endsWith(f.suf)); return f?f.k:'nucleo'; }
+function faseInfo(k){ return FASES.find(f=>f.k===k)||FASES[0]; }
+// fila de lotes_programa que manda en un sku: su programa si es núcleo, la de su fase si no
+function claveTiempoDe(sku){ const f=faseInfo(faseDe(sku)); return f.clave||progDe({sku}); }
 let TIPO='nucleo'; // pestaña del Dashboard
 function progDe(p){const m=(p.descripcion||p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
 function medida(sku){const rest=String(sku||'').replace(/^N\d{3}/,'');const m=rest.match(/(\d{2,3})\s*[xX]\s*(\d{3})/);return m?`Medida ${m[1]} × ${m[2]}`:''}
@@ -625,7 +660,7 @@ async function cargarConfig(){
 // orden estable para paginar: sin ORDER BY, Postgres puede devolver las filas en distinto orden en
 // cada página (sobre todo si Planta las está modificando a la vez) y se saltan o repiten filas
 const ORDEN_TABLA={unidades:['id'],ordenes:['ot'],productos:['sku'],modelos:['sku_pf'],reservas:['id'],
-  fabricacion_eventos:['ts','unidad_id','tipo'],tiempos_sku:['sku','semana'],lotes_programa:['programa'],usuarios:['id']};
+  fabricacion_eventos:['ts','unidad_id','tipo'],tiempos_sku:['sku','semana'],lotes_programa:['programa'],usuarios:['id'],pf_ordenes:['pf'],pf_unidades:['id']};
 function ordenar(q,table){ (ORDEN_TABLA[table]||[]).forEach(c=>{ q=q.order(c); }); return q; }
 async function selectAll(table,cols){
   return selectWhere(table,cols,null);
@@ -1015,15 +1050,15 @@ const ADMIN_VIEWS = new Set(['apr','alta','pers']);
 
 const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes','cSinNucleo'];
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',
+  const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',pf:'Producto final',
     cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',cSinNucleo:'Colchones sin núcleo',
-    inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+    inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempos',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',pf:'navPF',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  const todas=['dash','prod','partes','ot','inv','catalogo','est','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
+  const todas=['dash','prod','partes','ot','pf','inv','catalogo','est','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
   todas.forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
@@ -1037,6 +1072,7 @@ function nav(v){
   if(v==='prod') Prod.init();
   if(v==='partes') Partes.reload();
   if(v==='ot') OT.reload();
+  if(v==='pf') PFv.reload();
   if(v==='est') Est.pintar();
   if(v==='cDiario') Conf.load();
   if(v==='cLotes') Conf.load();
@@ -1061,6 +1097,7 @@ const AUTO_REFRESH_VIEWS={
   dash: async()=>{ await refrescarMet(true); render(); },
   partes: ()=>Partes.reload(),
   ot: ()=>OT.reload(),
+  pf: ()=>PFv.reload(true),
   apr: ()=>Apr.reload(),
   tsku: ()=>Tsku.reload(),
   inv: async()=>{ await refrescarMet(true); Inv.paint(); },
@@ -1128,15 +1165,15 @@ const Prod = {
   },
 
   TIEMPO_MIN_UDS:7, TIEMPO_DEFAULT_SEG:270, // 4min 30s por defecto (si el programa no tiene tiempo teórico propio) hasta tener al menos 7 uds fabricadas
-  // tiempo teórico por defecto para un sku: el de su programa (N001-N012) si está configurado, si no el general
-  tiempoDefaultDe(sku){ const prog=progDe({sku}); return (this.tiempoTeoricoPrograma&&this.tiempoTeoricoPrograma[prog])||this.TIEMPO_DEFAULT_SEG; },
+  // tiempo teórico por defecto para un sku: el de su programa (N001-N012) o el de su fase si está configurado, si no el general
+  tiempoDefaultDe(sku){ const prog=claveTiempoDe(sku); return (this.tiempoTeoricoPrograma&&this.tiempoTeoricoPrograma[prog])||this.TIEMPO_DEFAULT_SEG; },
 
   // segundos por unidad para un núcleo: el aprendido si ya hay suficientes uds, si no el valor por defecto
   segPorUdDe(sku){ const t=this.tiempos[sku]; return (t && t.n>=this.TIEMPO_MIN_UDS && t.seg>0)?t.seg:this.tiempoDefaultDe(sku); },
 
   // coste/hora real a aplicar a un núcleo: el del puesto que lo fabrica (suma de sus trabajadores) o el por defecto
   costeHoraDe(sku){
-    const programa=progDe({sku});
+    const programa=claveTiempoDe(sku);
     const puestoId=this.puestoPrograma&&this.puestoPrograma[programa];
     const cp=puestoId&&this.costePuesto[puestoId];
     return cp||CFG.coste_hora_operario||0;
@@ -1450,7 +1487,13 @@ const Prod = {
         }
       }catch(e){ toast('Error comprobando si el parte ya existe: '+(e.message||e),'err'); return; }
     }
-    if(!confirm(`¿Lanzar ${items.length} OT (${items.reduce((s,[,n])=>s+n,0)} uds) y generar los partes?`)) return;
+    // producto final: una PF por línea del parte (fases en línea 3 Pegado → 2 Cosido → 1 Embalado)
+    const lineasPF=this.lineas.filter(l=>l.cant>0);
+    if(lineasPF.length){
+      const {error:ePF}=await sb.from('pf_ordenes').select('pf').limit(1);
+      if(ePF){ toast('Falta preparar la base de datos para el producto final: en GitHub → molyn-oficina → Actions → "Aplicar SQL a PRUEBAS". ('+(ePF.message||ePF)+')','err'); return; }
+    }
+    if(!confirm(`¿Lanzar ${items.length} OT (${items.reduce((s,[,n])=>s+n,0)} uds)`+(lineasPF.length?` y ${lineasPF.length} PF de producto final (${lineasPF.reduce((s,l)=>s+l.cant,0)} colchones)`:'')+` y generar los partes?`)) return;
     $('#btnLanzar').disabled=true; $('#btnLanzar').textContent='Lanzando…';
     try{
       const nucsDem=[...new Set(this.lineas.flatMap(l=>[l.sku_nucleo,skuTapa(l.sku_pf),skuPlat(l.sku_pf)]).filter(Boolean))];
@@ -1487,17 +1530,32 @@ const Prod = {
       // reservas de tapas y platabandas de cada modelo
       this.repartirComp(pools,otByNuc).forEach(x=>res.push({parte_ref:this.parteNum||null,sku:x.sku,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:x.bloque}));
       if(res.length){ let e3=(await sb.from('reservas').insert(res)).error; if(e3)throw e3; }
+      // PRODUCTO FINAL: una PF por línea, con una etiqueta por colchón (PF00001-0001…)
+      const pfRows=[], pfUds=[], lanzPF=new Date().toISOString();
+      for(const l of lineasPF){
+        const {data:pf,error:eN}=await sb.rpc('siguiente_pf'); if(eN)throw eN;
+        const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
+        const nombre=[l.nombre||(this.modelosMap[l.sku_pf]||{}).nombre||l.sku_pf,l.medida||''].filter(Boolean).join(' ');
+        const row={pf,sku_pf:l.sku_pf,nombre,descripcion:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,cantidad:l.cant,
+          sku_nucleo:l.sin_nucleo?null:(l.sku_nucleo||null),especial:!!l.especial,parte_ref:this.parteNum||null,estado:'abierta',lanzada_at:lanzPF};
+        let e4=(await sb.from('pf_ordenes').insert(row)).error; if(e4)throw e4;
+        const uds=[]; for(let i=1;i<=l.cant;i++) uds.push({id:`${pf}-${String(i).padStart(4,'0')}`,pf,sku_pf:l.sku_pf,fase:'pegado'});
+        for(let i=0;i<uds.length;i+=500){ let e5=(await sb.from('pf_unidades').insert(uds.slice(i,i+500))).error; if(e5)throw e5; }
+        pfRows.push(row);
+        uds.forEach(u=>pfUds.push({id:u.id,pf,sku_pf:l.sku_pf,nombre,descripcion:row.descripcion,sku_nucleo:row.sku_nucleo,especial:row.especial,parte_ref:row.parte_ref}));
+      }
       // documento de parte + etiquetas QR
-      const docParte=this.imprimirParte(nucRows,_bA,_bB,_bC,_bD);
+      const docParte=this.imprimirParte(nucRows,_bA,_bB,_bC,_bD,{pfRows});
       // copia exacta del documento para poder reimprimirlo desde Partes lanzados
       if(this.parteNum){ try{ const {error}=await sb.from('partes_impresos').insert({parte_ref:this.parteNum,html:docParte}); if(error) console.warn('No se guardó la copia del parte:',error.message); }catch(e){} }
       this.imprimirEtiquetas(nuevos);
+      if(pfUds.length) this.imprimirEtiquetasPF(pfUds);
       // limpiar
       this.lineas=[];this.cant={};this.tipo={};this.manual={};this.manualTipo={};this.parteNum='';
       $('#prodSub').textContent='Partes generados. Puedes subir otro parte.';
       $('#prodAviso').innerHTML='';
       this.render();
-      toast('✓ '+items.length+' OT lanzadas','ok');
+      toast('✓ '+items.length+' OT'+(pfRows.length?' y '+pfRows.length+' PF':'')+' lanzadas','ok');
       // refrescar dashboard
       await refrescarMet(true); render();
       Partes.reload();
@@ -1664,11 +1722,51 @@ const Prod = {
       return `<div class="pb"></div><h1>Parte · Colchones SIN NÚCLEO</h1><div class="meta">No requieren fabricación de núcleo. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
         <table><tr><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="2">TOTAL</td><td class="n">${t}</td></tr></table>`;
     })();
+    // hoja de PRODUCTO FINAL: fases en línea, cada colchón con su etiqueta PF
+    const hPF=(()=>{
+      const arr=opts.pfRows||[]; if(!arr.length) return '';
+      const t=arr.reduce((s,x)=>s+x.cantidad,0);
+      const rows=arr.map(x=>`<tr><td><b>${esc(x.pf)}</b></td><td>${esc(x.sku_pf)}</td><td>${esc(x.descripcion||x.nombre||'')}${x.especial?' <b>(especial)</b>':''}</td><td>${x.sku_nucleo?esc(x.sku_nucleo):'— sin núcleo'}</td><td class="n">${x.cantidad}</td></tr>`).join('');
+      return `<div class="pb"></div><h1>Parte · Producto final (en línea)</h1><div class="meta">Ruta de cada colchón: <b>3 Pegado</b> (núcleo + tapa + platabanda) → <b>2 Cosido</b> → <b>1 Embalado</b>. Cada colchón pasa a la siguiente en cuanto termina la anterior. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; PF: <b>${arr.length}</b> &nbsp; Colchones: <b>${t}</b></div>
+        <table><tr><th>PF</th><th>Modelo</th><th>Descripción</th><th>Núcleo</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="4">TOTAL</td><td class="n">${t}</td></tr></table>`;
+    })();
     const aviso=opts.aviso?`<div style="border:2px dashed #B85C38;color:#8a4426;padding:6px 10px;margin-bottom:8px;font-size:9pt">${esc(opts.aviso)}</div>`:'';
-    const html=`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${aviso}${hojaNuc}${hojaT}${hojaPl}${h1}${h2}${h3}${h4}${hE1}${hE2}
+    const html=`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${aviso}${hojaNuc}${hojaT}${hojaPl}${hPF}${h1}${h2}${h3}${h4}${hE1}${hE2}
       <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
     ventanaImpresion(html, 'Parte '+ref);
     return html;
+  },
+
+  // ---- etiquetas de COLCHÓN (producto final): una por colchón, se escanean en pegado, cosido y embalado ----
+  imprimirEtiquetasPF(units){
+    if(!units.length)return;
+    ventanaImpresion(`<html><head><title>Etiquetas colchón ${this.parteNum||''}</title>
+      <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>
+      <style>
+      @page{size:100mm 100mm;margin:0}
+      body{margin:0;font-family:Arial}
+      .et{width:100mm;height:100mm;box-sizing:border-box;padding:6mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;page-break-after:always}
+      .tag{background:#1B1A17;color:#fff;font-size:9pt;font-weight:bold;letter-spacing:.08em;padding:1mm 3mm;border-radius:2mm}
+      .qr{width:46mm;height:46mm;margin-top:2mm}
+      .qr img,.qr canvas{width:46mm!important;height:46mm!important}
+      .pf{color:#B85C38;font-weight:bold;font-size:20pt;margin-top:2mm}
+      .sku{font-family:monospace;font-weight:bold;font-size:13pt;text-align:center;word-break:break-all}
+      .nom{font-size:10pt;text-align:center;margin-top:1mm;max-height:9mm;overflow:hidden}
+      .ruta{margin-top:2mm;width:100%;border-top:1px solid #000;padding-top:1.5mm;display:flex;justify-content:space-between;font-size:9pt}
+      .ruta div{flex:1;text-align:center}.ruta b{display:block;font-size:12pt}
+      .meta{font-size:8pt;color:#666;margin-top:1mm}
+      </style></head><body>
+      ${units.map(u=>`<div class="et">
+          <div class="tag">COLCHÓN${u.especial?' · ESPECIAL':''}</div>
+          <div class="qr" id="q_${u.id}"></div>
+          <div class="pf">${esc(u.id)}</div>
+          <div class="sku">${esc(u.sku_pf)}</div>
+          <div class="nom">${esc(u.descripcion||u.nombre||'')}</div>
+          <div class="ruta"><div><b>3</b>Pegado</div><div><b>2</b>Cosido</div><div><b>1</b>Embalado</div></div>
+          <div class="meta">${u.sku_nucleo?'Núcleo '+esc(u.sku_nucleo):'Sin núcleo'}${u.parte_ref?' · Parte '+esc(u.parte_ref):''}</div>
+        </div>`).join('')}
+      <script>window.onload=function(){${units.map(u=>`new QRCode(document.getElementById('q_${u.id}'),{text:'${esc(u.id)}',width:256,height:256});`).join('')}setTimeout(()=>window.print(),600);}<\/script>
+      </body></html>`, units.length+' etiqueta'+(units.length===1?'':'s')+' de colchón'+(this.parteNum?' · parte '+this.parteNum:''));
   },
 
   // ---- etiquetas QR (ventana imprimible) ----
@@ -1857,12 +1955,14 @@ const Partes = {
   },
 
   async anularParte(parte_ref){
-    if(!confirm(`¿Anular el parte ${parte_ref} completo? Se anularán las OT de núcleo lanzadas solo para este parte y se borrarán todas sus reservas.`)) return;
+    if(!confirm(`¿Anular el parte ${parte_ref} completo? Se anularán las OT de núcleo lanzadas solo para este parte, sus PF de producto final y se borrarán todas sus reservas.`)) return;
     try{
       const {data:ordenesProp,error:e0}=await sb.from('ordenes').select('ot').eq('parte_ref',parte_ref);
       if(e0)throw e0;
       const now=new Date().toISOString();
       for(const o of (ordenesProp||[])) await anularOTPorNumero(o.ot,now);
+      // y sus PF de producto final (si la base de datos ya las tiene)
+      try{ const {data:pfs}=await sb.from('pf_ordenes').select('pf').eq('parte_ref',parte_ref).eq('estado','abierta'); for(const x of (pfs||[])) await anularPF(x.pf,now); }catch(e){}
       const {error:e1}=await sb.from('reservas').delete().eq('parte_ref',parte_ref);
       if(e1)throw e1;
       toast('✓ Parte '+parte_ref+' anulado','ok');
@@ -1871,6 +1971,126 @@ const Partes = {
   }
 };
 
+
+// ============================================================
+//  PRODUCTO FINAL (PF): fases en línea 3 Pegado → 2 Cosido → 1 Embalado
+// ============================================================
+const PF_FASES=[{k:'pegado',n:3,txt:'Pegado',col:'pegado_at'},{k:'cosido',n:2,txt:'Cosido',col:'cosido_at'},{k:'embalaje',n:1,txt:'Embalado',col:'embalado_at'}];
+const PF_ORDEN={pegado:0,cosido:1,embalaje:2,terminado:3};
+const PFv = {
+  rows:[], uds:{}, estado:'abierta', loading:false,
+  setEstado(e){ this.estado=e; this.paint(); },
+  async reload(silent){
+    if(this.loading) return; this.loading=true;
+    const el=$('#pfLista'); if(!silent && el) el.innerHTML='<div class="loading">Cargando…</div>';
+    try{
+      const {data,error}=await sb.from('pf_ordenes').select('*').order('pf',{ascending:false}).limit(1000);
+      if(error) throw error;
+      this.rows=data||[];
+      // colchones de las PF abiertas (y de las últimas cerradas, para el resumen de hoy)
+      const ids=this.rows.filter(r=>r.estado==='abierta'||(r.terminada_at&&Date.now()-new Date(r.terminada_at)<2*86400000)).map(r=>r.pf);
+      this.uds={};
+      for(let i=0;i<ids.length;i+=150){
+        const part=await selectWhere('pf_unidades','id,pf,fase,pegado_at,cosido_at,embalado_at,nucleo_id,tapa_id,platabanda_id',q=>q.in('pf',ids.slice(i,i+150)));
+        part.forEach(u=>(this.uds[u.pf]=this.uds[u.pf]||[]).push(u));
+      }
+      // una PF abierta con todos sus colchones embalados queda terminada
+      for(const r of this.rows){
+        const us=this.uds[r.pf]; if(r.estado!=='abierta'||!us||!us.length) continue;
+        const vivos=us.filter(u=>u.fase!=='anulada');
+        if(vivos.length && vivos.every(u=>u.fase==='terminado')){
+          const fin=vivos.map(u=>u.embalado_at).filter(Boolean).sort().pop()||new Date().toISOString();
+          const {error:e2}=await sb.from('pf_ordenes').update({estado:'terminada',terminada_at:fin}).eq('pf',r.pf).eq('estado','abierta');
+          if(!e2){ r.estado='terminada'; r.terminada_at=fin; }
+        }
+      }
+      this.paint();
+    }catch(e){ if(el) el.innerHTML='<div class="vacio">'+(/pf_ordenes|relation|schema cache/i.test(e.message||'')?'Falta preparar la base de datos: en GitHub → molyn-oficina → Actions → "Aplicar SQL a PRUEBAS".':'Error: '+esc(e.message||e))+'</div>'; }
+    finally{ this.loading=false; }
+  },
+  // cuántos colchones de la PF han terminado cada fase
+  avance(r){
+    const us=(this.uds[r.pf]||[]).filter(u=>u.fase!=='anulada');
+    const hecho=k=>us.filter(u=>PF_ORDEN[u.fase]>PF_ORDEN[k]).length;
+    return {n:us.length||r.cantidad, pegado:hecho('pegado'), cosido:hecho('cosido'), embalaje:hecho('embalaje'), cargado:!!this.uds[r.pf]};
+  },
+  paint(){
+    const tabs=[['abierta','Abiertas'],['terminada','Terminadas'],['anulada','Anuladas'],['todas','Todas']];
+    const cuenta=e=>e==='todas'?this.rows.length:this.rows.filter(r=>r.estado===e).length;
+    $('#pfTabs').innerHTML=tabs.map(([k,t])=>`<button class="${this.estado===k?'on':''}" onclick="PFv.setEstado('${k}')">${t} · ${cuenta(k)}</button>`).join('');
+    // KPIs: colchones que esperan cada fase (PF abiertas) y embalados hoy
+    const abiertas=this.rows.filter(r=>r.estado==='abierta');
+    const esp={pegado:0,cosido:0,embalaje:0}; let hoyEmb=0; const hoy=ymdLocal(new Date());
+    Object.values(this.uds).flat().forEach(u=>{ if(esp[u.fase]!=null && abiertas.some(r=>r.pf===u.pf)) esp[u.fase]++; if(u.embalado_at && ymdLocal(new Date(u.embalado_at))===hoy) hoyEmb++; });
+    const kpi=(v,t,c)=>`<div class="card" style="padding:14px 16px;margin:0"><div style="font-family:'JetBrains Mono';font-size:26px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted)">${t}</div></div>`;
+    $('#pfKpis').innerHTML=kpi(abiertas.length,'PF abiertas','var(--ink)')+kpi(esp.pegado,'Esperan 3 · Pegado','var(--terra)')+kpi(esp.cosido,'Esperan 2 · Cosido','var(--blue)')+kpi(esp.embalaje,'Esperan 1 · Embalado','#7A4B8C')+kpi(hoyEmb,'Embalados hoy','var(--green)');
+    const q=($('#pfSearch').value||'').toLowerCase().trim();
+    let rs=this.estado==='todas'?this.rows:this.rows.filter(r=>r.estado===this.estado);
+    if(q) rs=rs.filter(r=>[r.pf,r.sku_pf,r.nombre,r.descripcion,r.parte_ref].some(x=>String(x||'').toLowerCase().includes(q)));
+    if(!rs.length){ $('#pfLista').innerHTML='<div class="vacio">'+(this.rows.length?'No hay PF en esta pestaña.':'Aún no hay PF. Se crean al lanzar un parte en Producción (una por línea).')+'</div>'; return; }
+    const barra=(hechos,n,txt,num,col)=>{ const pct=n?Math.round(hechos/n*100):0;
+      return `<div style="flex:1;min-width:120px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)"><span><b style="color:var(--ink)">${num}</b> ${txt}</span><span style="font-family:'JetBrains Mono'">${hechos}/${n}</span></div>
+        <div style="height:7px;background:var(--surf2);border-radius:4px;overflow:hidden;margin-top:3px"><div style="height:100%;width:${pct}%;background:${col}"></div></div></div>`; };
+    $('#pfLista').innerHTML=rs.slice(0,300).map(r=>{
+      const a=this.avance(r);
+      const est={abierta:['En línea','var(--blue)','#E4EDF0'],terminada:['Terminada','var(--green)','#E4EDE6'],anulada:['Anulada','var(--red)','#F7E1DC']}[r.estado]||[r.estado,'var(--muted)','var(--surf2)'];
+      return `<div style="padding:13px 16px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-family:'JetBrains Mono';font-weight:800;font-size:15px">${esc(r.pf)}</div>
+          <span class="tag" style="background:${est[2]};color:${est[1]}">${esc(est[0])}</span>
+          ${r.especial?'<span class="tag" style="background:#1B4F72;color:#fff">Especial</span>':''}
+          <div style="flex:1;min-width:180px"><b>${esc(r.sku_pf)}</b> <span style="color:var(--muted);font-size:12px">${esc(r.descripcion||r.nombre||'')}</span></div>
+          <div style="font-size:12px;color:var(--muted)">${r.sku_nucleo?'Núcleo '+esc(r.sku_nucleo):'Sin núcleo'}${r.parte_ref?' · Parte '+esc(r.parte_ref):''} · <b style="color:var(--ink)">${r.cantidad} uds</b></div>
+        </div>
+        ${a.cargado?`<div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">${barra(a.pegado,a.n,'Pegado',3,'var(--terra)')}${barra(a.cosido,a.n,'Cosido',2,'var(--blue)')}${barra(a.embalaje,a.n,'Embalado',1,'var(--green)')}</div>`:''}
+        <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
+          <button class="chip" style="background:var(--surf2);color:var(--ink);padding:7px 12px" onclick="PFv.detalle('${esc(r.pf)}')">Ver colchones</button>
+          <button class="chip" style="background:var(--ink);padding:7px 12px" onclick="PFv.reimprimir('${esc(r.pf)}',this)">🖨 Etiquetas</button>
+          ${r.estado==='abierta'?`<button class="chip" style="background:var(--red);padding:7px 12px" onclick="PFv.anular('${esc(r.pf)}')">Anular</button>`:''}
+        </div></div>`;
+    }).join('')+(rs.length>300?'<div class="vacio">Mostrando 300 de '+rs.length+'. Usa el buscador.</div>':'');
+  },
+  async detalle(pf){
+    const r=this.rows.find(x=>x.pf===pf)||{};
+    abrirModal(pf+' · '+(r.sku_pf||''), (r.descripcion||r.nombre||'')+' · '+(r.cantidad||0)+' uds');
+    try{
+      const us=await selectWhere('pf_unidades','*',q=>q.eq('pf',pf));
+      const f=d=>d?new Date(d).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'—';
+      const faseTxt={pegado:'Espera 3 · Pegado',cosido:'Espera 2 · Cosido',embalaje:'Espera 1 · Embalado',terminado:'Terminado',anulada:'Anulado'};
+      $('#modalBody').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:8px">Colchón</th><th style="padding:8px">Estado</th><th style="padding:8px">3 Pegado</th><th style="padding:8px">2 Cosido</th><th style="padding:8px">1 Embalado</th></tr></thead><tbody>
+        ${us.map(u=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 8px;font-family:'JetBrains Mono';font-weight:700">${esc(u.id)}</td>
+          <td style="padding:7px 8px">${esc(faseTxt[u.fase]||u.fase)}</td>
+          <td style="padding:7px 8px">${f(u.pegado_at)}${u.pegado_at?`<div style="color:var(--muted);font-size:10px">${[u.nucleo_id,u.tapa_id,u.platabanda_id].filter(Boolean).map(esc).join(' · ')||'sin etiquetas'}</div>`:''}</td>
+          <td style="padding:7px 8px">${f(u.cosido_at)}</td><td style="padding:7px 8px">${f(u.embalado_at)}</td></tr>`).join('')}
+        </tbody></table>`;
+    }catch(e){ $('#modalBody').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  async reimprimir(pf,btn){
+    if(btn) btn.disabled=true;
+    try{
+      const r=this.rows.find(x=>x.pf===pf); if(!r) return;
+      const us=await selectWhere('pf_unidades','id,fase',q=>q.eq('pf',pf));
+      const vivos=us.filter(u=>u.fase!=='anulada'&&u.fase!=='terminado');
+      if(!vivos.length){ toast('No quedan colchones pendientes en '+pf,'err'); return; }
+      Prod.imprimirEtiquetasPF(vivos.map(u=>({id:u.id,pf,sku_pf:r.sku_pf,nombre:r.nombre,descripcion:r.descripcion,sku_nucleo:r.sku_nucleo,especial:r.especial,parte_ref:r.parte_ref})));
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+    finally{ if(btn) btn.disabled=false; }
+  },
+  async anular(pf,sinPreguntar){
+    if(!sinPreguntar && !confirm('¿Anular '+pf+'? Los colchones que aún no estén embalados quedan anulados. Los ya embalados se respetan.')) return;
+    try{ await anularPF(pf); if(!sinPreguntar){ toast('✓ '+pf+' anulada','ok'); this.reload(); } }
+    catch(e){ toast('Error: '+(e.message||e),'err'); }
+  }
+};
+// anula una PF: los colchones sin embalar quedan anulados; si ya hay alguno embalado la PF se da por terminada con esos
+async function anularPF(pf,now){
+  now=now||new Date().toISOString();
+  chk(await sb.from('pf_unidades').update({fase:'anulada'}).eq('pf',pf).neq('fase','terminado'));
+  const us=await selectWhere('pf_unidades','id,fase',q=>q.eq('pf',pf));
+  const hechos=us.filter(u=>u.fase==='terminado').length;
+  chk(await sb.from('pf_ordenes').update(hechos?{estado:'terminada',cantidad:hechos,terminada_at:now}:{estado:'anulada',terminada_at:now}).eq('pf',pf));
+}
 
 // ============================================================
 //  ÓRDENES DE TRABAJO
@@ -2159,6 +2379,34 @@ const Conf = {
           <input id="ttp_${p}" type="number" min="0" step="0.1" value="${info.tiempo_teorico_seg?(info.tiempo_teorico_seg/60):4.5}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"><span style="font-size:11px;color:var(--muted)">min/ud</span></div>
       </div>`;
     }).join('');
+    const fasesEl=$('#confFases');
+    if(fasesEl) fasesEl.innerHTML=FASES.filter(f=>f.clave).map(f=>{
+      const info=this.lotes[f.clave]||{};
+      return `<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <label style="font-size:13px;flex:1;min-width:160px"><b>${esc(f.txt)}</b></label>
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Puesto</span>
+          <select id="fpuesto_${f.clave}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+            <option value="">Sin asignar</option>
+            ${puestos.map(pu=>`<option value="${pu.id}" ${info.puesto_id===pu.id?'selected':''}>${esc(pu.nombre)}</option>`).join('')}
+          </select></div>
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Tiempo teórico</span>
+          <input id="fttp_${f.clave}" type="number" min="0" step="0.1" value="${info.tiempo_teorico_seg?(info.tiempo_teorico_seg/60):4.5}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"><span style="font-size:11px;color:var(--muted)">min/ud</span></div>
+      </div>`;
+    }).join('');
+  },
+  async saveFases(){
+    try{
+      const filas=FASES.filter(f=>f.clave).map(f=>({
+        programa:f.clave, lote:1,
+        puesto_id:document.getElementById('fpuesto_'+f.clave).value?Number(document.getElementById('fpuesto_'+f.clave).value):null,
+        tiempo_teorico_seg:Math.round((parseFloat(document.getElementById('fttp_'+f.clave).value)||4.5)*60)
+      }));
+      const {error}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
+      if(error)throw error;
+      filas.forEach(f=>{ this.lotes[f.programa]={lote:f.lote,puesto_id:f.puesto_id,tiempo_teorico_seg:f.tiempo_teorico_seg}; });
+      if(typeof Prod!=='undefined' && Prod.cargarCostesPuesto) await Prod.cargarCostesPuesto();
+      toast('✓ Fases guardadas','ok');
+    }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
   },
   async guardarCosteDefecto(){
     try{
@@ -2658,6 +2906,12 @@ function solaparSeg(iniMs,finMs,intervalos){
 function ymdLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 const Prodv = {
   mode:'live',
+  fase:'todas', // fase del colchón a mostrar (o todas)
+  setFase(k){ this.fase=k; this.reload(); },
+  pintarFases(){
+    const el=$('#prodvFases'); if(!el) return;
+    el.innerHTML=[{k:'todas',txt:'Todas las fases'},...FASES].map(f=>`<button class="${this.fase===f.k?'on':''}" onclick="Prodv.setFase('${f.k}')">${esc(f.txt)}</button>`).join('');
+  },
   rangoMode:'dia',
   rows:[],
   alerts:[],
@@ -2730,14 +2984,25 @@ const Prodv = {
       const finDia=new Date(rango.fin.getFullYear(),rango.fin.getMonth(),rango.fin.getDate(),23,59,59,999);
       const ini=rango.ini.toISOString(), fin=finDia.toISOString();
       const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
-      const [ops,evs,pars,turs,tsku,roster]=await Promise.all([
+      this.pintarFases();
+      let [ops,evs,pars,turs,tsku,roster,lps]=await Promise.all([
         safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
         safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('turnos').select('puesto_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[]),
-        safe(sb.from('usuarios').select('id,nombre,rol,puesto_id').eq('activo',true).order('nombre'),[])
+        safe(sb.from('usuarios').select('id,nombre,rol,puesto_id').eq('activo',true).order('nombre'),[]),
+        safe(sb.from('lotes_programa').select('programa,puesto_id'),[])
       ]);
+      // con una fase elegida solo cuentan sus unidades, y salen los puestos que la han trabajado
+      // en el rango o que la tienen asignada (Ajustes → Lotes); turno y pausas son del puesto entero
+      if(this.fase!=='todas'){
+        const fi=faseInfo(this.fase);
+        evs=evs.filter(e=>faseDe(e.sku)===this.fase);
+        const asign=new Set(lps.filter(r=>r.puesto_id && (fi.clave?r.programa===fi.clave:/^N\d{3}$/.test(r.programa))).map(r=>String(r.puesto_id)));
+        const conEv=new Set(evs.map(e=>String(e.puesto_id)));
+        ops=ops.filter(o=>asign.has(String(o.id))||conEv.has(String(o.id)));
+      }
       const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.mediana_seg||t.segundos||t.mediana||0)||0; });
       const now=new Date();
       this.alerts=[];
@@ -3089,7 +3354,7 @@ const Prodv = {
   setFiltroPuesto(id){ this.filtroPuesto=id||null; this.paint(); },
   paint(){
     const rows=this.rows||[];
-    if(!rows.length){ $('#prodvLista').innerHTML='<div class="vacio">No hay operarios activos o no hay datos de productividad.</div>'; return; }
+    if(!rows.length){ $('#prodvLista').innerHTML='<div class="vacio">'+(this.fase!=='todas'?'Ningún puesto ha trabajado '+esc(faseInfo(this.fase).txt.toLowerCase())+' en este rango ni la tiene asignada.':'No hay operarios activos o no hay datos de productividad.')+'</div>'; return; }
     const prowsAll=this.puestoRows&&this.puestoRows.length?this.puestoRows:rows;
     let prows=this.filtroPuesto?prowsAll.filter(p=>String(p.id)===String(this.filtroPuesto)):prowsAll;
     if(!prows.length){ this.filtroPuesto=null; prows=prowsAll; }
@@ -3177,7 +3442,8 @@ const ProdvOld = {
 //  TIEMPO POR NÚCLEO
 // ============================================================
 const Tsku = {
-  data:[],
+  data:[], fase:'nucleo',
+  setFase(k){ this.fase=k; this.paint(); },
   async reload(){
     $('#tskuTabla').innerHTML='<div class="loading">Cargando…</div>';
     try{ const {data}=await sb.from('tiempos_sku').select('*').eq('vigente',true).order('sku');
@@ -3185,11 +3451,14 @@ const Tsku = {
     }catch(e){ $('#tskuTabla').innerHTML='<div class="vacio">Aún no hay tiempos registrados (se aprenden con el uso).</div>'; }
   },
   paint(){
+    const n={}; this.data.forEach(t=>{ const k=faseDe(t.sku); n[k]=(n[k]||0)+1; });
+    const fe=$('#tskuFases'); if(fe) fe.innerHTML=FASES.map(f=>`<button class="${this.fase===f.k?'on':''}" onclick="Tsku.setFase('${f.k}')">${esc(f.txt)}${n[f.k]?' · '+n[f.k]:''}</button>`).join('');
+    const fi=faseInfo(this.fase);
     const q=($('#tskuSearch').value||'').toLowerCase().trim();
-    let rs=this.data; if(q)rs=rs.filter(t=>(t.sku||'').toLowerCase().includes(q));
-    if(!rs.length){ $('#tskuTabla').innerHTML='<div class="vacio">Sin tiempos aún. Se van aprendiendo cuando los operarios fabrican.</div>'; return; }
+    let rs=this.data.filter(t=>faseDe(t.sku)===this.fase); if(q)rs=rs.filter(t=>(t.sku||'').toLowerCase().includes(q));
+    if(!rs.length){ $('#tskuTabla').innerHTML='<div class="vacio">Sin tiempos de '+esc(fi.txt.toLowerCase())+' aún. Se van aprendiendo cuando los operarios fabrican'+(fi.clave?'; mientras tanto se usa el tiempo teórico de la fase (Ajustes → Lotes)':'')+'.</div>'; return; }
     $('#tskuTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
+      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">${this.fase==='nucleo'?'Núcleo':'Referencia'}</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
       ${rs.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono';font-weight:700">${esc(t.sku)}</td>
         <td style="padding:9px 14px;color:var(--muted)">${esc(medida(t.sku)||'')}</td>
         <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${fmtDur(t.mediana_seg||t.segundos||t.mediana||0)}</td>

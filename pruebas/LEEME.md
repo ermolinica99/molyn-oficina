@@ -18,3 +18,10 @@ Copia de la app para probar cambios sin tocar la app real ni sus datos.
 2. Se prueban en las direcciones de pruebas.
 3. Cuando están bien, se copia `pruebas/index.html` sobre el `index.html` real (el bloque ENTORNO
    sigue funcionando: en la raíz usa la base real).
+
+## Cambios de base de datos en desarrollo
+- Van en `pruebas/sql/*.sql` (se aplican por orden y se pueden repetir sin romper nada).
+- Se aplican a la base de **pruebas** con el workflow **"Aplicar SQL a PRUEBAS"** (pestaña Actions).
+  "Copiar datos reales a PRUEBAS" también los aplica al final, porque la copia borra la base de pruebas.
+- Al pasar los cambios a la app real, estos SQL se ejecutan también en la base real (a mano, en el
+  Editor SQL de Supabase).

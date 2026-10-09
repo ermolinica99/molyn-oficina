@@ -15,6 +15,8 @@ jobs:
   copiar:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Instalar cliente de PostgreSQL 17 (igual que el servidor de Supabase)
         run: |
           sudo apt-get update
@@ -84,3 +86,13 @@ jobs:
           grant execute on all functions in schema public to anon, authenticated;
           SQL
           echo "Copia terminada. Las apps de pruebas ya ven estos datos."
+
+      - name: Aplicar los cambios en desarrollo (pruebas/sql/*.sql)
+        env:
+          PRUEBAS: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          shopt -s nullglob
+          for f in pruebas/sql/*.sql; do
+            echo "== $f"
+            /usr/lib/postgresql/17/bin/psql "$PRUEBAS" -v ON_ERROR_STOP=1 -f "$f"
+          done
