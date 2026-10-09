@@ -310,6 +310,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div id="pfKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0"></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <div class="seg" id="pfTabs"></div>
+        <select id="pfProg" onchange="PFv.paint()" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:13px"><option value="">Todos los tipos de núcleo</option></select>
         <input id="pfSearch" placeholder="Buscar PF, modelo o parte…" oninput="PFv.paint()" style="flex:1;min-width:200px;max-width:380px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div class="card"><div id="pfLista"></div></div>
@@ -518,6 +519,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="h1sub">Tiempo medio aprendido por referencia, separado por fase del colchón</div>
       <div class="seg" id="tskuFases" style="margin-top:10px;flex-wrap:wrap"></div>
       <div style="display:flex;gap:10px;margin:12px 0">
+        <select id="tskuProg" onchange="Tsku.paint()" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:13px"><option value="">Todos los tipos de núcleo</option></select>
         <input id="tskuSearch" placeholder="Buscar referencia…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div class="card"><div id="tskuTabla"></div></div>
@@ -618,7 +620,7 @@ function tipoDe(sku){ sku=String(sku||''); return sku.endsWith('_TAPA')?'tapa':(
 function skuTapa(sku_pf){ return sku_pf+'_TAPA'; }
 function skuPlat(sku_pf){ return sku_pf+'_PTB'; }
 // modelo de una tapa o platabanda (quita el sufijo)
-function modeloDe(sku){ return String(sku||'').replace(/_(TAPA|PTB)$/,''); }
+function modeloDe(sku){ return String(sku||'').replace(/_(TAPA|PTB|PEG|COS|EMB)$/,''); }
 const ORDEN_TIPO={nucleo:0,tapa:1,platabanda:2};
 function madDiasDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):0; }
 // días de consumo que cubre el punto de pedido: los núcleos su maduración; tapas y platabandas 1 día
@@ -636,6 +638,14 @@ const FASES=[
   {k:'cosido',txt:'Cosido',suf:'_COS',clave:'COS'},
   {k:'embalaje',txt:'Embalaje',suf:'_EMB',clave:'EMB'}];
 function faseDe(sku){ sku=String(sku||''); const f=FASES.find(f=>f.suf&&sku.endsWith(f.suf)); return f?f.k:'nucleo'; }
+// CATEGORÍA de tapas, platabandas y colchones finales: el tipo de núcleo (programa N001…) que lleva su
+// modelo, o "Sin núcleo" (SN) si no lleva. Los núcleos tienen su propio programa.
+const PROG_SN='SN';
+let MODELO_PROG={};   // sku del modelo -> programa de su núcleo (o SN); se rellena con las métricas
+function progDeNucleo(sku_nucleo){ if(!sku_nucleo) return PROG_SN; const b=MET[sku_nucleo]; const p=b?b.prog:progDe({sku:sku_nucleo}); return p&&p!=='—'?p:PROG_SN; }
+function progDeSku(sku){ if(tipoDe(sku)==='nucleo') return (MET[sku]&&MET[sku].prog)||progDe({sku}); return MODELO_PROG[modeloDe(sku)]||PROG_SN; }
+function progNombre(p){ return p===PROG_SN?'Sin núcleo':(p||'—'); }
+function progTxt(p){ return p===PROG_SN?'Sin núcleo':(p+(PROG_DESC[p]?' · '+PROG_DESC[p]:'')); }
 function faseInfo(k){ return FASES.find(f=>f.k===k)||FASES[0]; }
 // fila de lotes_programa que manda en un sku: su programa si es núcleo, la de su fase si no
 function claveTiempoDe(sku){ const f=faseInfo(faseDe(sku)); return f.clave||progDe({sku}); }
@@ -736,6 +746,11 @@ async function calcularMetricas(){
     // en uso: lo usa algún modelo, o aún tiene unidades/reservas vivas, o está forzado a diario
     b.enUso=!usados||usados.has(b.sku)||b.stock>0||b.fabricando>0||b.pend>0||b.forzado;
   });
+  // tapas y platabandas se clasifican por el tipo de núcleo de su modelo (o "Sin núcleo")
+  const mp={};
+  (usadosRows||[]).forEach(r=>{ const nb=r.sku_nucleo&&m[r.sku_nucleo]; const pr=r.sku_nucleo?(nb?nb.prog:progDe({sku:r.sku_nucleo})):PROG_SN; mp[r.sku_pf]=pr&&pr!=='—'?pr:PROG_SN; });
+  MODELO_PROG=mp;
+  Object.values(m).forEach(b=>{ if(b.tipo!=='nucleo') b.prog=mp[modeloDe(b.sku)]||PROG_SN; });
   return m;
 }
 
@@ -927,11 +942,11 @@ function render(){
   // ---------- programas ----------
   const pg={};
   arr.forEach(b=>{const g=pg[b.prog]||(pg[b.prog]={prog:b.prog,n:0,disp:0,madur:0,fab:0,bajo:0,neg:0});g.n++;g.disp+=b.disp;g.madur+=b.madurando;g.fab+=b.fabricando;g.bajo+=b.bajoMin?1:0;g.neg+=b.saldo<0?1:0;});
-  const progList=Object.values(pg).sort((a,b)=>a.prog.localeCompare(b.prog));
+  const progList=Object.values(pg).sort((a,b)=>(a.prog===PROG_SN)-(b.prog===PROG_SN)||a.prog.localeCompare(b.prog));
   const maxProg=Math.max(1,...progList.map(g=>g.disp+g.madur+g.fab));
   const progsCard=`<div class="card" style="margin-bottom:0">
     <div class="ch" style="display:flex;align-items:center;gap:14px">
-      <div><div class="t">Programas</div><div class="s">Stock por familia de núcleo · pulsa para filtrar la rejilla</div></div>
+      <div><div class="t">Programas</div><div class="s">${TIPO==='nucleo'?'Stock por familia de núcleo':esc(TIPO_TXT[TIPO])+' por el tipo de núcleo de su modelo'} · pulsa para filtrar la rejilla</div></div>
       <div style="margin-left:auto;display:flex;gap:12px">
         <div class="leg"><i style="background:var(--terra)"></i>Disponible</div>
         <div class="leg"><i style="background:var(--blue)"></i>Madurando</div>
@@ -944,8 +959,8 @@ function render(){
         const on=PROG===g.prog;
         return `<div class="progCard${on?' on':''}" onclick="setProg('${g.prog}')">
           <div class="pgTop">
-            <span class="pgName"><b>${g.prog[0]}</b>${g.prog.slice(1)}</span>
-            <span class="pgDesc">${esc(PROG_DESC[g.prog]||'')}</span>
+            ${g.prog===PROG_SN?'<span class="pgName"><b>Sin núcleo</b></span><span class="pgDesc"></span>':`<span class="pgName"><b>${g.prog[0]}</b>${g.prog.slice(1)}</span>
+            <span class="pgDesc">${esc(PROG_DESC[g.prog]||'')}</span>`}
             <span class="pgTot">${tot}</span>
           </div>
           <div class="pgBar" style="width:${pct(tot/maxProg)}%;min-width:16px">
@@ -962,14 +977,14 @@ function render(){
     </div></div>`;
 
   const tt=$('#tipoTabs'); if(tt) tt.innerHTML=['nucleo','tapa','platabanda'].map(t=>`<button class="${TIPO===t?'on':''}" onclick="setTipo('${t}')">${TIPO_TXT[t]}</button>`).join('');
-  // los programas (N001…) son de los núcleos; tapas y platabandas van por modelo
-  $('#progs').innerHTML=`<div id="dashRow2" style="display:grid;gap:12px;margin-bottom:12px">${cobCard}${repoCard}</div>${TIPO==='nucleo'?progsCard:''}`;
+  // núcleos por su programa; tapas y platabandas por el tipo de núcleo de su modelo (o Sin núcleo)
+  $('#progs').innerHTML=`<div id="dashRow2" style="display:grid;gap:12px;margin-bottom:12px">${cobCard}${repoCard}</div>${progsCard}`;
   layoutDash();
 
   // grid header
   let titulo=TIPO_TXT[TIPO];
   if(KPI==='stock')titulo='Núcleos en stock';else if(KPI==='bajo')titulo='Núcleos bajo mínimo';
-  else if(KPI==='neg')titulo=TIPO_TXT[TIPO]+' con saldo negativo';else if(PROG)titulo='Programa '+PROG;
+  else if(KPI==='neg')titulo=TIPO_TXT[TIPO]+' con saldo negativo';else if(PROG)titulo=TIPO_TXT[TIPO]+' · '+(PROG===PROG_SN?'Sin núcleo':'Programa '+PROG);
   $('#gridTitle').textContent=titulo;
   const rs=filtrar();
   $('#gridCount').textContent=rs.length;
@@ -2024,8 +2039,14 @@ const PFv = {
     Object.values(this.uds).flat().forEach(u=>{ if(esp[u.fase]!=null && abiertas.some(r=>r.pf===u.pf)) esp[u.fase]++; if(u.embalado_at && ymdLocal(new Date(u.embalado_at))===hoy) hoyEmb++; });
     const kpi=(v,t,c)=>`<div class="card" style="padding:14px 16px;margin:0"><div style="font-family:'JetBrains Mono';font-size:26px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted)">${t}</div></div>`;
     $('#pfKpis').innerHTML=kpi(abiertas.length,'PF abiertas','var(--ink)')+kpi(esp.pegado,'Esperan 3 · Pegado','var(--terra)')+kpi(esp.cosido,'Esperan 2 · Cosido','var(--blue)')+kpi(esp.embalaje,'Esperan 1 · Embalado','#7A4B8C')+kpi(hoyEmb,'Embalados hoy','var(--green)');
+    // categoría: el tipo de núcleo que lleva (programa N001…) o Sin núcleo
+    this.rows.forEach(r=>{ r.prog=progDeNucleo(r.sku_nucleo); });
+    const sel=$('#pfProg'); if(sel){ const cur=sel.value; const ps=[...new Set(this.rows.map(r=>r.prog))].sort((a,b)=>(a===PROG_SN)-(b===PROG_SN)||a.localeCompare(b));
+      sel.innerHTML='<option value="">Todos los tipos de núcleo</option>'+ps.map(p=>`<option value="${p}">${esc(progTxt(p))} · ${this.rows.filter(r=>r.prog===p&&(this.estado==='todas'||r.estado===this.estado)).length}</option>`).join(''); sel.value=ps.includes(cur)?cur:''; }
+    const fp=sel?sel.value:'';
     const q=($('#pfSearch').value||'').toLowerCase().trim();
     let rs=this.estado==='todas'?this.rows:this.rows.filter(r=>r.estado===this.estado);
+    if(fp) rs=rs.filter(r=>r.prog===fp);
     if(q) rs=rs.filter(r=>[r.pf,r.sku_pf,r.nombre,r.descripcion,r.parte_ref].some(x=>String(x||'').toLowerCase().includes(q)));
     if(!rs.length){ $('#pfLista').innerHTML='<div class="vacio">'+(this.rows.length?'No hay PF en esta pestaña.':'Aún no hay PF. Se crean al lanzar un parte en Producción (una por línea).')+'</div>'; return; }
     const barra=(hechos,n,txt,num,col)=>{ const pct=n?Math.round(hechos/n*100):0;
@@ -2040,7 +2061,8 @@ const PFv = {
           <span class="tag" style="background:${est[2]};color:${est[1]}">${esc(est[0])}</span>
           ${r.especial?'<span class="tag" style="background:#1B4F72;color:#fff">Especial</span>':''}
           <div style="flex:1;min-width:180px"><b>${esc(r.sku_pf)}</b> <span style="color:var(--muted);font-size:12px">${esc(r.descripcion||r.nombre||'')}</span></div>
-          <div style="font-size:12px;color:var(--muted)">${r.sku_nucleo?'Núcleo '+esc(r.sku_nucleo):'Sin núcleo'}${r.parte_ref?' · Parte '+esc(r.parte_ref):''} · <b style="color:var(--ink)">${r.cantidad} uds</b></div>
+          <span class="tag" style="background:var(--surf2);color:var(--ink)">${esc(progTxt(r.prog))}</span>
+          <div style="font-size:12px;color:var(--muted)">${[r.sku_nucleo?'Núcleo '+esc(r.sku_nucleo):'',r.parte_ref?'Parte '+esc(r.parte_ref):'',`<b style="color:var(--ink)">${r.cantidad} uds</b>`].filter(Boolean).join(' · ')}</div>
         </div>
         ${a.cargado?`<div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">${barra(a.pegado,a.n,'Pegado',3,'var(--terra)')}${barra(a.cosido,a.n,'Cosido',2,'var(--blue)')}${barra(a.embalaje,a.n,'Embalado',1,'var(--green)')}</div>`:''}
         <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
@@ -2117,13 +2139,13 @@ const OT = {
       this.rows=ords.map(o=>({ot:o.ot,sku:o.sku,nombre:o.nombre,cant:o.cantidad,
         estado:o.estado||'abierta',
         pend:(cont[o.ot]||{}).pend||0,stock:(cont[o.ot]||{}).stock||0,cons:(cont[o.ot]||{}).cons||0,
-        prog:(String(o.sku||'').match(/^N\d{3}/)||[''])[0],
+        prog:tipoDe(o.sku)==='nucleo'?(String(o.sku||'').match(/^N\d{3}/)||[''])[0]:progDeSku(o.sku),
         lanzada:o.lanzada_at,cerrada:o.cerrada_at,parte_ref:o.parte_ref||null}));
       // rellenar el selector de programas
-      const progs=[...new Set(this.rows.map(r=>r.prog).filter(Boolean))].sort();
+      const progs=[...new Set(this.rows.map(r=>r.prog).filter(Boolean))].sort((a,b)=>(a===PROG_SN)-(b===PROG_SN)||a.localeCompare(b));
       const selP=$('#otProg');
       if(selP){ const cur=selP.value; selP.innerHTML='<option value="">Todos los programas</option>'+
-        progs.map(p=>`<option value="${p}">${p}${PROG_DESC[p]?' · '+esc(PROG_DESC[p]):''}</option>`).join(''); selP.value=cur; }
+        progs.map(p=>`<option value="${p}">${esc(progTxt(p))}</option>`).join(''); selP.value=cur; }
       this.sel.clear();
       this.paint();
     }catch(e){ $('#otTabla').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
@@ -3455,12 +3477,17 @@ const Tsku = {
     const fe=$('#tskuFases'); if(fe) fe.innerHTML=FASES.map(f=>`<button class="${this.fase===f.k?'on':''}" onclick="Tsku.setFase('${f.k}')">${esc(f.txt)}${n[f.k]?' · '+n[f.k]:''}</button>`).join('');
     const fi=faseInfo(this.fase);
     const q=($('#tskuSearch').value||'').toLowerCase().trim();
-    let rs=this.data.filter(t=>faseDe(t.sku)===this.fase); if(q)rs=rs.filter(t=>(t.sku||'').toLowerCase().includes(q));
+    let rs=this.data.filter(t=>faseDe(t.sku)===this.fase);
+    // tipo de núcleo: el programa del núcleo, o el del núcleo que lleva el modelo (Sin núcleo si no lleva)
+    const progT=sku=>this.fase==='nucleo'?((MET[sku]&&MET[sku].prog)||progDe({sku})):(MODELO_PROG[modeloDe(sku)]||PROG_SN);
+    const sel=$('#tskuProg'); if(sel){ const cur=sel.value; const ps=[...new Set(rs.map(t=>progT(t.sku)))].filter(p=>p&&p!=='—').sort((a,b)=>(a===PROG_SN)-(b===PROG_SN)||a.localeCompare(b));
+      sel.innerHTML='<option value="">Todos los tipos de núcleo</option>'+ps.map(p=>`<option value="${p}">${esc(progTxt(p))}</option>`).join(''); sel.value=ps.includes(cur)?cur:''; if(sel.value) rs=rs.filter(t=>progT(t.sku)===sel.value); }
+    if(q)rs=rs.filter(t=>(t.sku||'').toLowerCase().includes(q));
     if(!rs.length){ $('#tskuTabla').innerHTML='<div class="vacio">Sin tiempos de '+esc(fi.txt.toLowerCase())+' aún. Se van aprendiendo cuando los operarios fabrican'+(fi.clave?'; mientras tanto se usa el tiempo teórico de la fase (Ajustes → Lotes)':'')+'.</div>'; return; }
     $('#tskuTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">${this.fase==='nucleo'?'Núcleo':'Referencia'}</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
+      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">${this.fase==='nucleo'?'Núcleo':'Referencia'}</th><th style="padding:11px 14px">${this.fase==='nucleo'?'Medida':'Tipo de núcleo'}</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
       ${rs.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono';font-weight:700">${esc(t.sku)}</td>
-        <td style="padding:9px 14px;color:var(--muted)">${esc(medida(t.sku)||'')}</td>
+        <td style="padding:9px 14px;color:var(--muted)">${esc(this.fase==='nucleo'?(medida(t.sku)||''):progTxt(progT(t.sku)))}</td>
         <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${fmtDur(t.mediana_seg||t.segundos||t.mediana||0)}</td>
         <td style="padding:9px 14px;text-align:right;color:var(--muted)">${t.n_unidades||t.muestras||t.n||'—'}</td></tr>`).join('')}
       </tbody></table>`;
