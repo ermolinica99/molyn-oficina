@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estándar · Lanzar la producción</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Narrow:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: una columna de pasos numerados; cada paso = instrucción + maqueta de la pantalla de la tablet con el sitio a tocar marcado.
+   Aspecto único y claro a propósito (se comparte como imagen), con los colores de MOLYN. */
+:root{
+  --ink:#1B1A17; --ink2:#4A463F; --muted:#8A8478; --paper:#F4F2ED; --card:#FFFFFF; --line:#E2DED4;
+  --terra:#B85C38; --terra-soft:#F5E7DF; --ok:#2F7D4F; --ok-soft:#E3F0E8; --blue:#1A73E8; --off:#C9C4BA;
+  --display:'Archivo', 'Arial Narrow', Arial, sans-serif;
+  --body:'Archivo', Arial, Helvetica, sans-serif;
+  --narrow:'Archivo Narrow', 'Arial Narrow', Arial, sans-serif;
+  --mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);margin:0}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:28px 40px;display:flex;flex-direction:column;gap:22px}
+
+header{display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--narrow);font-weight:700;letter-spacing:.12em;font-size:13px;color:var(--ink2);text-transform:uppercase}
+.brand i{width:22px;height:22px;border-radius:6px;background:var(--terra);display:inline-block}
+h1{font-family:var(--display);font-weight:900;font-size:clamp(30px,7vw,46px);line-height:1.02;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--terra)}
+.err{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:15px;color:var(--ink2)}
+.err code{font-family:var(--mono);font-size:13px;background:#C62828;color:#fff;padding:6px 10px;border-radius:8px}
+.lead{font-size:16px;line-height:1.5;color:var(--ink2);margin:0;max-width:62ch}
+
+.step{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:grid;grid-template-columns:1fr;gap:14px}
+.sh{display:flex;gap:14px;align-items:flex-start}
+.num{flex:none;width:44px;height:44px;border-radius:50%;background:var(--ink);color:#fff;font-family:var(--display);font-weight:900;font-size:22px;display:grid;place-items:center}
+.sh h2{font-family:var(--display);font-weight:800;font-size:21px;margin:2px 0 4px;line-height:1.15;text-wrap:balance}
+.sh p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.path{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.path span{font-family:var(--narrow);font-weight:700;font-size:14px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+.path b{color:var(--muted);font-weight:700}
+.path span.hit{background:var(--terra);border-color:var(--terra);color:#fff}
+
+/* maquetas de pantalla */
+.screen{border:8px solid #2A2826;border-radius:18px;background:#F7F7F8;overflow:hidden;font-family:Roboto, 'Archivo', Arial, sans-serif;color:#1F1F1F;max-width:100%}
+.bar{display:flex;align-items:center;gap:10px;background:#fff;padding:10px 12px;border-bottom:1px solid #E5E5E5}
+.omni{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#F1F3F4;border-radius:999px;padding:8px 12px;font-size:14px;color:#3C4043;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tune{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#fff;position:relative}
+.dots{font-size:20px;color:#5F6368;line-height:1}
+.sheet{background:#fff;margin:12px;border-radius:14px;padding:6px 0;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.sheet .t{font-size:13px;font-weight:700;color:#5F6368;padding:10px 16px 4px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:15px}
+.row .ic{width:22px;text-align:center;color:#5F6368}
+.row .lbl{flex:1;min-width:0}
+.row small{display:block;color:#6B6B6B;font-size:12.5px;margin-top:2px}
+.sw{width:42px;height:24px;border-radius:999px;background:var(--blue);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.hl{outline:3px solid var(--terra);outline-offset:-3px;border-radius:12px;background:var(--terra-soft)}
+.tap{display:inline-flex;align-items:center;gap:4px;font-family:var(--narrow);font-weight:700;font-size:12px;color:#fff;background:var(--terra);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.ring{outline:3px solid var(--terra);outline-offset:2px}
+
+.settings{background:#F6F6F6;padding:14px}
+.settings .ttl{font-size:20px;font-weight:700;margin:4px 6px 12px}
+.group{background:#fff;border-radius:20px;overflow:hidden}
+.radio{width:22px;height:22px;border-radius:50%;border:2px solid #9AA0A6;flex:none;position:relative}
+.radio.on{border-color:var(--blue)}
+.radio.on::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--blue)}
+
+.qs{background:#2B2B2E;padding:16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tile{border-radius:16px;background:#3D3D42;color:#D9D9DE;font-size:11.5px;text-align:center;padding:12px 4px;display:flex;flex-direction:column;align-items:center;gap:6px;line-height:1.2}
+.tile .g{width:26px;height:26px;border-radius:50%;background:#55555C}
+.tile.on{background:#8AB4F8;color:#0B2A55}
+.tile.on .g{background:#1A73E8}
+
+.prompt{background:#fff;margin:14px;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+.prompt .q{font-size:16px;line-height:1.35}
+.btn{border-radius:999px;padding:11px 14px;text-align:center;font-weight:600;font-size:14px;border:1px solid #DADCE0;color:#1A73E8;background:#fff}
+.btn.main{background:#1A73E8;color:#fff;border-color:#1A73E8}
+
+.note{display:flex;gap:12px;align-items:flex-start;background:var(--ok-soft);border:1px solid #BFDCCB;border-radius:16px;padding:16px;font-size:15px;line-height:1.5;color:#1E4D31}
+.note b{color:#163B25}
+.note .k{font-family:var(--mono);font-size:13px;background:#fff;border:1px solid #BFDCCB;border-radius:6px;padding:2px 6px}
+footer{font-size:13px;color:var(--muted);text-align:center}
+
+@media (min-width:640px){
+  .step{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:center;padding:22px}
+}
+</style>
+<style>
+.case{display:flex;align-items:center;gap:12px;background:var(--ink);color:#fff;border-radius:14px;padding:14px 18px}
+.case .tag{font-family:var(--display);font-weight:900;font-size:26px;width:44px;height:44px;border-radius:12px;background:var(--terra);display:grid;place-items:center;flex:none}
+.case h2{margin:0;font-family:var(--display);font-weight:800;font-size:21px;line-height:1.15;text-wrap:balance}
+.case p{margin:2px 0 0;color:#D8D3C8;font-size:14px}
+.serie{background:#fff;border:2px solid var(--terra);border-radius:14px;margin:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.serie .ot{font-family:var(--mono);font-weight:700;font-size:15px}
+.serie .ssub{font-size:13px;color:#6B6B6B}
+.stepper{display:flex;align-items:center;gap:10px;justify-content:center}
+.stepper span{width:40px;height:40px;border-radius:10px;background:#EDEAE2;display:grid;place-items:center;font-weight:800;font-size:20px}
+.stepper b{font-family:var(--mono);font-size:22px;min-width:40px;text-align:center}
+.bigbtn{border-radius:12px;padding:12px;text-align:center;font-weight:800;font-size:15px}
+.bigbtn.ok{background:#2F7D4F;color:#fff}.bigbtn.ghost{background:#EDEAE2;color:#3C3A35}.bigbtn.ink{background:#1B1A17;color:#fff}
+.segs{display:flex;gap:8px}.segs div{flex:1;border:2px solid #E2DED4;border-radius:10px;padding:10px 6px;text-align:center;font-weight:700;font-size:13.5px}
+.segs .on{background:var(--terra);border-color:var(--terra);color:#fff}
+.fld{border:2px solid #E2DED4;border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:14px;background:#fff}
+.modal{background:#fff;margin:12px;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.modal h4{margin:0;font-size:17px}
+.rules{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.rules h2{font-family:var(--display);font-weight:800;font-size:20px;margin:0}
+.rules ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px;line-height:1.45;color:var(--ink2)}
+.flow{display:flex;flex-direction:column;gap:12px}
+</style>
+<style>
+/* impresión en A4: cada paso entero en la misma hoja, con los colores de pantalla */
+@page{size:A4;margin:10mm}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff}
+  .wrap{max-width:none;padding-block:0}
+  .step,.rules,.case{break-inside:avoid}
+  .case{break-after:avoid;padding:8px 12px}
+  .case .tag{width:34px;height:34px;font-size:20px}
+  .case h2{font-size:17px}
+  .wrap{gap:9px}
+  h1{font-size:30px}
+  .lead{font-size:13px}
+  .step{padding:8px 14px;gap:12px;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  .num{width:32px;height:32px;font-size:17px}
+  .sh h2{font-size:16px;margin:0 0 2px}
+  .sh p{font-size:12.5px}
+  .screen{border-width:5px;zoom:.72}
+  .rules{padding:12px 16px}
+  .rules ul{font-size:13px}
+}
+</style>
+<style>
+.blk{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.blk h2{font-family:var(--display);font-weight:800;font-size:21px;margin:0;text-wrap:balance}
+.blk>p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.check{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.check li{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45}
+.check li::before{content:"";flex:none;width:18px;height:18px;border:2px solid var(--ink);border-radius:4px;margin-top:2px}
+.tw{overflow-x:auto}
+table.tb{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+.tb th{background:var(--ink);color:#fff;text-align:left;padding:9px 10px;font-family:var(--narrow);letter-spacing:.04em;text-transform:uppercase;font-size:12.5px}
+.tb td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.4}
+.tb tr:nth-child(even) td{background:var(--paper)}
+.tb td:first-child{font-weight:700}
+.calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.calc>div{border:2px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14.5px;line-height:1.45}
+.calc h3{margin:0;font-size:17px;font-family:var(--display);font-weight:800}
+.calc .f{font-family:var(--mono);font-size:13px;background:var(--paper);border-radius:8px;padding:8px 10px;line-height:1.6}
+.calc .r{font-weight:800;color:var(--terra)}
+.pill{display:inline-block;font-family:var(--narrow);font-weight:700;font-size:12.5px;border-radius:999px;padding:2px 9px;background:var(--terra-soft);color:var(--terra)}
+.hoja{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.45}
+.hoja b.n{flex:none;font-family:var(--mono);background:var(--ink);color:#fff;border-radius:6px;padding:1px 7px;font-size:12px;margin-top:2px}
+@media print{
+  .blk{break-inside:auto;padding:12px 16px}
+  .blk h2{break-after:avoid}
+  .tb tr,.hoja,.calc>div,.check li{break-inside:avoid}
+  .tb{font-size:11.5px;min-width:0}
+  .tb th,.tb td{padding:5px 7px}
+  .calc>div{font-size:12.5px;padding:10px}
+  .check li,.hoja{font-size:12.5px}
+}
+</style>
+</head><body>
+<div class="wrap">
+  <header>
+    <div class="brand"><i></i>MOLYN · Estándar de oficina</div>
+    <h1>Lanzar la producción: <em>del parte a las OT</em></h1>
+    <p class="lead">Se hace en Oficina › <b>Producción</b>. La app lee el parte del ERP, calcula qué núcleos hay que fabricar, crea las OT, reserva los núcleos para cada modelo e imprime el parte y las etiquetas. Aquí está cada paso, lo que decide la app y lo que puedes cambiar.</p>
+  </header>
+
+  <div class="blk">
+    <h2>Antes de lanzar</h2>
+    <ul class="check">
+      <li><span>El <b>catálogo está al día</b>: los modelos nuevos del parte existen y tienen núcleo (Ajustes › Alta masiva con el Excel de modelos).</span></li>
+      <li><span>El <b>stock es real</b>: no hay peticiones de planta pendientes en <b>Aprobaciones</b> ni OT de cortes ya terminados con unidades pendientes.</span></li>
+      <li><span>Las <b>OT de ayer están cerradas</b> en planta (ningún puesto con trabajo abierto de otro día).</span></li>
+      <li><span>El navegador <b>permite ventanas emergentes</b> para esta web y la impresora de etiquetas (100×100 mm) está encendida.</span></li>
+      <li><span>Es el <b>parte correcto</b> y no se ha lanzado antes (la app avisa si su número ya se lanzó).</span></li>
+    </ul>
+  </div>
+
+  <div class="case"><div class="tag">▶</div><div><h2>Los pasos</h2><p>En este orden. No lances hasta revisar los pasos 2, 3 y 4.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">1</div><div>
+      <h2>Sube el parte del ERP</h2>
+      <p>Producción › <b>Subir parte (.xls/.xlsx)</b>. La app lee el número de parte (p. ej. 2026-03537), el código de cada modelo, su cantidad y descripción, y le asigna su núcleo del catálogo.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="bigbtn ink ring">Subir parte (.xls/.xlsx)</div><div style="font-size:13px;color:#6B6B6B">Parte 2026-03537 · 42 líneas</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">2</div><div>
+      <h2>Resuelve los modelos sin núcleo</h2>
+      <p>Si sale el aviso naranja, haz <b>doble clic</b> en cada línea en rojo y elige: <b>vincular a un núcleo que ya existe</b>, <b>crear un núcleo nuevo</b> o <b>no lleva núcleo</b> (colchoneta, etc., con su categoría). Se guarda en el modelo para los próximos partes.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="background:#F7EDDF;color:#8a5a1e;border-left:4px solid #D9963C;border-radius:8px;padding:8px 10px;font-size:13px">⚠️ 2 modelos sin núcleo asignado: BOSS24025, …</div><div class="fld" style="color:#C0492B">BOSS24025 · — sin núcleo</div><div style="font-size:12.5px;color:#6B6B6B">Doble clic en la línea → vincular núcleo · crear núcleo · no lleva núcleo</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">3</div><div>
+      <h2>Revisa los modelos</h2>
+      <p>Corrige cantidades si hace falta. <b>⚙</b> divide una línea por configuración (etiquetas, asas, enrollado…). <b>☆ Especial</b> marca los modelos externos: salen en hojas de parte aparte pero consumen los mismos núcleos. Puedes añadir modelos a mano o desde <b>🔍 Catálogo</b>.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="fld">ALHAMBRA018 · N001150X200EXTRA FIRM · 1</div><div style="display:flex;gap:8px"><div class="bigbtn ghost" style="flex:1">⚙ Configuración</div><div class="bigbtn" style="flex:1;background:#1B4F72;color:#fff">★ Especial</div></div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">4</div><div>
+      <h2>Revisa los núcleos a fabricar</h2>
+      <p>La app propone cuántos núcleos lanzar de cada tipo (cálculo abajo). Puedes cambiar cantidades, borrar alguno o añadir un núcleo a mano. Mira el total, el tiempo estimado de fabricación y, si eres administrador, el coste.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div style="font-weight:800;color:#B85C38;font-size:13px">📦 De stock (diarios) · 30 uds</div><div class="fld">N00290X190040 · 10</div><div class="fld">N002160X200040 · 20</div><div style="font-weight:800;color:#B85C38;font-size:13px">✎ Personalizados · 2 uds</div><div class="fld">N012150X190ARTICULADO · 2</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">5</div><div>
+      <h2>Lanza</h2>
+      <p>Pulsa <b>Lanzar OT · partes · reservas</b> y confirma. Se crea una OT por núcleo con sus unidades (OTxxxxx-0001…) y se reservan los núcleos para cada modelo del parte.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="bigbtn ink ring">Lanzar OT · partes · reservas</div><div style="font-size:13px;color:#6B6B6B">¿Lanzar 3 OT (32 uds) y generar los partes?</div></div></div>
+  </section>
+  <section class="step">
+    <div class="sh"><div class="num">6</div><div>
+      <h2>Imprime y reparte</h2>
+      <p>Se abren el <b>parte</b> y las <b>etiquetas QR</b>. Lleva las etiquetas al corte con su OT y el parte a quien monta los modelos. Las hojas de especiales van al externo.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="fld">🖨 Parte 2026-03537 · varias hojas</div><div class="fld">🏷 32 etiquetas QR · 100×100 mm</div><div style="font-size:12.5px;color:#6B6B6B">Si el navegador las bloquea, sale un botón abajo a la derecha para abrirlas.</div></div></div>
+  </section>
+
+  <div class="blk">
+    <h2>Cómo decide la app cuántos núcleos lanzar</h2>
+    <p>Cada núcleo es <span class="pill">Diario</span> (se fabrica para stock) o <span class="pill">Personalizado</span> (se fabrica solo bajo pedido). Es <b>personalizado</b> si su consumo medio es menor que el <b>umbral</b> (2 al día por defecto), salvo que esté marcado <b>Forzar a diario</b>.</p>
+    <div class="calc">
+      <div><h3>Núcleo diario</h3>
+        <span>Deja el stock por encima del <b>punto de pedido</b> después de servir el parte, redondeando al <b>lote</b> del programa.</span>
+        <div class="f">punto de pedido = consumo/día × días de maduración<br>falta = punto de pedido − (saldo − pedido del parte)<br>se lanza = falta redondeado hacia arriba al lote</div>
+        <span>Ejemplo: consumo 4/día, maduración 2 → punto de pedido 8. Saldo 10, el parte pide 6 → quedan 4, faltan 4. Lote 10 → <span class="r">se lanzan 10</span>.</span></div>
+      <div><h3>Núcleo personalizado</h3>
+        <span>Solo lo que falta para este parte, sin redondear al lote.</span>
+        <div class="f">se lanza = pedido del parte − saldo libre</div>
+        <span>Ejemplo: consumo 0,5/día (menos que 2) → personalizado. El parte pide 3 y hay 1 libre → <span class="r">se lanzan 2</span>.</span></div>
+      <div><h3>Además</h3>
+        <span><b>Reposición:</b> los núcleos diarios que están bajo mínimo aunque el parte no los pida se añaden solos, redondeados al lote.</span>
+        <span><b>Núcleo nuevo</b> sin historial: se lanza justo lo que pide el parte.</span>
+        <span><b>Consumo/día</b> = media de los últimos días con consumo (días de histórico).</span>
+        <span><b>Saldo</b> = disponible + madurando + en fabricación − ya reservado para otros partes.</span></div>
+    </div>
+  </div>
+
+  <div class="blk">
+    <h2>Variables y dónde se cambian</h2>
+    <div class="tw"><table class="tb">
+      <tr><th>Variable</th><th>Qué hace</th><th>Dónde</th><th>Por defecto</th></tr>
+      <tr><td>Días de histórico</td><td>Cuántos días con consumo se promedian para el consumo/día.</td><td>Configuración › Diario / Personalizado</td><td>5</td></tr>
+      <tr><td>Umbral personalizado</td><td>Consumo/día por debajo del cual un núcleo es personalizado.</td><td>Configuración › Diario / Personalizado</td><td>2</td></tr>
+      <tr><td>Maduración</td><td>Días que reposa un núcleo antes de poder usarse. Sube el punto de pedido.</td><td>Configuración › Diario / Personalizado</td><td>2 días</td></tr>
+      <tr><td>Días de fabricación</td><td>Días entre lanzar y fabricar. Mueve la fecha prevista de las hojas del parte.</td><td>Configuración › Diario / Personalizado</td><td>0</td></tr>
+      <tr><td>Lote por programa</td><td>Múltiplo al que se redondea lo que se lanza de cada programa (N001…N014) y qué puesto lo fabrica.</td><td>Configuración › Lotes de fabricación (o Planta › Lotes)</td><td>10</td></tr>
+      <tr><td>Forzar a diario</td><td>Trata un núcleo como diario aunque se consuma poco.</td><td>Dashboard › tarjeta del núcleo</td><td>No</td></tr>
+      <tr><td>Núcleo del modelo</td><td>Qué núcleo consume cada modelo.</td><td>Alta masiva (Excel) o doble clic en Producción</td><td>—</td></tr>
+      <tr><td>Sin núcleo</td><td>Modelos que no llevan núcleo; van a su hoja aparte.</td><td>Doble clic en Producción · Configuración › Colchones sin núcleo</td><td>—</td></tr>
+      <tr><td>Especial (externo)</td><td>Modelos que salen en hojas de parte aparte.</td><td>Producción › ☆ Especial</td><td>No</td></tr>
+      <tr><td>Configuraciones</td><td>Opciones para dividir líneas (etiquetas, asas, enrollado…).</td><td>Personalización</td><td>—</td></tr>
+    </table></div>
+  </div>
+
+  <div class="blk">
+    <h2>Qué se imprime al lanzar</h2>
+    <div class="hoja"><b class="n">1</b><span><b>Parte · Núcleos</b>: cada OT con su núcleo y cantidad, de stock y personalizados. Va al corte.</span></div>
+    <div class="hoja"><b class="n">2</b><span><b>Modelos con núcleo DISPONIBLE</b>: se pueden montar ya, con la OT de donde sale el núcleo.</span></div>
+    <div class="hoja"><b class="n">3</b><span><b>Modelos EN MADURACIÓN</b>: núcleo fabricado pero aún reposando, con la fecha en que estará listo.</span></div>
+    <div class="hoja"><b class="n">4</b><span><b>Modelos PENDIENTES de fabricar</b>: esperan una OT abierta o la nueva, con fecha prevista (hoy + días de fabricación + maduración).</span></div>
+    <div class="hoja"><b class="n">5</b><span><b>Colchones SIN NÚCLEO</b> y, si hay, <b>ESPECIALES</b> (núcleo disponible / no disponible).</span></div>
+    <div class="hoja"><b class="n">6</b><span><b>Etiquetas QR</b> de 100×100 mm: una por unidad de núcleo, con su código, núcleo y OT.</span></div>
+  </div>
+
+  <div class="blk">
+    <h2>Situaciones y qué hacer</h2>
+    <div class="tw"><table class="tb">
+      <tr><th>Si pasa esto</th><th>Por qué</th><th>Qué hacer</th></tr>
+      <tr><td>«Ese modelo no existe» al añadirlo a mano</td><td>El modelo no está en el catálogo.</td><td>Importa el Excel de modelos en Alta masiva y vuelve a subir el parte.</td></tr>
+      <tr><td>Modelos en rojo «sin núcleo»</td><td>El modelo no tiene núcleo asignado o no está en el catálogo.</td><td>Doble clic y vincula, crea el núcleo o márcalo «no lleva núcleo».</td></tr>
+      <tr><td>«El parte ya se lanzó»</td><td>Ese número de parte ya tiene reservas.</td><td>No lo repitas. Si hay que rehacerlo, anúlalo en Partes lanzados y vuelve a lanzar.</td></tr>
+      <tr><td>«Nada que lanzar»</td><td>El stock cubre el parte.</td><td>Normal: lanza igualmente para crear las reservas y las hojas de modelos.</td></tr>
+      <tr><td>Lanza más de lo que pide el parte</td><td>Redondeo al lote, punto de pedido o reposición de otros núcleos.</td><td>Revisa y baja la cantidad si no quieres stock extra.</td></tr>
+      <tr><td>Lanza menos de lo que pide el parte</td><td>Hay stock o el núcleo es personalizado y hay saldo libre.</td><td>Correcto: lo que falta se sirve del stock reservado.</td></tr>
+      <tr><td>No salen el parte ni las etiquetas</td><td>El navegador bloqueó la ventana.</td><td>Pulsa el botón de abajo a la derecha y permite las ventanas emergentes.</td></tr>
+      <tr><td>Un modelo cambió de núcleo</td><td>Se actualizó el catálogo.</td><td>Sus reservas pendientes pasan al núcleo nuevo al importar el Excel.</td></tr>
+    </table></div>
+  </div>
+
+  <div class="blk">
+    <h2>Después de lanzar</h2>
+    <ul class="check">
+      <li><span>En <b>Partes lanzados</b> se revisa el parte: anular las reservas de un modelo, una OT o el parte entero.</span></li>
+      <li><span>En <b>Órdenes de trabajo</b> se sigue cada OT: fabricadas, pendientes, «Ajustar cantidad» si salen menos.</span></li>
+      <li><span>Las peticiones de planta (sobran etiquetas, salió de más) llegan como <b>aviso</b> arriba a la derecha.</span></li>
+    </ul>
+  </div>
+  <footer>Si algo no cuadra, no lances: revisa el paso que falla o pregunta antes.</footer>
+</div>
+<script>
+// ?print=1 → abre el diálogo de imprimir (desde ahí se puede "Guardar como PDF")
+if(/[?&]print=1/.test(location.search)){
+  window.addEventListener('load',()=>{ (document.fonts&&document.fonts.ready||Promise.resolve()).then(()=>setTimeout(()=>window.print(),300)); });
+}
+</script>
+</body></html>

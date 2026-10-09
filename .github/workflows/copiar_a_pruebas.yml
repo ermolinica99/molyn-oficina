@@ -1,0 +1,86 @@
+name: Copiar datos reales a PRUEBAS
+
+# Copia la base de datos REAL (solo se lee) a la base de datos de PRUEBAS, que se borra y se
+# rellena de nuevo. Nunca escribe en la real. Se lanza a mano desde la pestaña Actions.
+on:
+  workflow_dispatch:
+    inputs:
+      con_datos:
+        description: '¿Copiar también los datos (núcleos, modelos, OT, stock, usuarios)? Si es "no", solo las tablas vacías.'
+        type: choice
+        options: ['si', 'no']
+        default: 'si'
+
+jobs:
+  copiar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar cliente de PostgreSQL 17 (igual que el servidor de Supabase)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Comprobar que destino y origen son distintos
+        env:
+          REAL: ${{ secrets.SUPABASE_DB_URL }}
+          PRUEBAS: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          if [ -z "$REAL" ]; then echo "Falta el secreto SUPABASE_DB_URL (base real)." >&2; exit 1; fi
+          if [ -z "$PRUEBAS" ]; then echo "Falta el secreto SUPABASE_TEST_DB_URL (base de pruebas)." >&2; exit 1; fi
+          if [ "$REAL" = "$PRUEBAS" ]; then echo "SUPABASE_TEST_DB_URL es igual a la base REAL. No se copia nada." >&2; exit 1; fi
+          # el proyecto real nunca puede ser el destino
+          if echo "$PRUEBAS" | grep -q "kmfdywyeesybqqfmfxys"; then echo "SUPABASE_TEST_DB_URL apunta al proyecto REAL. No se copia nada." >&2; exit 1; fi
+
+      - name: Leer la base real (solo lectura)
+        env:
+          REAL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          extra=""
+          if [ "${{ inputs.con_datos }}" = "no" ]; then extra="--schema-only"; fi
+          /usr/lib/postgresql/17/bin/pg_dump "$REAL" --schema=public --no-owner --no-privileges $extra -f real.sql
+          # el esquema "public" ya existe en Supabase: no se crea ni se borra
+          sed -i -E '/^(CREATE|DROP) SCHEMA (IF EXISTS )?public;/d; /^COMMENT ON SCHEMA public/d' real.sql
+          echo "Tamaño del volcado: $(du -h real.sql | cut -f1)"
+
+      - name: Vaciar la base de pruebas
+        env:
+          PRUEBAS: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          /usr/lib/postgresql/17/bin/psql "$PRUEBAS" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare r record;
+          begin
+            for r in select table_name from information_schema.views where table_schema='public' loop
+              execute format('drop view if exists public.%I cascade', r.table_name);
+            end loop;
+            for r in select tablename from pg_tables where schemaname='public' loop
+              execute format('drop table if exists public.%I cascade', r.tablename);
+            end loop;
+            for r in select sequence_name from information_schema.sequences where sequence_schema='public' loop
+              execute format('drop sequence if exists public.%I cascade', r.sequence_name);
+            end loop;
+            for r in select p.oid::regprocedure as f from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                     where n.nspname='public' and p.prokind in ('f','p') loop
+              execute 'drop routine if exists ' || r.f || ' cascade';
+            end loop;
+          end $$;
+          SQL
+
+      - name: Cargar la copia en la base de pruebas
+        env:
+          PRUEBAS: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          /usr/lib/postgresql/17/bin/psql "$PRUEBAS" -v ON_ERROR_STOP=1 -f real.sql
+          # permisos para las apps (la clave pública de pruebas); las políticas RLS vienen copiadas de la real
+          /usr/lib/postgresql/17/bin/psql "$PRUEBAS" -v ON_ERROR_STOP=1 <<'SQL'
+          grant usage on schema public to anon, authenticated;
+          grant all on all tables in schema public to anon, authenticated;
+          grant all on all sequences in schema public to anon, authenticated;
+          grant execute on all functions in schema public to anon, authenticated;
+          SQL
+          echo "Copia terminada. Las apps de pruebas ya ven estos datos."
