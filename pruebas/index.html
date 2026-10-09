@@ -656,10 +656,11 @@ async function calcularMetricas(){
   const pActivos=selectWhere('unidades','sku,estado,fabricada_at',q=>q.neq('estado','consumida'));
   const pConsumo=selectWhere('unidades','sku,consumida_at',q=>q.eq('estado','consumida').gte('consumida_at',cutoff));
   const pReservas=(async()=>{ try{const r=await selectWhere('reservas','sku,cantidad,estado');return r.filter(x=>x.estado==='pendiente'||x.estado==null);}catch(e){return [];} })();
-  // núcleos que usa algún modelo del catálogo (para no contar núcleos antiguos sin uso)
-  const pUsados=(async()=>{ try{return await selectWhere('modelos','sku_nucleo',q=>q.not('sku_nucleo','is',null));}catch(e){return null;} })();
+  // productos que usa algún modelo del catálogo (para no contar núcleos antiguos sin uso):
+  // su núcleo y su tapa y platabanda (<modelo>_TAPA / <modelo>_PTB)
+  const pUsados=(async()=>{ try{return await selectWhere('modelos','sku_pf,sku_nucleo');}catch(e){return null;} })();
   const [prods,activos,consumo,res,usadosRows]=await Promise.all([pProds,pActivos,pConsumo,pReservas,pUsados]);
-  const usados=usadosRows?new Set(usadosRows.map(r=>r.sku_nucleo)):null;
+  const usados=usadosRows?new Set(usadosRows.flatMap(r=>[r.sku_nucleo,skuTapa(r.sku_pf),skuPlat(r.sku_pf)]).filter(Boolean)):null;
 
   // nombres de programa: los del catálogo importado ("N013 · Nombre") mandan sobre la lista fija,
   // y un programa nuevo aparece aunque no tenga nombre (Dashboard y lotes por programa)
@@ -870,7 +871,7 @@ function render(){
   const repo=[...negs].sort((a,b)=>a.saldo-b.saldo).slice(0,7);
   const totalRepo=Math.abs(defi);
   const repoCard=`<div class="card" style="margin-bottom:0;display:flex;flex-direction:column">
-    <div class="ch"><div class="t">Reposición pendiente</div><div class="s">Núcleos con saldo negativo, mayor déficit primero</div></div>
+    <div class="ch"><div class="t">Reposición pendiente</div><div class="s">${TIPO_TXT[TIPO]} con saldo negativo, mayor déficit primero</div></div>
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:8px">
       <span class="mono" style="font-size:30px;font-weight:800;letter-spacing:-1px;color:var(--pur)">${totalRepo}</span>
       <span style="font-size:12px;color:var(--muted)">uds por lanzar en ${negs.length} referencia${negs.length===1?'':'s'}</span>
@@ -882,7 +883,7 @@ function render(){
           <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(etiquetaNuc(b))}</div>
         </div>
         <div class="mono" style="font-size:15px;font-weight:700;color:var(--pur)">${Math.abs(b.saldo)}</div>
-      </div>`).join(''):'<div class="vacio" style="padding:14px 16px">Ningún núcleo en negativo. Todo cubierto.</div>'}
+      </div>`).join(''):'<div class="vacio" style="padding:14px 16px">Ningún producto en negativo. Todo cubierto.</div>'}
     </div>
     <div style="margin-top:auto;padding:12px 16px">
       <button class="chip" style="width:100%;padding:11px;background:var(--ink)" onclick="nav('prod')">Ir a Producción</button>
@@ -933,7 +934,7 @@ function render(){
   // grid header
   let titulo=TIPO_TXT[TIPO];
   if(KPI==='stock')titulo='Núcleos en stock';else if(KPI==='bajo')titulo='Núcleos bajo mínimo';
-  else if(KPI==='neg')titulo='Núcleos con saldo negativo';else if(PROG)titulo='Programa '+PROG;
+  else if(KPI==='neg')titulo=TIPO_TXT[TIPO]+' con saldo negativo';else if(PROG)titulo='Programa '+PROG;
   $('#gridTitle').textContent=titulo;
   const rs=filtrar();
   $('#gridCount').textContent=rs.length;
@@ -951,7 +952,7 @@ function render(){
     + medidaSel;
 
   // tarjetas
-  $('#grid').innerHTML=rs.length?rs.map(cardN).join(''):'<div class="vacio">No hay núcleos que cumplan este filtro.</div>';
+  $('#grid').innerHTML=rs.length?rs.map(cardN).join(''):'<div class="vacio">No hay '+TIPO_TXT[TIPO].toLowerCase()+' que cumplan este filtro.</div>';
   const gridEl=$('#grid');
   if(gridEl && !gridEl._bound){
     gridEl._bound=true;
