@@ -526,7 +526,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="content" id="view-alta" style="display:none">
       <div style="display:flex;align-items:flex-start;justify-content:space-between">
         <div><div class="h1">Alta masiva</div><div class="h1sub">Importa el catálogo (modelos y núcleos) desde un Excel</div></div>
-        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Alta.crearComponentes(this)" title="Crea la tapa (T-modelo) y la platabanda (P-modelo) de cada modelo del catálogo">Crear tapas y platabandas</button>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Alta.crearComponentes(this)" title="Crea la tapa (modelo_TAPA) y la platabanda (P-modelo) de cada modelo del catálogo">Crear tapas y platabandas</button>
         <label class="chip" style="cursor:pointer">Seleccionar Excel
           <input type="file" id="fileAlta" accept=".xls,.xlsx,.csv" style="display:none"></label>
       </div>
@@ -592,11 +592,14 @@ async function idsPendientesDeOT(ot){
 const PROG_DESC={N001:'Extra Firm',N002:'040',N003:'030',N004:'V50',N005:'Medium',N006:'V65/32',N007:'V65/40',N008:'V80 Soft',N009:'V80/40',N010:'Abatible',N011:'Kids',N012:'Articulado'};
 // texto bajo el código del núcleo: medida + nombre (si el nombre aporta algo distinto del código)
 function etiquetaNuc(b){const med=medida(b.sku), nom=(b.nombre&&b.nombre!==b.sku)?b.nombre:''; return [med,nom].filter(Boolean).join(' · ');}
-// TIPOS de producto por su código: núcleos (N…), tapas (T-<modelo>) y platabandas (P-<modelo>).
+// TIPOS de producto por su código: núcleos (N…), tapas (<modelo>_TAPA) y platabandas (<modelo>_PTB).
 // Cada modelo de colchón lleva su propia tapa y su propia platabanda. Solo los núcleos maduran.
-function tipoDe(sku){ sku=String(sku||''); return sku.startsWith('T-')?'tapa':(sku.startsWith('P-')?'platabanda':'nucleo'); }
-function skuTapa(sku_pf){ return 'T-'+sku_pf; }
-function skuPlat(sku_pf){ return 'P-'+sku_pf; }
+function tipoDe(sku){ sku=String(sku||''); return sku.endsWith('_TAPA')?'tapa':(sku.endsWith('_PTB')?'platabanda':'nucleo'); }
+function skuTapa(sku_pf){ return sku_pf+'_TAPA'; }
+function skuPlat(sku_pf){ return sku_pf+'_PTB'; }
+// modelo de una tapa o platabanda (quita el sufijo)
+function modeloDe(sku){ return String(sku||'').replace(/_(TAPA|PTB)$/,''); }
+const ORDEN_TIPO={nucleo:0,tapa:1,platabanda:2};
 function madDiasDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):0; }
 // días de consumo que cubre el punto de pedido: los núcleos su maduración; tapas y platabandas 1 día
 function coberturaDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):1; }
@@ -1431,7 +1434,8 @@ const Prod = {
 
   // ---- LANZAR ----
   async lanzar(){
-    const items=Object.entries(this.cant).filter(([s,n])=>n>0);
+    // las OT se numeran agrupadas: primero núcleos, luego tapas, luego platabandas
+    const items=Object.entries(this.cant).filter(([s,n])=>n>0).sort((a,b)=>ORDEN_TIPO[tipoDe(a[0])]-ORDEN_TIPO[tipoDe(b[0])]);
     if(!items.length && !this.lineas.length){ toast('No hay nada que lanzar','err'); return; }
     // evitar relanzar el mismo número de parte dos veces
     if(this.parteNum){
@@ -1453,7 +1457,7 @@ const Prod = {
       const nombres={}; (await selectAll('productos','sku,nombre')).forEach(p=>nombres[p.sku]=p.nombre||p.sku);
       // tapas y platabandas que aún no existen como producto: se crean con el nombre de su modelo
       const nuevosComp=[...new Set([...items.map(([s])=>s),...nucsDem])].filter(s=>tipoDe(s)!=='nucleo' && !(s in nombres)).map(s=>{
-        const m=this.modelosMap[s.slice(2)]||{}; const nom=(tipoDe(s)==='tapa'?'Tapa ':'Platabanda ')+(m.nombre||s.slice(2))+(m.medida?' '+m.medida:'');
+        const m=this.modelosMap[modeloDe(s)]||{}; const nom=(tipoDe(s)==='tapa'?'Tapa ':'Platabanda ')+(m.nombre||modeloDe(s))+(m.medida?' '+m.medida:'');
         nombres[s]=nom; return {sku:s,nombre:nom,descripcion:TIPO_TXT[tipoDe(s)]};
       });
       for(let i=0;i<nuevosComp.length;i+=200){ const {error}=await sb.from('productos').upsert(nuevosComp.slice(i,i+200),{onConflict:'sku'}); if(error)throw error; }
@@ -3600,7 +3604,7 @@ const Alta = {
     }catch(e){ toast('Error al leer el archivo: '+(e.message||e),'err'); }
   },
 
-  // crea (o renombra) la tapa T-<modelo> y la platabanda P-<modelo> de cada modelo
+  // crea (o renombra) la tapa <modelo>_TAPA y la platabanda <modelo>_PTB de cada modelo
   async crearComponentes(btn,modelos){
     if(btn) btn.disabled=true;
     try{
