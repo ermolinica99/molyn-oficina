@@ -238,6 +238,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="content" id="view-dash">
       <div class="h1">Dashboard</div>
       <div class="h1sub">Estado de stock y reposición por programa</div>
+      <div class="seg" id="tipoTabs" style="margin:10px 0 4px"></div>
       <div id="kpis" class="kpis"></div>
       <div id="progs"></div>
       <div class="gridhead">
@@ -275,7 +276,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
           </div>
         </div>
         <div class="card">
-          <div class="ch"><div class="t">Núcleos a fabricar</div><div class="s" id="prodTotal">Total: 0</div></div>
+          <div class="ch"><div class="t">A fabricar · núcleos, tapas y platabandas</div><div class="s" id="prodTotal">Total: 0</div></div>
           <div id="prodNucleos"></div>
           <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px">
             <input id="addNuc" placeholder="Añadir núcleo (SKU)…" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
@@ -525,6 +526,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="content" id="view-alta" style="display:none">
       <div style="display:flex;align-items:flex-start;justify-content:space-between">
         <div><div class="h1">Alta masiva</div><div class="h1sub">Importa el catálogo (modelos y núcleos) desde un Excel</div></div>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Alta.crearComponentes(this)" title="Crea la tapa (T-modelo) y la platabanda (P-modelo) de cada modelo del catálogo">Crear tapas y platabandas</button>
         <label class="chip" style="cursor:pointer">Seleccionar Excel
           <input type="file" id="fileAlta" accept=".xls,.xlsx,.csv" style="display:none"></label>
       </div>
@@ -590,6 +592,16 @@ async function idsPendientesDeOT(ot){
 const PROG_DESC={N001:'Extra Firm',N002:'040',N003:'030',N004:'V50',N005:'Medium',N006:'V65/32',N007:'V65/40',N008:'V80 Soft',N009:'V80/40',N010:'Abatible',N011:'Kids',N012:'Articulado'};
 // texto bajo el código del núcleo: medida + nombre (si el nombre aporta algo distinto del código)
 function etiquetaNuc(b){const med=medida(b.sku), nom=(b.nombre&&b.nombre!==b.sku)?b.nombre:''; return [med,nom].filter(Boolean).join(' · ');}
+// TIPOS de producto por su código: núcleos (N…), tapas (T-<modelo>) y platabandas (P-<modelo>).
+// Cada modelo de colchón lleva su propia tapa y su propia platabanda. Solo los núcleos maduran.
+function tipoDe(sku){ sku=String(sku||''); return sku.startsWith('T-')?'tapa':(sku.startsWith('P-')?'platabanda':'nucleo'); }
+function skuTapa(sku_pf){ return 'T-'+sku_pf; }
+function skuPlat(sku_pf){ return 'P-'+sku_pf; }
+function madDiasDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):0; }
+// días de consumo que cubre el punto de pedido: los núcleos su maduración; tapas y platabandas 1 día
+function coberturaDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):1; }
+const TIPO_TXT={nucleo:'Núcleos',tapa:'Tapas',platabanda:'Platabandas'};
+let TIPO='nucleo'; // pestaña del Dashboard
 function progDe(p){const m=(p.descripcion||p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
 function medida(sku){const rest=String(sku||'').replace(/^N\d{3}/,'');const m=rest.match(/(\d{2,3})\s*[xX]\s*(\d{3})/);return m?`Medida ${m[1]} × ${m[2]}`:''}
 
@@ -655,14 +667,14 @@ async function calcularMetricas(){
   });
   const pend={};res.forEach(r=>{pend[r.sku]=(pend[r.sku]||0)+(r.cantidad||0)});
   const m={};
-  prods.forEach(p=>{m[p.sku]={sku:p.sku,nombre:p.nombre||'',prog:progDe(p),stock:0,disp:0,madurando:0,fabricando:0,dias:{},cons28:0,forzado:!!p.forzar_diario};});
+  prods.forEach(p=>{m[p.sku]={sku:p.sku,tipo:tipoDe(p.sku),nombre:p.nombre||'',prog:progDe(p),stock:0,disp:0,madurando:0,fabricando:0,dias:{},cons28:0,forzado:!!p.forzar_diario};});
   const madMs=mad*86400000;
   activos.forEach(u=>{
     const b=m[u.sku];if(!b)return;
     if(u.estado==='pendiente')b.fabricando++;
     else if(u.estado==='stock'){b.stock++;
       const fab=u.fabricada_at?new Date(u.fabricada_at):null;
-      if(fab&&(now-fab)>=madMs)b.disp++;else b.madurando++;
+      if(fab&&(now-fab)>=madDiasDe(u.sku)*86400000)b.disp++;else b.madurando++;
     }
   });
   consumo.forEach(u=>{
@@ -679,7 +691,7 @@ async function calcularMetricas(){
     b.pend=pend[b.sku]||0;
     b.saldo=b.disp+b.madurando+b.fabricando-b.pend;
     b.personalizado=b.forzado?false:(b.D<umbral);
-    b.ROP=Math.ceil(b.D*mad);
+    b.ROP=Math.ceil(b.D*coberturaDe(b.sku));
     b.bajoMin=(!b.personalizado)&&b.saldo<b.ROP;
     b.reponer=b.bajoMin?(b.ROP-b.saldo):0;
     // en uso: lo usa algún modelo, o aún tiene unidades/reservas vivas, o está forzado a diario
@@ -696,7 +708,7 @@ async function toggleForzado(sku,val){
     const b=MET[sku];const umbral=parseFloat(CFG.umbral_semanal),mad=CFG.maduracion;
     b.forzado=val;b.D=val?Math.max(b.Dreal,umbral):b.Dreal;
     b.personalizado=val?false:(b.D<umbral);
-    b.ROP=Math.ceil(b.D*mad);b.bajoMin=(!b.personalizado)&&b.saldo<b.ROP;b.reponer=b.bajoMin?(b.ROP-b.saldo):0;
+    b.ROP=Math.ceil(b.D*coberturaDe(b.sku));b.bajoMin=(!b.personalizado)&&b.saldo<b.ROP;b.reponer=b.bajoMin?(b.ROP-b.saldo):0;
     toast(val?'★ Forzado a diario: '+sku:'Marca quitada: '+sku,'ok');
     render();
   }catch(e){toast('No se pudo guardar. ¿Ejecutaste forzar_diario.sql? '+(e.message||''),'err');}
@@ -761,7 +773,8 @@ if(!window._dashResize){ window._dashResize=true; window.addEventListener('resiz
 
 // ---- render ----
 // el Dashboard solo cuenta los núcleos en uso (los antiguos sin modelo ni stock se ocultan, no se borran)
-function metEnUso(){ return Object.values(MET).filter(b=>b.enUso!==false); }
+function metEnUso(){ return Object.values(MET).filter(b=>b.enUso!==false && (b.tipo||'nucleo')===TIPO); }
+function setTipo(t){ TIPO=t; KPI=null; PROG=null; MEDIDA=''; const ms=$('#medidaSel'); if(ms)ms.value=''; render(); }
 function render(){
   const arr=metEnUso();
   const disp=arr.reduce((s,b)=>s+b.disp,0),madur=arr.reduce((s,b)=>s+b.madurando,0),fab=arr.reduce((s,b)=>s+b.fabricando,0);
@@ -909,11 +922,13 @@ function render(){
       }).join('')}
     </div></div>`;
 
-  $('#progs').innerHTML=`<div id="dashRow2" style="display:grid;gap:12px;margin-bottom:12px">${cobCard}${repoCard}</div>${progsCard}`;
+  const tt=$('#tipoTabs'); if(tt) tt.innerHTML=['nucleo','tapa','platabanda'].map(t=>`<button class="${TIPO===t?'on':''}" onclick="setTipo('${t}')">${TIPO_TXT[t]}</button>`).join('');
+  // los programas (N001…) son de los núcleos; tapas y platabandas van por modelo
+  $('#progs').innerHTML=`<div id="dashRow2" style="display:grid;gap:12px;margin-bottom:12px">${cobCard}${repoCard}</div>${TIPO==='nucleo'?progsCard:''}`;
   layoutDash();
 
   // grid header
-  let titulo='Núcleos';
+  let titulo=TIPO_TXT[TIPO];
   if(KPI==='stock')titulo='Núcleos en stock';else if(KPI==='bajo')titulo='Núcleos bajo mínimo';
   else if(KPI==='neg')titulo='Núcleos con saldo negativo';else if(PROG)titulo='Programa '+PROG;
   $('#gridTitle').textContent=titulo;
@@ -1172,12 +1187,16 @@ const Prod = {
   },
 
   // ---- calcular_lanzamiento (réplica) ----
-  loteDe(nuc){ const b=MET[nuc]; const prog=b?b.prog:nuc.slice(0,4); return Math.max(1, LOTES[prog]||LOTE_DFLT); },
+  loteDe(nuc){ if(tipoDe(nuc)!=='nucleo') return 1; const b=MET[nuc]; const prog=b?b.prog:nuc.slice(0,4); return Math.max(1, LOTES[prog]||LOTE_DFLT); },
   redondearLote(x,l){ return x>0? Math.ceil(x/l)*l : 0; },
 
   async recompute(){
     const demanda={};
-    this.lineas.forEach(l=>{ if(l.sku_nucleo && l.cant>0) demanda[l.sku_nucleo]=(demanda[l.sku_nucleo]||0)+l.cant; });
+    this.lineas.forEach(l=>{ if(l.cant<=0) return;
+      if(l.sku_nucleo) demanda[l.sku_nucleo]=(demanda[l.sku_nucleo]||0)+l.cant;
+      // cada modelo lleva su tapa y su platabanda (fase 2), lleve núcleo o no
+      [skuTapa(l.sku_pf),skuPlat(l.sku_pf)].forEach(s=>{ demanda[s]=(demanda[s]||0)+l.cant; });
+    });
     const cant={}, tipo={};
     for(const nuc in demanda){
       const d=demanda[nuc], b=MET[nuc];
@@ -1231,8 +1250,11 @@ const Prod = {
 
     // núcleos
     const ent=Object.entries(this.cant).filter(([s,n])=>n>0);
-    const gS=ent.filter(([s])=>this.tipo[s]!=='personalizado').sort();
-    const gP=ent.filter(([s])=>this.tipo[s]==='personalizado').sort();
+    const esNuc=([s])=>tipoDe(s)==='nucleo';
+    const gS=ent.filter(e=>esNuc(e)&&this.tipo[e[0]]!=='personalizado').sort();
+    const gP=ent.filter(e=>esNuc(e)&&this.tipo[e[0]]==='personalizado').sort();
+    const gT=ent.filter(([s])=>tipoDe(s)==='tapa').sort();
+    const gPl=ent.filter(([s])=>tipoDe(s)==='platabanda').sort();
     const grp=(tit,arr)=>{
       if(!arr.length)return '';
       const minsArr=arr.map(([s,n])=>this.minutosDe(s,n));
@@ -1248,7 +1270,7 @@ const Prod = {
       </div>`;}).join('');
     };
     $('#prodNucleos').innerHTML = ent.length?
-      (grp('📦 De stock (diarios)',gS)+grp('✎ Personalizados',gP)+
+      (grp('📦 Núcleos de stock (diarios)',gS)+grp('✎ Núcleos personalizados',gP)+grp('▭ Tapas',gT)+grp('▬ Platabandas',gPl)+
        `<div style="padding:10px 16px"><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Prod.borrarNucSel()">Borrar seleccionados</button></div>`)
       : '<div class="vacio">Nada que lanzar: el saldo cubre el parte.</div>';
     $('#prodNucleos').querySelectorAll('.ncant').forEach(inp=>inp.addEventListener('change',e=>{
@@ -1426,9 +1448,15 @@ const Prod = {
     if(!confirm(`¿Lanzar ${items.length} OT (${items.reduce((s,[,n])=>s+n,0)} uds) y generar los partes?`)) return;
     $('#btnLanzar').disabled=true; $('#btnLanzar').textContent='Lanzando…';
     try{
-      const nucsDem=[...new Set(this.lineas.filter(l=>l.sku_nucleo).map(l=>l.sku_nucleo))];
+      const nucsDem=[...new Set(this.lineas.flatMap(l=>[l.sku_nucleo,skuTapa(l.sku_pf),skuPlat(l.sku_pf)]).filter(Boolean))];
       const pools=await this.construirPools(nucsDem);
       const nombres={}; (await selectAll('productos','sku,nombre')).forEach(p=>nombres[p.sku]=p.nombre||p.sku);
+      // tapas y platabandas que aún no existen como producto: se crean con el nombre de su modelo
+      const nuevosComp=[...new Set([...items.map(([s])=>s),...nucsDem])].filter(s=>tipoDe(s)!=='nucleo' && !(s in nombres)).map(s=>{
+        const m=this.modelosMap[s.slice(2)]||{}; const nom=(tipoDe(s)==='tapa'?'Tapa ':'Platabanda ')+(m.nombre||s.slice(2))+(m.medida?' '+m.medida:'');
+        nombres[s]=nom; return {sku:s,nombre:nom,descripcion:TIPO_TXT[tipoDe(s)]};
+      });
+      for(let i=0;i<nuevosComp.length;i+=200){ const {error}=await sb.from('productos').upsert(nuevosComp.slice(i,i+200),{onConflict:'sku'}); if(error)throw error; }
       const otByNuc={}, nucRows=[], nuevos=[];
       for(const [sku,n] of items){
         const nombre=nombres[sku]||sku;
@@ -1451,6 +1479,8 @@ const Prod = {
       [[bA,'disponible'],[bB,'maduracion'],[bC,'pendiente']].forEach(([blk,name])=>{
         blk.forEach(x=>{ if(x.nucleo) res.push({parte_ref:this.parteNum||null,sku:x.nucleo,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:name}); });
       });
+      // reservas de tapas y platabandas de cada modelo
+      this.repartirComp(pools,otByNuc).forEach(x=>res.push({parte_ref:this.parteNum||null,sku:x.sku,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:x.bloque}));
       if(res.length){ let e3=(await sb.from('reservas').insert(res)).error; if(e3)throw e3; }
       // documento de parte + etiquetas QR
       const docParte=this.imprimirParte(nucRows,_bA,_bB,_bC,_bD);
@@ -1483,7 +1513,7 @@ const Prod = {
     stock.filter(u=>u.estado==='stock').forEach(u=>{
       const p=pools[u.sku]||(pools[u.sku]={disp:{},madur:{},fabri:{}});
       const fab=u.fabricada_at?new Date(u.fabricada_at):null;
-      const madura=fab&&(now-fab)>=madMs;
+      const madura=fab&&(now-fab)>=madDiasDe(u.sku)*86400000;
       const key=madura?'disp':'madur';
       const g=p[key][u.ot]||(p[key][u.ot]={ot:u.ot,fab:u.fabricada_at,n:0}); g.n++;
     });
@@ -1505,14 +1535,28 @@ const Prod = {
         disp:Object.values(p.disp).filter(g=>g.n>0).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))),
         // madurando: disponible = fabricada_at + maduración
         madur:Object.values(p.madur).filter(g=>g.n>0).map(g=>({ot:g.ot,n:g.n,
-          dispDate:g.fab?new Date(new Date(g.fab).getTime()+madMs).toISOString():null
+          dispDate:g.fab?new Date(new Date(g.fab).getTime()+madDiasDe(sku)*86400000).toISOString():null
         })).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))),
         // pendiente/fabricando: disponible = lanzada_at + días fabricación + maduración
         fabri:Object.values(p.fabri).filter(g=>g.n>0).map(g=>({ot:g.ot,n:g.n,
-          dispDate:g.lz?new Date(new Date(g.lz).getTime()+fabMs+madMs).toISOString():null
+          dispDate:g.lz?new Date(new Date(g.lz).getTime()+fabMs+madDiasDe(sku)*86400000).toISOString():null
         })).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))),
       };
     }
+    return out;
+  },
+  // reparte tapas y platabandas a cada modelo del parte: stock, luego OT abiertas, luego la OT nueva
+  repartirComp(pools,otByNuc){
+    const out=[];
+    this.lineas.forEach(l=>{ if(l.cant<=0) return;
+      [skuTapa(l.sku_pf),skuPlat(l.sku_pf)].forEach(sku=>{
+        let rest=l.cant; const p=pools[sku]||{disp:[],madur:[],fabri:[]};
+        [['disp','disponible'],['madur','disponible'],['fabri','pendiente']].forEach(([k,bl])=>{
+          while(rest>0&&p[k].length){ const g=p[k][0],t=Math.min(rest,g.n); out.push({sku,ot:g.ot,sku_pf:l.sku_pf,cant:t,bloque:bl}); g.n-=t;rest-=t; if(g.n<=0)p[k].shift(); }
+        });
+        if(rest>0) out.push({sku,ot:otByNuc[sku]||null,sku_pf:l.sku_pf,cant:rest,bloque:'pendiente'});
+      });
+    });
     return out;
   },
   repartirFifo(pools,otByNuc){
@@ -1569,6 +1613,8 @@ const Prod = {
 .mini div .k{font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow'}
 </style>`;
     // hoja núcleos
+    const compRows=nucRows.filter(x=>tipoDe(x.sku)!=='nucleo');
+    nucRows=nucRows.filter(x=>tipoDe(x.sku)==='nucleo');
     const tot=nucRows.reduce((s,x)=>s+x.cant,0);
     const gS=nucRows.filter(x=>x.tipo!=='personalizado'),gP=nucRows.filter(x=>x.tipo==='personalizado');
     const grp=(tit,arr)=>arr.length?`<tr class="grp"><td colspan="4">${tit} · ${arr.reduce((s,x)=>s+x.cant,0)} uds</td></tr>`+
@@ -1578,6 +1624,13 @@ const Prod = {
       <table><tr><th>OT</th><th>SKU núcleo</th><th>Descripción</th><th class="n">Cant.</th></tr>
       ${grp('De stock (diarios)',gS)}${grp('Personalizados',gP)}
       <tr class="tot"><td colspan="3">TOTAL</td><td class="n">${tot}</td></tr></table>`;
+    // hojas de tapas y platabandas (fase 2: corte y cosido)
+    const hojaComp=(tipo,tit)=>{ const arr=compRows.filter(x=>tipoDe(x.sku)===tipo); if(!arr.length) return '';
+      const t=arr.reduce((s,x)=>s+x.cant,0);
+      return `<div class="pb"></div><h1>Parte de fabricación · ${tit}</h1><div class="meta">Corte y cosido. &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; OT: <b>${arr.length}</b> &nbsp; Unidades: <b>${t}</b></div>
+        <table><tr><th>OT</th><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${arr.map(x=>`<tr><td><b>${esc(x.ot)}</b></td><td>${esc(x.sku)}</td><td>${esc(x.nombre||'')}</td><td class="n">${x.cant}</td></tr>`).join('')}
+        <tr class="tot"><td colspan="3">TOTAL</td><td class="n">${t}</td></tr></table>`; };
+    const hojaT=hojaComp('tapa','Tapas'), hojaPl=hojaComp('platabanda','Platabandas');
     // hojas de modelos por bloque
     const hojaMod=(titulo,sub,arr,conFecha)=>{
       if(!arr.length)return'';
@@ -1607,7 +1660,7 @@ const Prod = {
         <table><tr><th>Código</th><th>Descripción</th><th class="n">Cant.</th></tr>${rows}<tr class="tot"><td colspan="2">TOTAL</td><td class="n">${t}</td></tr></table>`;
     })();
     const aviso=opts.aviso?`<div style="border:2px dashed #B85C38;color:#8a4426;padding:6px 10px;margin-bottom:8px;font-size:9pt">${esc(opts.aviso)}</div>`:'';
-    const html=`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${aviso}${hojaNuc}${h1}${h2}${h3}${h4}${hE1}${hE2}
+    const html=`<html><head><title>Parte ${esc(ref)}</title>${css}</head><body>${aviso}${hojaNuc}${hojaT}${hojaPl}${h1}${h2}${h3}${h4}${hE1}${hE2}
       <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
     ventanaImpresion(html, 'Parte '+ref);
     return html;
@@ -1636,7 +1689,7 @@ const Prod = {
       </style></head><body>
       ${units.map(u=>{
         const lanz=u.lanzada_at||new Date().toISOString();
-        const disp=new Date(new Date(lanz).getTime()+madDias*86400000).toISOString();
+        const disp=new Date(new Date(lanz).getTime()+((CFG.dias_fabricacion||0)+madDiasDe(u.sku))*86400000).toISOString();
         return `<div class="et">
           <div class="qr" id="q_${u.id}"></div>
           <div class="sku">${esc(u.sku)}</div>
@@ -1715,8 +1768,9 @@ const Partes = {
     const el=$('#prodPartes'); if(!el)return;
     if(!this.rows.length){ el.innerHTML='<div class="vacio">Todavía no se ha lanzado ningún parte.</div>'; return; }
     el.innerHTML = this.rows.map(g=>{
-      const porModelo={};
-      g.lineas.forEach(l=>{ porModelo[l.sku_pf]=(porModelo[l.sku_pf]||0)+(l.cantidad||0); });
+      const porModelo={}, porTipo={};
+      g.lineas.forEach(l=>{ const k=l.sku_pf+'|'+tipoDe(l.sku); porTipo[k]=(porTipo[k]||0)+(l.cantidad||0); });
+      Object.entries(porTipo).forEach(([k,n])=>{ const sp=k.split('|')[0]; porModelo[sp]=Math.max(porModelo[sp]||0,n); });
       const totalUds=Object.values(porModelo).reduce((s,n)=>s+n,0);
       const fecha=new Date(g.fecha).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
       const modelosHtml=Object.entries(porModelo).map(([sku_pf,cant])=>{
@@ -1779,7 +1833,7 @@ const Partes = {
       const mm={}; mods.forEach(m=>mm[m.sku_pf]=m);
       const nucRows=(ords||[]).filter(o=>o.estado!=='anulada').map(o=>({ot:o.ot,sku:o.sku,nombre:o.nombre,cant:o.cantidad,tipo:(MET[o.sku]&&MET[o.sku].personalizado)?'personalizado':'stock'}));
       const bloques={disponible:[],maduracion:[],pendiente:[]};
-      (res||[]).forEach(r=>{ const m=mm[r.sku_pf]||{}; (bloques[r.bloque]||bloques.pendiente).push({sku_pf:r.sku_pf,desc:m.nombre||'',nucleo:r.sku,ot:r.ot,cant:r.cantidad,especial:!!m.especial,dispDate:null}); });
+      (res||[]).filter(r=>tipoDe(r.sku)==='nucleo').forEach(r=>{ const m=mm[r.sku_pf]||{}; (bloques[r.bloque]||bloques.pendiente).push({sku_pf:r.sku_pf,desc:m.nombre||'',nucleo:r.sku,ot:r.ot,cant:r.cantidad,especial:!!m.especial,dispDate:null}); });
       const fecha=(res&&res[0]&&res[0].created_at)||(ords&&ords[0]&&ords[0].lanzada_at)||null;
       Prod.imprimirParte(nucRows,bloques.disponible,bloques.maduracion,bloques.pendiente,[],{ref:parte_ref,fecha,
         aviso:'Copia reconstruida con los datos actuales (este parte se lanzó antes de guardar copias). Las cantidades son las reservas que quedan; no incluye los modelos sin núcleo ni las fechas previstas.'});
@@ -3546,6 +3600,21 @@ const Alta = {
     }catch(e){ toast('Error al leer el archivo: '+(e.message||e),'err'); }
   },
 
+  // crea (o renombra) la tapa T-<modelo> y la platabanda P-<modelo> de cada modelo
+  async crearComponentes(btn,modelos){
+    if(btn) btn.disabled=true;
+    try{
+      const mods=modelos||await selectAll('modelos','sku_pf,nombre,medida');
+      const rows=[];
+      mods.forEach(m=>{ const suf=(m.nombre||m.sku_pf)+(m.medida?' '+m.medida:'');
+        rows.push({sku:skuTapa(m.sku_pf),nombre:'Tapa '+suf,descripcion:'Tapas'},{sku:skuPlat(m.sku_pf),nombre:'Platabanda '+suf,descripcion:'Platabandas'}); });
+      for(let i=0;i<rows.length;i+=500){ const {error}=await sb.from('productos').upsert(rows.slice(i,i+500),{onConflict:'sku'}); if(error)throw error; }
+      if(btn){ toast(`✓ ${rows.length/2} tapas y ${rows.length/2} platabandas creadas`,'ok'); await refrescarMet(true); render(); Prod.refs=false; }
+      return rows.length;
+    }catch(e){ if(btn) toast('Error: '+(e.message||e),'err'); else throw e; }
+    finally{ if(btn) btn.disabled=false; }
+  },
+
   render(){
     const rs=this.modelos.slice(0,300);
     $('#altaTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -3603,6 +3672,7 @@ const Alta = {
         if(error)throw error;
         movidas+=(data||[]).length;
       }
+      try{ await this.crearComponentes(null,this.modelos); }catch(e){ console.warn('tapas/platabandas:',e.message); }
       toast(`✓ ${this.modelos.length} modelos importados`+(this.nucleosNuevos.length?` · ${this.nucleosNuevos.length} núcleos creados`:'')+(movidas?` · ${movidas} reservas pasadas al núcleo nuevo`:''),'ok');
       this.modelos=[];this.nucleos=[];this.nucleosNuevos=[];
       $('#altaTabla').innerHTML='';$('#altaAviso').innerHTML='';
@@ -3629,7 +3699,7 @@ async function open_detalle(sku,nombre){
     const ords=(await sb.from('ordenes').select('*').eq('sku',sku).order('ot')).data||[];
     let uds=[]; for(let f=0;;f+=1000){ const {data}=await sb.from('unidades').select('id,ot,estado,fabricada_at,lanzada_at').eq('sku',sku).range(f,f+999); uds=uds.concat(data||[]); if(!data||data.length<1000)break; }
     const st=uds.filter(u=>u.estado==='stock').length, pe=uds.filter(u=>u.estado==='pendiente').length, co=uds.filter(u=>u.estado==='consumida').length;
-    const now=new Date(), mad=CFG.maduracion*86400000;
+    const now=new Date(), mad=madDiasDe(sku)*86400000;
     // OT activas (con stock o pendiente)
     const udByOt={}; uds.forEach(u=>{(udByOt[u.ot]=udByOt[u.ot]||[]).push(u);});
     // OT con unidades de este núcleo cuya orden figura con otro SKU: las OT de inventario (OTINVaaaammdd)
