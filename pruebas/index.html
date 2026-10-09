@@ -212,7 +212,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navEst" onclick="nav('est')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg><span>Estándares</span></button>
     <div class="grp">Análisis</div>
     <button class="nav" id="navProdv" onclick="nav('prodv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10l4 4"/><circle cx="12" cy="12" r="10"/></svg><span>Productividad</span></button>
-    <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempo por núcleo</span></button>
+    <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempos</span></button>
     <button class="nav" id="navApr" onclick="nav('apr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span>Aprobaciones</span></button>
     <div class="grp">Ajustes</div>
     <button class="nav" id="navPers" onclick="nav('pers')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg><span>Personalización</span></button>
@@ -430,6 +430,10 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="h1sub">Unidades que se fabrican por lote de cada programa</div>
       <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confLotes"></div></div>
       <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveLotes()">Guardar lotes</button>
+      <div class="h1" style="margin-top:28px;font-size:20px">Tiempos y puestos por fase</div>
+      <div class="h1sub">Tiempo teórico por unidad y puesto de cada fase del colchón (los núcleos van por programa, arriba). Se usa hasta tener tiempo aprendido.</div>
+      <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confFases"></div></div>
+      <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveFases()">Guardar fases</button>
       <div style="height:20px"></div>
     </div>
 
@@ -491,14 +495,16 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         <button id="prodvTabLive" class="on" onclick="Prodv.setMode('live')">En vivo</button>
         <button id="prodvTabTurno" onclick="Prodv.setMode('turno')">Turno</button>
       </div>
+      <div class="seg" id="prodvFases" style="margin-top:8px;flex-wrap:wrap"></div>
       <div id="prodvLista" style="margin-top:12px"></div>
     </div>
 
     <div class="content" id="view-tsku" style="display:none">
-      <div class="h1">Tiempo por núcleo</div>
-      <div class="h1sub">Tiempo medio de fabricación aprendido por núcleo</div>
+      <div class="h1">Tiempos</div>
+      <div class="h1sub">Tiempo medio aprendido por referencia, separado por fase del colchón</div>
+      <div class="seg" id="tskuFases" style="margin-top:10px;flex-wrap:wrap"></div>
       <div style="display:flex;gap:10px;margin:12px 0">
-        <input id="tskuSearch" placeholder="Buscar núcleo…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+        <input id="tskuSearch" placeholder="Buscar referencia…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div class="card"><div id="tskuTabla"></div></div>
     </div>
@@ -604,6 +610,21 @@ function madDiasDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):0; }
 // días de consumo que cubre el punto de pedido: los núcleos su maduración; tapas y platabandas 1 día
 function coberturaDe(sku){ return tipoDe(sku)==='nucleo'?(CFG.maduracion||0):1; }
 const TIPO_TXT={nucleo:'Núcleos',tapa:'Tapas',platabanda:'Platabandas'};
+// FASES del colchón para tiempos y puestos. Núcleos, tapas y platabandas son stock; pegado, cosido y
+// embalaje van en línea y sus tiempos se guardan con el código <modelo>_PEG / _COS / _EMB.
+// "clave" es la fila de lotes_programa donde se guardan su tiempo teórico y su puesto
+// (los núcleos los siguen teniendo por programa N001…).
+const FASES=[
+  {k:'nucleo',txt:'Núcleos'},
+  {k:'tapa',txt:'Tapas',suf:'_TAPA',clave:'TAPA'},
+  {k:'platabanda',txt:'Platabandas',suf:'_PTB',clave:'PTB'},
+  {k:'pegado',txt:'Pegado del colchón',suf:'_PEG',clave:'PEG'},
+  {k:'cosido',txt:'Cosido',suf:'_COS',clave:'COS'},
+  {k:'embalaje',txt:'Embalaje',suf:'_EMB',clave:'EMB'}];
+function faseDe(sku){ sku=String(sku||''); const f=FASES.find(f=>f.suf&&sku.endsWith(f.suf)); return f?f.k:'nucleo'; }
+function faseInfo(k){ return FASES.find(f=>f.k===k)||FASES[0]; }
+// fila de lotes_programa que manda en un sku: su programa si es núcleo, la de su fase si no
+function claveTiempoDe(sku){ const f=faseInfo(faseDe(sku)); return f.clave||progDe({sku}); }
 let TIPO='nucleo'; // pestaña del Dashboard
 function progDe(p){const m=(p.descripcion||p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
 function medida(sku){const rest=String(sku||'').replace(/^N\d{3}/,'');const m=rest.match(/(\d{2,3})\s*[xX]\s*(\d{3})/);return m?`Medida ${m[1]} × ${m[2]}`:''}
@@ -1017,7 +1038,7 @@ const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes','cSinNucleo'
 function nav(v){
   const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',
     cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',cSinNucleo:'Colchones sin núcleo',
-    inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempo por núcleo',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+    inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempos',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
   const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
@@ -1128,15 +1149,15 @@ const Prod = {
   },
 
   TIEMPO_MIN_UDS:7, TIEMPO_DEFAULT_SEG:270, // 4min 30s por defecto (si el programa no tiene tiempo teórico propio) hasta tener al menos 7 uds fabricadas
-  // tiempo teórico por defecto para un sku: el de su programa (N001-N012) si está configurado, si no el general
-  tiempoDefaultDe(sku){ const prog=progDe({sku}); return (this.tiempoTeoricoPrograma&&this.tiempoTeoricoPrograma[prog])||this.TIEMPO_DEFAULT_SEG; },
+  // tiempo teórico por defecto para un sku: el de su programa (N001-N012) o el de su fase si está configurado, si no el general
+  tiempoDefaultDe(sku){ const prog=claveTiempoDe(sku); return (this.tiempoTeoricoPrograma&&this.tiempoTeoricoPrograma[prog])||this.TIEMPO_DEFAULT_SEG; },
 
   // segundos por unidad para un núcleo: el aprendido si ya hay suficientes uds, si no el valor por defecto
   segPorUdDe(sku){ const t=this.tiempos[sku]; return (t && t.n>=this.TIEMPO_MIN_UDS && t.seg>0)?t.seg:this.tiempoDefaultDe(sku); },
 
   // coste/hora real a aplicar a un núcleo: el del puesto que lo fabrica (suma de sus trabajadores) o el por defecto
   costeHoraDe(sku){
-    const programa=progDe({sku});
+    const programa=claveTiempoDe(sku);
     const puestoId=this.puestoPrograma&&this.puestoPrograma[programa];
     const cp=puestoId&&this.costePuesto[puestoId];
     return cp||CFG.coste_hora_operario||0;
@@ -2159,6 +2180,34 @@ const Conf = {
           <input id="ttp_${p}" type="number" min="0" step="0.1" value="${info.tiempo_teorico_seg?(info.tiempo_teorico_seg/60):4.5}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"><span style="font-size:11px;color:var(--muted)">min/ud</span></div>
       </div>`;
     }).join('');
+    const fasesEl=$('#confFases');
+    if(fasesEl) fasesEl.innerHTML=FASES.filter(f=>f.clave).map(f=>{
+      const info=this.lotes[f.clave]||{};
+      return `<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <label style="font-size:13px;flex:1;min-width:160px"><b>${esc(f.txt)}</b></label>
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Puesto</span>
+          <select id="fpuesto_${f.clave}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+            <option value="">Sin asignar</option>
+            ${puestos.map(pu=>`<option value="${pu.id}" ${info.puesto_id===pu.id?'selected':''}>${esc(pu.nombre)}</option>`).join('')}
+          </select></div>
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Tiempo teórico</span>
+          <input id="fttp_${f.clave}" type="number" min="0" step="0.1" value="${info.tiempo_teorico_seg?(info.tiempo_teorico_seg/60):4.5}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"><span style="font-size:11px;color:var(--muted)">min/ud</span></div>
+      </div>`;
+    }).join('');
+  },
+  async saveFases(){
+    try{
+      const filas=FASES.filter(f=>f.clave).map(f=>({
+        programa:f.clave, lote:1,
+        puesto_id:document.getElementById('fpuesto_'+f.clave).value?Number(document.getElementById('fpuesto_'+f.clave).value):null,
+        tiempo_teorico_seg:Math.round((parseFloat(document.getElementById('fttp_'+f.clave).value)||4.5)*60)
+      }));
+      const {error}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
+      if(error)throw error;
+      filas.forEach(f=>{ this.lotes[f.programa]={lote:f.lote,puesto_id:f.puesto_id,tiempo_teorico_seg:f.tiempo_teorico_seg}; });
+      if(typeof Prod!=='undefined' && Prod.cargarCostesPuesto) await Prod.cargarCostesPuesto();
+      toast('✓ Fases guardadas','ok');
+    }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
   },
   async guardarCosteDefecto(){
     try{
@@ -2658,6 +2707,12 @@ function solaparSeg(iniMs,finMs,intervalos){
 function ymdLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 const Prodv = {
   mode:'live',
+  fase:'todas', // fase del colchón a mostrar (o todas)
+  setFase(k){ this.fase=k; this.reload(); },
+  pintarFases(){
+    const el=$('#prodvFases'); if(!el) return;
+    el.innerHTML=[{k:'todas',txt:'Todas las fases'},...FASES].map(f=>`<button class="${this.fase===f.k?'on':''}" onclick="Prodv.setFase('${f.k}')">${esc(f.txt)}</button>`).join('');
+  },
   rangoMode:'dia',
   rows:[],
   alerts:[],
@@ -2730,14 +2785,25 @@ const Prodv = {
       const finDia=new Date(rango.fin.getFullYear(),rango.fin.getMonth(),rango.fin.getDate(),23,59,59,999);
       const ini=rango.ini.toISOString(), fin=finDia.toISOString();
       const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
-      const [ops,evs,pars,turs,tsku,roster]=await Promise.all([
+      this.pintarFases();
+      let [ops,evs,pars,turs,tsku,roster,lps]=await Promise.all([
         safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
         safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('turnos').select('puesto_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[]),
-        safe(sb.from('usuarios').select('id,nombre,rol,puesto_id').eq('activo',true).order('nombre'),[])
+        safe(sb.from('usuarios').select('id,nombre,rol,puesto_id').eq('activo',true).order('nombre'),[]),
+        safe(sb.from('lotes_programa').select('programa,puesto_id'),[])
       ]);
+      // con una fase elegida solo cuentan sus unidades, y salen los puestos que la han trabajado
+      // en el rango o que la tienen asignada (Ajustes → Lotes); turno y pausas son del puesto entero
+      if(this.fase!=='todas'){
+        const fi=faseInfo(this.fase);
+        evs=evs.filter(e=>faseDe(e.sku)===this.fase);
+        const asign=new Set(lps.filter(r=>r.puesto_id && (fi.clave?r.programa===fi.clave:/^N\d{3}$/.test(r.programa))).map(r=>String(r.puesto_id)));
+        const conEv=new Set(evs.map(e=>String(e.puesto_id)));
+        ops=ops.filter(o=>asign.has(String(o.id))||conEv.has(String(o.id)));
+      }
       const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.mediana_seg||t.segundos||t.mediana||0)||0; });
       const now=new Date();
       this.alerts=[];
@@ -3089,7 +3155,7 @@ const Prodv = {
   setFiltroPuesto(id){ this.filtroPuesto=id||null; this.paint(); },
   paint(){
     const rows=this.rows||[];
-    if(!rows.length){ $('#prodvLista').innerHTML='<div class="vacio">No hay operarios activos o no hay datos de productividad.</div>'; return; }
+    if(!rows.length){ $('#prodvLista').innerHTML='<div class="vacio">'+(this.fase!=='todas'?'Ningún puesto ha trabajado '+esc(faseInfo(this.fase).txt.toLowerCase())+' en este rango ni la tiene asignada.':'No hay operarios activos o no hay datos de productividad.')+'</div>'; return; }
     const prowsAll=this.puestoRows&&this.puestoRows.length?this.puestoRows:rows;
     let prows=this.filtroPuesto?prowsAll.filter(p=>String(p.id)===String(this.filtroPuesto)):prowsAll;
     if(!prows.length){ this.filtroPuesto=null; prows=prowsAll; }
@@ -3177,7 +3243,8 @@ const ProdvOld = {
 //  TIEMPO POR NÚCLEO
 // ============================================================
 const Tsku = {
-  data:[],
+  data:[], fase:'nucleo',
+  setFase(k){ this.fase=k; this.paint(); },
   async reload(){
     $('#tskuTabla').innerHTML='<div class="loading">Cargando…</div>';
     try{ const {data}=await sb.from('tiempos_sku').select('*').eq('vigente',true).order('sku');
@@ -3185,11 +3252,14 @@ const Tsku = {
     }catch(e){ $('#tskuTabla').innerHTML='<div class="vacio">Aún no hay tiempos registrados (se aprenden con el uso).</div>'; }
   },
   paint(){
+    const n={}; this.data.forEach(t=>{ const k=faseDe(t.sku); n[k]=(n[k]||0)+1; });
+    const fe=$('#tskuFases'); if(fe) fe.innerHTML=FASES.map(f=>`<button class="${this.fase===f.k?'on':''}" onclick="Tsku.setFase('${f.k}')">${esc(f.txt)}${n[f.k]?' · '+n[f.k]:''}</button>`).join('');
+    const fi=faseInfo(this.fase);
     const q=($('#tskuSearch').value||'').toLowerCase().trim();
-    let rs=this.data; if(q)rs=rs.filter(t=>(t.sku||'').toLowerCase().includes(q));
-    if(!rs.length){ $('#tskuTabla').innerHTML='<div class="vacio">Sin tiempos aún. Se van aprendiendo cuando los operarios fabrican.</div>'; return; }
+    let rs=this.data.filter(t=>faseDe(t.sku)===this.fase); if(q)rs=rs.filter(t=>(t.sku||'').toLowerCase().includes(q));
+    if(!rs.length){ $('#tskuTabla').innerHTML='<div class="vacio">Sin tiempos de '+esc(fi.txt.toLowerCase())+' aún. Se van aprendiendo cuando los operarios fabrican'+(fi.clave?'; mientras tanto se usa el tiempo teórico de la fase (Ajustes → Lotes)':'')+'.</div>'; return; }
     $('#tskuTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
+      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">${this.fase==='nucleo'?'Núcleo':'Referencia'}</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
       ${rs.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono';font-weight:700">${esc(t.sku)}</td>
         <td style="padding:9px 14px;color:var(--muted)">${esc(medida(t.sku)||'')}</td>
         <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${fmtDur(t.mediana_seg||t.segundos||t.mediana||0)}</td>
