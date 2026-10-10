@@ -344,6 +344,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       </div>
       <div id="pfKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0"></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <div class="seg" id="pfVista"></div>
         <div class="seg" id="pfTabs"></div>
         <select id="pfProg" onchange="PFv.paint()" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:13px"><option value="">Todos los tipos de núcleo</option></select>
         <input id="pfSearch" placeholder="Buscar PF, modelo o parte…" oninput="PFv.paint()" style="flex:1;min-width:200px;max-width:380px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
@@ -758,7 +759,9 @@ async function calcularMetricas(){
   // productos que usa algún modelo del catálogo (para no contar núcleos antiguos sin uso):
   // su núcleo y su tapa y platabanda (<modelo>_TAPA / <modelo>_PTB)
   const pUsados=(async()=>{ try{return await selectWhere('modelos','sku_pf,sku_nucleo');}catch(e){return null;} })();
-  const [prods,activos,consumo,res,usadosRows]=await Promise.all([pProds,pActivos,pConsumo,pReservas,pUsados]);
+  // demanda de colchones por modelo y día (PF lanzadas): da el consumo diario de su tapa y platabanda
+  const pDemPF=(async()=>{ try{ return await selectWhere('pf_ordenes','sku_pf,cantidad,lanzada_at,estado',q=>q.gte('lanzada_at',cutoff)); }catch(e){ return []; } })();
+  const [prods,activos,consumo,res,usadosRows,demPF]=await Promise.all([pProds,pActivos,pConsumo,pReservas,pUsados,pDemPF]);
   const usados=usadosRows?new Set(usadosRows.flatMap(r=>[r.sku_nucleo,skuTapa(r.sku_pf),skuPlat(r.sku_pf)]).filter(Boolean)):null;
 
   // nombres de programa: los del catálogo importado ("N013 · Nombre") mandan sobre la lista fija,
@@ -780,6 +783,10 @@ async function calcularMetricas(){
       if(!madDiasDe(u.sku) || (fab&&(now-fab)>=madDiasDe(u.sku)*86400000))b.disp++;else b.madurando++;
     }
   });
+  // tapas y platabandas: su "consumo" diario es la demanda de los partes (colchones lanzados de su modelo),
+  // así se pueden reponer por mínimo desde el principio, sin esperar a tener historial de consumo
+  const demDia={};
+  (demPF||[]).forEach(r=>{ if(r.estado==='anulada'||!r.lanzada_at) return; const d=r.lanzada_at.slice(0,10); const x=demDia[r.sku_pf]||(demDia[r.sku_pf]={}); x[d]=(x[d]||0)+(Number(r.cantidad)||0); });
   consumo.forEach(u=>{
     const b=m[u.sku];if(!b||!u.consumida_at)return;
     const day=u.consumida_at.slice(0,10);
@@ -787,6 +794,7 @@ async function calcularMetricas(){
     if((now-new Date(u.consumida_at))/1000<=28*86400)b.cons28++;
   });
   Object.values(m).forEach(b=>{
+    if(b.tipo!=='nucleo'){ const dd=demDia[modeloDe(b.sku)]; if(dd){ b.dias=Object.assign({},dd); b.porDemanda=true; } }
     const ds=Object.keys(b.dias).sort().reverse().slice(0,diasH);
     const tot=ds.reduce((s,d)=>s+b.dias[d],0);
     b.Dreal=ds.length?Math.round(tot/ds.length*100)/100:0;
@@ -2129,7 +2137,8 @@ const Vivo = {
       // las que están en curso no esperan
       ['pegado','cosido','embalaje'].forEach(k=>{ cola[k]=Math.max(0,cola[k]-(enCurso[k]||0)); });
       const stock={}; Object.values(MET).forEach(b=>{ const k=b.tipo||'nucleo'; const x=stock[k]||(stock[k]={disp:0,madur:0,fab:0,bajo:0}); x.disp+=b.disp; x.madur+=b.madurando; x.fab+=b.fabricando; if(b.bajoMin&&b.enUso!==false) x.bajo++; });
-      this.pintar({rows,hechas,enCurso,cola,stock,alerts:ctx.alerts,hayPF:pfu!==null});
+      let almacen=null; try{ const {count}=await sb.from('pf_unidades').select('id',{count:'exact',head:true}).eq('fase','terminado').is('expedido_at',null); almacen=count; }catch(e){}
+      this.pintar({rows,hechas,enCurso,cola,stock,alerts:ctx.alerts,hayPF:pfu!==null,almacen});
     }catch(e){ const el=$('#vivoFlow'); if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
     finally{ this.loading=false; }
   },
@@ -2157,7 +2166,7 @@ const Vivo = {
     const kpi=(v,t2,c)=>`<div class="card" style="padding:12px 14px;margin:0"><div style="font-family:'JetBrains Mono';font-size:24px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted)">${t2}</div></div>`;
     $('#vivoKpis').innerHTML=kpi(trab,'Puestos trabajando','var(--green)')+kpi(pau,'En pausa','var(--red)')+kpi(sin,'Sin actividad','var(--blue)')
       +kpi(d.hechas.nucleo||0,'Núcleos hoy','var(--terra)')+kpi((d.hechas.tapa||0)+(d.hechas.platabanda||0),'Tapas + platabandas hoy','var(--terra)')
-      +kpi(enLinea,'Colchones en línea','#7A4B8C')+kpi(d.hechas.embalaje||0,'Embalados hoy','var(--green)');
+      +kpi(enLinea,'Colchones en línea','#7A4B8C')+kpi(d.hechas.embalaje||0,'Embalados hoy','var(--green)')+(d.almacen!=null?kpi(d.almacen,'En almacén','var(--ink)'):'');
     $('#vivoAlertas').innerHTML=d.alerts.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${d.alerts.map(a=>`<span style="background:${a.sev==='bad'?'#F7E1DC':'#F7EDDF'};color:${a.sev==='bad'?'var(--red)':'#8a5a1e'};padding:6px 10px;font-size:12px;font-weight:700;border-radius:8px;max-width:100%">⚠ ${esc(a.msg)}</span>`).join('')}</div>`:'';
     const flecha=(txt,hot)=>`<div class="pv-arrow"><span class="ar">→</span>${txt!=null?`<span class="q${hot?' hot':''}">${txt}</span>`:''}</div>`;
     const stockKp=x=>[[x.disp,'disponibles','var(--terra)'],[x.madur,'madurando'],[x.fab,'por fabricar'],...(x.bajo?[[x.bajo,'bajo mínimo','var(--red)']]:[])];
@@ -2185,8 +2194,9 @@ const Vivo = {
 const PF_FASES=[{k:'pegado',n:3,txt:'Pegado',col:'pegado_at'},{k:'cosido',n:2,txt:'Cosido',col:'cosido_at'},{k:'embalaje',n:1,txt:'Embalado',col:'embalado_at'}];
 const PF_ORDEN={pegado:0,cosido:1,embalaje:2,terminado:3};
 const PFv = {
-  rows:[], uds:{}, estado:'abierta', loading:false,
+  rows:[], uds:{}, estado:'abierta', loading:false, vista:'pf', almacen:0,
   setEstado(e){ this.estado=e; this.paint(); },
+  setVista(v){ this.vista=v; this.paint(); },
   async reload(silent){
     if(this.loading) return; this.loading=true;
     const el=$('#pfLista'); if(!silent && el) el.innerHTML='<div class="loading">Cargando…</div>';
@@ -2194,6 +2204,8 @@ const PFv = {
       const {data,error}=await sb.from('pf_ordenes').select('*').order('pf',{ascending:false}).limit(1000);
       if(error) throw error;
       this.rows=data||[];
+      // colchones en el almacén de producto terminado (embalados, sin expedir)
+      try{ const {count}=await sb.from('pf_unidades').select('id',{count:'exact',head:true}).eq('fase','terminado').is('expedido_at',null); this.almacen=count||0; }catch(e){}
       // colchones de las PF abiertas (y de las últimas cerradas, para el resumen de hoy)
       const ids=this.rows.filter(r=>r.estado==='abierta'||(r.terminada_at&&Date.now()-new Date(r.terminada_at)<2*86400000)).map(r=>r.pf);
       this.uds={};
@@ -2204,7 +2216,7 @@ const PFv = {
       // una PF abierta con todos sus colchones embalados queda terminada
       for(const r of this.rows){
         const us=this.uds[r.pf]; if(r.estado!=='abierta'||!us||!us.length) continue;
-        const vivos=us.filter(u=>u.fase!=='anulada');
+        const vivos=us.filter(u=>u.fase!=='anulada'&&u.fase!=='baja');
         if(vivos.length && vivos.every(u=>u.fase==='terminado')){
           const fin=vivos.map(u=>u.embalado_at).filter(Boolean).sort().pop()||new Date().toISOString();
           const {error:e2}=await sb.from('pf_ordenes').update({estado:'terminada',terminada_at:fin,cantidad:vivos.length}).eq('pf',r.pf).eq('estado','abierta');
@@ -2217,11 +2229,16 @@ const PFv = {
   },
   // cuántos colchones de la PF han terminado cada fase
   avance(r){
-    const us=(this.uds[r.pf]||[]).filter(u=>u.fase!=='anulada');
+    const us=(this.uds[r.pf]||[]).filter(u=>u.fase!=='anulada'&&u.fase!=='baja');
     const hecho=k=>us.filter(u=>PF_ORDEN[u.fase]>PF_ORDEN[k]).length;
     return {n:us.length||r.cantidad, pegado:hecho('pegado'), cosido:hecho('cosido'), embalaje:hecho('embalaje'), cargado:!!this.uds[r.pf]};
   },
   paint(){
+    $('#pfVista').innerHTML=[['pf','Órdenes PF'],['almacen','Almacén · '+this.almacen],['calidad','Calidad']].map(([k,t])=>`<button class="${this.vista===k?'on':''}" onclick="PFv.setVista('${k}')">${t}</button>`).join('');
+    const enPF=this.vista==='pf';
+    ['#pfTabs','#pfSearch','#pfProg'].forEach(id=>{ const el=$(id); if(el) el.style.display=enPF?'':'none'; });
+    if(this.vista==='almacen') return this.paintAlmacen();
+    if(this.vista==='calidad') return this.paintCalidad();
     const tabs=[['abierta','Abiertas'],['terminada','Terminadas'],['anulada','Anuladas'],['todas','Todas']];
     const cuenta=e=>e==='todas'?this.rows.length:this.rows.filter(r=>r.estado===e).length;
     $('#pfTabs').innerHTML=tabs.map(([k,t])=>`<button class="${this.estado===k?'on':''}" onclick="PFv.setEstado('${k}')">${t} · ${cuenta(k)}</button>`).join('');
@@ -2230,7 +2247,7 @@ const PFv = {
     const esp={pegado:0,cosido:0,embalaje:0}; let hoyEmb=0; const hoy=ymdLocal(new Date());
     Object.values(this.uds).flat().forEach(u=>{ if(esp[u.fase]!=null && abiertas.some(r=>r.pf===u.pf)) esp[u.fase]++; if(u.embalado_at && ymdLocal(new Date(u.embalado_at))===hoy) hoyEmb++; });
     const kpi=(v,t,c)=>`<div class="card" style="padding:14px 16px;margin:0"><div style="font-family:'JetBrains Mono';font-size:26px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted)">${t}</div></div>`;
-    $('#pfKpis').innerHTML=kpi(abiertas.length,'PF abiertas','var(--ink)')+kpi(esp.pegado,'Esperan 3 · Pegado','var(--terra)')+kpi(esp.cosido,'Esperan 2 · Cosido','var(--blue)')+kpi(esp.embalaje,'Esperan 1 · Embalado','#7A4B8C')+kpi(hoyEmb,'Embalados hoy','var(--green)');
+    $('#pfKpis').innerHTML=kpi(abiertas.length,'PF abiertas','var(--ink)')+kpi(esp.pegado,'Esperan 3 · Pegado','var(--terra)')+kpi(esp.cosido,'Esperan 2 · Cosido','var(--blue)')+kpi(esp.embalaje,'Esperan 1 · Embalado','#7A4B8C')+kpi(hoyEmb,'Embalados hoy','var(--green)')+kpi(this.almacen,'En almacén (sin expedir)','var(--ink)');
     // categoría: el tipo de núcleo que lleva (programa N001…) o Sin núcleo
     this.rows.forEach(r=>{ r.prog=progDeNucleo(r.sku_nucleo); });
     const sel=$('#pfProg'); if(sel){ const cur=sel.value; const ps=[...new Set(this.rows.map(r=>r.prog))].sort((a,b)=>(a===PROG_SN)-(b===PROG_SN)||a.localeCompare(b));
@@ -2270,15 +2287,121 @@ const PFv = {
     try{
       const us=await selectWhere('pf_unidades','*',q=>q.eq('pf',pf));
       const f=d=>d?new Date(d).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'—';
-      const faseTxt={pegado:'Espera 3 · Pegado',cosido:'Espera 2 · Cosido',embalaje:'Espera 1 · Embalado',terminado:'Terminado',anulada:'Anulado'};
+      const faseTxt={pegado:'Espera 3 · Pegado',cosido:'Espera 2 · Cosido',embalaje:'Espera 1 · Embalado',terminado:'Terminado',anulada:'Anulado',baja:'Baja (defectuoso)'};
+      this._detUds=us;
       $('#modalBody').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:8px">Colchón</th><th style="padding:8px">Estado</th><th style="padding:8px">3 Pegado</th><th style="padding:8px">2 Cosido</th><th style="padding:8px">1 Embalado</th></tr></thead><tbody>
         ${us.map(u=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 8px;font-family:'JetBrains Mono';font-weight:700">${esc(u.id)}</td>
-          <td style="padding:7px 8px">${esc(faseTxt[u.fase]||u.fase)}</td>
+          <td style="padding:7px 8px">${esc(faseTxt[u.fase]||u.fase)}${u.expedido_at?`<div style="color:var(--green);font-size:10px">Expedido ${f(u.expedido_at)}${u.expedicion?' · '+esc(u.expedicion):''}</div>`:''}
+            <div style="margin-top:4px">${(['pegado','cosido','embalaje'].includes(u.fase)||(u.fase==='terminado'&&!u.expedido_at))?`<button class="chip" style="background:var(--red);padding:4px 8px;font-size:11px" onclick="PFv.defecto('${jsq(u.id)}')">⚠ Defectuoso</button>`:''}
+            ${u.fase==='baja'?`<button class="chip" style="background:var(--ink);padding:4px 8px;font-size:11px" onclick="PFv.reponer('${jsq(u.pf)}')">+ Reponer colchón</button>`:''}</div></td>
           <td style="padding:7px 8px">${f(u.pegado_at)}${u.pegado_at?`<div style="color:var(--muted);font-size:10px">${[u.nucleo_id,u.tapa_id,u.platabanda_id].filter(Boolean).map(esc).join(' · ')||'sin etiquetas'}</div>`:''}</td>
           <td style="padding:7px 8px">${f(u.cosido_at)}</td><td style="padding:7px 8px">${f(u.embalado_at)}</td></tr>`).join('')}
         </tbody></table>`;
     }catch(e){ $('#modalBody').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  // ---------- colchón defectuoso (desde Oficina) ----------
+  async defecto(uid){
+    const u=(this._detUds||[]).find(x=>x.id===uid); if(!u) return;
+    const orden=['pegado','cosido','embalaje'], idx=u.fase==='terminado'?3:orden.indexOf(u.fase);
+    const anteriores=orden.slice(0,idx);
+    const fallos=[...anteriores,...['nucleo','tapa','platabanda'].filter(k=>u[k+'_id'])];
+    const txtF={pegado:'3 · Pegado',cosido:'2 · Cosido',embalaje:'1 · Embalado',nucleo:'Núcleo',tapa:'Tapa',platabanda:'Platabanda'};
+    let puestos=[]; try{ puestos=await selectWhere('puestos_trabajo','id,nombre',q=>q.eq('activo',true)); }catch(e){}
+    this._def={u,puestos};
+    const radio=(name,val,txt,chk)=>`<label style="display:flex;gap:8px;align-items:center;padding:6px 0"><input type="radio" name="${name}" value="${esc(val)}" ${chk?'checked':''} onchange="PFv.defRefrescar()"> ${esc(txt)}</label>`;
+    $('#modalBody').innerHTML=`<div style="font-weight:800;font-size:16px;margin-bottom:4px">⚠ ${esc(uid)} defectuoso</div>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:12px">Ahora: ${esc(u.fase==='terminado'?'terminado (en almacén)':'espera '+(txtF[u.fase]||u.fase))}</div>
+      <div style="font-weight:700;font-size:13px">¿Qué se hace con él?</div>
+      ${anteriores.map((f,i)=>radio('defAcc','ret:'+f,'Volver a '+txtF[f]+' (rehacer)',i===anteriores.length-1)).join('')}
+      ${radio('defAcc','baja','Dar de baja (se tira)',!anteriores.length)}
+      <div style="font-weight:700;font-size:13px;margin-top:10px">¿Dónde está el fallo?</div>
+      ${fallos.map((f,i)=>radio('defFallo',f,txtF[f]+(['nucleo','tapa','platabanda'].includes(f)?' (pieza '+u[f+'_id']+')':''),i===Math.max(0,anteriores.length-1))).join('')||'<div style="color:var(--muted);font-size:12px">Sin fases hechas ni piezas registradas</div>'}
+      <div style="font-weight:700;font-size:13px;margin-top:10px">Puesto al que se le cuenta (calidad)</div>
+      <select id="defPuesto" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;min-width:240px"><option value="">— Ninguno —</option>${puestos.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('')}</select>
+      <span id="defPuestoAuto" style="font-size:11px;color:var(--muted);margin-left:8px"></span>
+      <div id="defRecup" style="margin-top:10px"></div>
+      <input id="defMotivo" placeholder="Motivo (mal pegado, arrugas, mancha…)" style="width:100%;margin-top:10px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+      <div style="display:flex;gap:8px;margin-top:14px"><button class="chip" style="background:var(--red)" onclick="PFv.confirmarDefecto()">Confirmar</button>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="PFv.detalle('${jsq(u.pf)}')">Cancelar</button></div>`;
+    this.defRefrescar();
+  },
+  // al cambiar la opción: piezas a recuperar (en la baja) y puesto que hizo la fase o la pieza del fallo
+  async defRefrescar(){
+    const d=this._def; if(!d) return; const u=d.u;
+    const acc=(document.querySelector('input[name=defAcc]:checked')||{}).value, fallo=(document.querySelector('input[name=defFallo]:checked')||{}).value;
+    const ids=['nucleo','tapa','platabanda'].filter(k=>u[k+'_id']);
+    $('#defRecup').innerHTML=acc==='baja'&&ids.length?'<div style="font-weight:700;font-size:13px">Piezas que todavía sirven (vuelven al stock)</div>'+ids.map(k=>`<label style="display:flex;gap:8px;align-items:center;padding:4px 0"><input type="checkbox" class="defRec" value="${esc(u[k+'_id'])}"> ${esc({nucleo:'Núcleo',tapa:'Tapa',platabanda:'Platabanda'}[k])} · ${esc(u[k+'_id'])}</label>`).join(''):'';
+    if(!fallo) return;
+    try{ const pid=await puestoCulpable(u.id,(this.rows.find(r=>r.pf===u.pf)||{}).sku_pf,fallo,u);
+      const sel=$('#defPuesto'); if(sel){ sel.value=pid!=null?String(pid):''; $('#defPuestoAuto').textContent=pid!=null?'(lo hizo este puesto)':'(no consta quién lo hizo: elígelo)'; } }catch(e){}
+  },
+  async confirmarDefecto(){
+    const d=this._def; if(!d) return; const u=d.u;
+    const acc=(document.querySelector('input[name=defAcc]:checked')||{}).value, fallo=(document.querySelector('input[name=defFallo]:checked')||{}).value;
+    if(!acc||!fallo){ toast('Elige qué se hace y dónde está el fallo','err'); return; }
+    const recuperar=acc==='baja'?[...document.querySelectorAll('.defRec:checked')].map(c=>c.value):[];
+    const pv=$('#defPuesto').value; const r=this.rows.find(x=>x.pf===u.pf)||{};
+    try{
+      await aplicarDefectoPF({id:u.id,fase:u.fase,accion:acc==='baja'?'baja':'retrabajo',fase_destino:acc.startsWith('ret:')?acc.slice(4):null,fallo_en:fallo,
+        puesto_culpable:pv?Number(pv):null,recuperar,motivo:($('#defMotivo').value||'').trim()||null,sku_pf:r.sku_pf,pf:u.pf});
+      toast('✓ '+u.id+(acc==='baja'?' dado de baja':' vuelve a '+acc.slice(4)),'ok');
+      await this.detalle(u.pf); this.reload(true); refrescarMet(true);
+    }catch(e){ toast('Error: '+(e.message||e)+(/pf_incidencias|relation|schema cache/i.test(e.message||'')?' (falta "Aplicar SQL a PRUEBAS")':''),'err'); }
+  },
+  // un colchón dado de baja se repone con otro en la misma PF (etiqueta nueva)
+  async reponer(pf){
+    const r=this.rows.find(x=>x.pf===pf); if(!r) return;
+    if(!confirm('¿Añadir un colchón nuevo a '+pf+' para reponer el dado de baja? Se imprime su etiqueta.')) return;
+    try{
+      const us=await selectWhere('pf_unidades','id',q=>q.eq('pf',pf));
+      const n=Math.max(0,...us.map(u=>parseInt(String(u.id).split('-').pop(),10)||0))+1;
+      const id=`${pf}-${String(n).padStart(4,'0')}`;
+      chk(await sb.from('pf_unidades').insert({id,pf,sku_pf:r.sku_pf,fase:'pegado'}));
+      if(r.estado!=='abierta') chk(await sb.from('pf_ordenes').update({estado:'abierta',terminada_at:null}).eq('pf',pf));
+      Prod.parteNum=''; Prod.imprimirEtiquetasPF([{id,pf,sku_pf:r.sku_pf,nombre:r.nombre,descripcion:r.descripcion,sku_nucleo:r.sku_nucleo,especial:r.especial,parte_ref:r.parte_ref}]);
+      toast('✓ Añadido '+id,'ok'); await this.detalle(pf); this.reload(true);
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  // ---------- almacén de producto terminado y expediciones ----------
+  async paintAlmacen(){
+    const el=$('#pfLista'); el.innerHTML='<div class="loading">Cargando almacén…</div>';
+    try{
+      const desde=new Date(Date.now()-30*86400000).toISOString();
+      const [stock,exp]=await Promise.all([
+        selectWhere('pf_unidades','id,pf,sku_pf,embalado_at',q=>q.eq('fase','terminado').is('expedido_at',null)),
+        selectWhere('pf_unidades','id,pf,sku_pf,expedido_at,expedicion',q=>q.gte('expedido_at',desde))]);
+      const nom={}; this.rows.forEach(r=>{ nom[r.sku_pf]=r.nombre||r.descripcion||''; });
+      const porMod={}; stock.forEach(u=>{ const x=porMod[u.sku_pf]||(porMod[u.sku_pf]={sku:u.sku_pf,n:0,ids:[]}); x.n++; x.ids.push(u.id); });
+      const cargas={}; exp.filter(u=>u.expedido_at).forEach(u=>{ const k=u.expedido_at.slice(0,16)+'|'+(u.expedicion||''); const x=cargas[k]||(cargas[k]={ts:u.expedido_at,ref:u.expedicion||'',n:0,mods:{}}); x.n++; x.mods[u.sku_pf]=(x.mods[u.sku_pf]||0)+1; });
+      const f=d=>new Date(d).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
+      el.innerHTML=`<div style="padding:12px 16px;font-weight:800">En almacén · ${stock.length} colchones</div>
+        <div style="padding:0 16px 8px;font-size:12px;color:var(--muted)">Embalados y sin expedir. La salida se registra desde la tablet del encargado → Consumo → "Expedición de colchones", escaneando las etiquetas al cargar.</div>
+        ${Object.values(porMod).sort((a,b)=>b.n-a.n).map(x=>`<div style="display:flex;gap:10px;align-items:center;padding:8px 16px;border-top:1px solid var(--border)"><b style="font-family:'JetBrains Mono';min-width:150px">${esc(x.sku)}</b><span style="flex:1;color:var(--muted);font-size:12px">${esc(nom[x.sku]||'')}</span><b style="font-family:'JetBrains Mono'">${x.n}</b></div>`).join('')||'<div class="vacio">El almacén está vacío.</div>'}
+        <div style="padding:16px 16px 8px;font-weight:800;border-top:2px solid var(--border);margin-top:8px">Expediciones · últimos 30 días</div>
+        ${Object.values(cargas).sort((a,b)=>b.ts.localeCompare(a.ts)).map(c=>`<div style="padding:8px 16px;border-top:1px solid var(--border);font-size:12px"><b>${f(c.ts)}</b> · ${c.n} colchones${c.ref?' · <b>'+esc(c.ref)+'</b>':''}<div style="color:var(--muted)">${Object.entries(c.mods).map(([k,v])=>esc(k)+' ×'+v).join(' · ')}</div></div>`).join('')||'<div class="vacio">Sin expediciones.</div>'}`;
+    }catch(e){ el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  // ---------- calidad: colchones defectuosos por puesto ----------
+  async paintCalidad(){
+    const el=$('#pfLista'); el.innerHTML='<div class="loading">Cargando incidencias…</div>';
+    try{
+      const desde=new Date(Date.now()-30*86400000).toISOString();
+      const [inc,puestos]=await Promise.all([
+        selectWhere('pf_incidencias','*',q=>q.gte('created_at',desde)),
+        selectWhere('puestos_trabajo','id,nombre').catch(()=>[])]);
+      const pn={}; puestos.forEach(p=>pn[p.id]=p.nombre);
+      const txtF={pegado:'Pegado',cosido:'Cosido',embalaje:'Embalado',nucleo:'Núcleo',tapa:'Tapa',platabanda:'Platabanda'};
+      const por={}; inc.forEach(x=>{ const k=x.puesto_culpable==null?'—':x.puesto_culpable; const y=por[k]||(por[k]={id:k,ret:0,baja:0,fallos:{}}); y[x.accion==='baja'?'baja':'ret']++; y.fallos[x.fallo_en]=(y.fallos[x.fallo_en]||0)+1; });
+      const f=d=>new Date(d).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
+      el.innerHTML=`<div style="padding:12px 16px;font-weight:800">Defectos por puesto · últimos 30 días</div>
+        <div style="padding:0 16px 8px;font-size:12px;color:var(--muted)">Cada defecto cuenta en la calidad del puesto que hizo la fase o la pieza del fallo (también en Productividad).</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left"><th style="padding:9px 14px">Puesto</th><th style="padding:9px 14px;text-align:right">Rehechos</th><th style="padding:9px 14px;text-align:right">Bajas</th><th style="padding:9px 14px">Dónde</th></tr></thead><tbody>
+        ${Object.values(por).sort((a,b)=>(b.ret+b.baja)-(a.ret+a.baja)).map(y=>`<tr style="border-top:1px solid var(--border)"><td style="padding:8px 14px;font-weight:700">${esc(y.id==='—'?'Sin asignar':(pn[y.id]||'Puesto '+y.id))}</td><td style="padding:8px 14px;text-align:right;font-family:'JetBrains Mono'">${y.ret}</td><td style="padding:8px 14px;text-align:right;font-family:'JetBrains Mono';color:var(--red)">${y.baja}</td><td style="padding:8px 14px;color:var(--muted);font-size:12px">${Object.entries(y.fallos).map(([k,v])=>esc(txtF[k]||k)+' ×'+v).join(' · ')}</td></tr>`).join('')||'<tr><td colspan="4" class="vacio">Sin defectos registrados.</td></tr>'}</tbody></table>
+        <div style="padding:16px 16px 8px;font-weight:800;border-top:2px solid var(--border);margin-top:8px">Últimas incidencias</div>
+        ${inc.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,100).map(x=>`<div style="padding:8px 16px;border-top:1px solid var(--border);font-size:12px"><b>${esc(x.pf_unidad)}</b> · ${x.accion==='baja'?'<span style="color:var(--red)">Baja</span>':'Rehecho → '+esc(txtF[x.fase_destino]||x.fase_destino||'')} · fallo en <b>${esc(txtF[x.fallo_en]||x.fallo_en)}</b> · ${esc(x.puesto_culpable!=null?(pn[x.puesto_culpable]||'Puesto '+x.puesto_culpable):'sin puesto')}
+          <div style="color:var(--muted)">${f(x.created_at)} · ${x.origen==='tablet'?'tablet'+(x.puesto_detecta!=null?' de '+esc(pn[x.puesto_detecta]||x.puesto_detecta):''):'Oficina'}${x.motivo?' · '+esc(x.motivo):''}${x.piezas_recuperadas?' · piezas recuperadas: '+esc(x.piezas_recuperadas):''}</div></div>`).join('')||'<div class="vacio">Sin incidencias.</div>'}`;
+    }catch(e){ el.innerHTML='<div class="vacio">'+(/pf_incidencias|relation|schema cache/i.test(e.message||'')?'Falta preparar la base de datos: Actions → "Aplicar SQL a PRUEBAS".':'Error: '+esc(e.message||e))+'</div>'; }
   },
   async reimprimir(pf,btn){
     if(btn) btn.disabled=true;
@@ -2297,10 +2420,31 @@ const PFv = {
     catch(e){ toast('Error: '+(e.message||e),'err'); }
   }
 };
+// puesto que hizo la fase (o fabricó la pieza) donde está el fallo de un colchón: el último "fin" registrado
+async function puestoCulpable(id,sku_pf,fallo_en,u){
+  const suf={pegado:'_PEG',cosido:'_COS',embalaje:'_EMB'}[fallo_en];
+  let uid=id; if(!suf){ uid=u&&u[fallo_en+'_id']; if(!uid) return null; }
+  let q=sb.from('fabricacion_eventos').select('puesto_id').eq('unidad_id',uid).eq('tipo','fin').order('ts',{ascending:false}).limit(1);
+  if(suf) q=q.eq('sku',sku_pf+suf);
+  const {data,error}=await q; if(error) throw error;
+  return data&&data[0]?data[0].puesto_id:null;
+}
+// colchón defectuoso: incidencia (cuenta en la calidad del puesto), piezas recuperadas y nueva fase
+async function aplicarDefectoPF(o){
+  const {data:cur,error:e0}=await sb.from('pf_unidades').select('fase').eq('id',o.id).maybeSingle(); if(e0) throw e0;
+  if(!cur||cur.fase!==o.fase) throw new Error('El colchón ha cambiado de fase mientras tanto: vuelve a abrirlo');
+  const ts=new Date().toISOString();
+  chk(await sb.from('pf_incidencias').insert({pf_unidad:o.id,pf:o.pf,sku_pf:o.sku_pf,accion:o.accion,fase_detectada:o.fase,fase_destino:o.fase_destino,fallo_en:o.fallo_en,
+    puesto_culpable:o.puesto_culpable,puesto_detecta:null,origen:'oficina',motivo:o.motivo,piezas_recuperadas:(o.recuperar||[]).join(',')||null,ref:'O-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),created_at:ts}));
+  if(o.recuperar&&o.recuperar.length) chk(await sb.from('unidades').update({estado:'stock',consumida_at:null}).in('id',o.recuperar).eq('estado','consumida'));
+  chk(await sb.from('pf_unidades').update(o.accion==='baja'?{fase:'baja',baja_at:ts}:{fase:o.fase_destino}).eq('id',o.id).eq('fase',o.fase));
+  // si vuelve a la línea, su PF vuelve a estar abierta
+  if(o.accion!=='baja') chk(await sb.from('pf_ordenes').update({estado:'abierta',terminada_at:null}).eq('pf',o.pf).eq('estado','terminada'));
+}
 // anula una PF: los colchones sin embalar quedan anulados; si ya hay alguno embalado la PF se da por terminada con esos
 async function anularPF(pf,now){
   now=now||new Date().toISOString();
-  chk(await sb.from('pf_unidades').update({fase:'anulada'}).eq('pf',pf).neq('fase','terminado'));
+  chk(await sb.from('pf_unidades').update({fase:'anulada'}).eq('pf',pf).in('fase',['pegado','cosido','embalaje']));
   // sus reservas de núcleo, tapa y platabanda que aún no se han consumido (si la columna pf existe)
   try{ const {error}=await sb.from('reservas').delete().eq('pf',pf).eq('estado','pendiente'); if(error && !/\bpf\b/.test(error.message||'')) throw error; }catch(e){ if(!/\bpf\b/.test(e.message||'')) throw e; }
   const us=await selectWhere('pf_unidades','id,fase',q=>q.eq('pf',pf));
@@ -3215,6 +3359,8 @@ const Prodv = {
       const ini=rango.ini.toISOString(), fin=finDia.toISOString();
       const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
       this.pintarFases();
+      // colchones defectuosos por fallo de cada puesto (en el rango)
+      const pInc=selectWhere('pf_incidencias','puesto_culpable,accion,created_at',q=>q.gte('created_at',ini).lte('created_at',fin)).catch(()=>[]);
       let [ops,evs,pars,turs,tsku,roster,lps]=await Promise.all([
         safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
@@ -3239,6 +3385,9 @@ const Prodv = {
       this.hourly=Array.from({length:Math.max(1,nBuckets)},()=>({uds:0,efectivo:0,pausas:0}));
       // cada fila YA es un puesto (los datos se registran por puesto, no por persona)
       this.rows=ops.map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
+      const incs=await pInc;
+      this.rows.forEach(r=>{ r.defectos=incs.filter(x=>String(x.puesto_culpable)===String(r.id)).length;
+        r.calidad=r.hechas>0?Math.max(0,(r.hechas-r.retrabajos-r.defectos)/r.hechas):(r.defectos?0:1); });
       this.rows.forEach(r=>{ r.miembros=roster.filter(u=>u.puesto_id===r.id); });
       this.rows.sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
       this.puestoRows=this.rows;
@@ -3360,8 +3509,8 @@ const Prodv = {
     const dispG=turno?disp/turno:0, rendG=disp?efectivo/disp:0;
     const efs=rows.filter(r=>r.eficiencia);
     const efG=efs.length?efs.reduce((a,r)=>a+r.eficiencia*r.hechas,0)/Math.max(1,efs.reduce((a,r)=>a+r.hechas,0)):0;
-    const retrabajosG=sum('retrabajos');
-    const calidadG=uds>0?Math.max(0,(uds-retrabajosG)/uds):1;
+    const retrabajosG=sum('retrabajos'), defectosG=sum('defectos');
+    const calidadG=uds>0?Math.max(0,(uds-retrabajosG-defectosG)/uds):1;
     const oee=dispG*(efG||1)*calidadG;
     const ritmoG=efectivo?uds/(efectivo/3600):0;
     const hs=this.horasActivas(), H=this.hourly||[];
@@ -3389,7 +3538,7 @@ const Prodv = {
         <div style="display:flex;flex-direction:column;gap:9px;flex:1">
           ${barra('Disponibilidad',Math.round(dispG*100)+'%',dispG*100,'#F0EFEB')}
           ${barra('Rendimiento',efG?Math.round(efG*100)+'%':'--',efG*100,'#D9A78F')}
-          ${barra('Calidad',Math.round(calidadG*100)+'%'+(retrabajosG?' · '+retrabajosG+' retrab.':''),calidadG*100,retrabajosG?'#C24A2E':'#4C9A5E')}
+          ${barra('Calidad',Math.round(calidadG*100)+'%'+(retrabajosG?' · '+retrabajosG+' retrab.':'')+(defectosG?' · '+defectosG+' defect.':''),calidadG*100,(retrabajosG||defectosG)?'#C24A2E':'#4C9A5E')}
         </div>
       </div>
       <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento (vs histórico) × calidad</div>
@@ -3537,7 +3686,7 @@ const Prodv = {
     const cells=[['Uds',sel.hechas,'var(--terra)'],['Uds/h',sel.ritmo.toFixed(1),'var(--ink)'],['Min/ud',sel.hechas?this.fmtUd(sel.media):'--','var(--ink)'],
       ['Rend',Math.round(sel.rend*100)+'%','var(--ink)'],['Vs hist.',sel.eficiencia?Math.round(sel.eficiencia*100)+'%':'--',sel.eficiencia>=1?'var(--green)':'var(--red)'],
       ['Pausas',sel.npar+' · '+fmtDur(sel.paradas),'var(--blue)'],
-      ['Calidad',Math.round(sel.calidad*100)+'%',sel.retrabajos?'var(--red)':'var(--green)'],['Retrabajos',sel.retrabajos||0,sel.retrabajos?'var(--red)':'var(--muted)']]
+      ['Calidad',Math.round(sel.calidad*100)+'%',(sel.retrabajos||sel.defectos)?'var(--red)':'var(--green)'],['Defectos',sel.defectos||0,sel.defectos?'var(--red)':'var(--muted)'],['Retrabajos',sel.retrabajos||0,sel.retrabajos?'var(--red)':'var(--muted)']]
       .map(c=>`<div style="padding:12px 14px;border-right:1px solid var(--surf2);border-bottom:1px solid var(--surf2)"><div class="mono" style="font-size:17px;font-weight:700;color:${c[2]}">${c[1]}</div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow';letter-spacing:.5px;margin-top:1px">${c[0]}</div></div>`).join('');
     const refs=(sel.porSku||[]).slice(0,6).map(s=>{
       const d=s.hist&&s.mediana?(s.hist/s.mediana-1)*100:null;
