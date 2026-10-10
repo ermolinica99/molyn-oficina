@@ -499,9 +499,10 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
 
     <div class="content" id="view-inv" style="display:none">
       <div class="h1">Inventario físico</div>
-      <div class="h1sub">Da de alta o baja unidades del almacén (rotura, recuento, ajustes)</div>
-      <div style="display:flex;gap:10px;margin:12px 0">
-        <input id="invSearch" placeholder="Buscar núcleo por SKU o nombre…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+      <div class="h1sub">Da de alta o baja unidades del almacén (rotura, recuento, ajustes): núcleos, tapas y platabandas. Cada alta saca su etiqueta QR.</div>
+      <div style="display:flex;gap:10px;margin:12px 0;flex-wrap:wrap;align-items:center">
+        <div class="seg" id="invTipos"></div>
+        <input id="invSearch" placeholder="Buscar por código o nombre (p. ej. ALHAMBRA004)…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div id="invLista" class="ngrid"></div>
     </div>
@@ -2988,9 +2989,12 @@ function otInventario(){
 //  INVENTARIO FÍSICO
 // ============================================================
 const Inv = {
+  tipo:'nucleo',
+  setTipo(t){ this.tipo=t; this.paint(); },
   paint(){
+    const ti=$('#invTipos'); if(ti) ti.innerHTML=['nucleo','tapa','platabanda'].map(t=>`<button class="${this.tipo===t?'on':''}" onclick="Inv.setTipo('${t}')">${TIPO_TXT[t]}</button>`).join('');
     const q=($('#invSearch').value||'').toLowerCase().trim();
-    let rs=Object.values(MET);
+    let rs=Object.values(MET).filter(b=>(b.tipo||'nucleo')===this.tipo);
     if(q)rs=rs.filter(b=>b.sku.toLowerCase().includes(q)||(b.nombre||'').toLowerCase().includes(q));
     rs.sort((a,b)=>a.sku.localeCompare(b.sku));
     rs=rs.slice(0,120); // no pintar 272 de golpe si no hay búsqueda
@@ -3005,7 +3009,7 @@ const Inv = {
             <button class="chip" style="background:var(--green);flex:1" onclick="Inv.ajuste('${esc(b.sku)}',1)">+ Alta</button>
           </div>
         </div></div>`).join('')
-      : '<div class="vacio">Escribe para buscar un núcleo.</div>';
+      : '<div class="vacio">'+(q?'No hay '+TIPO_TXT[this.tipo].toLowerCase()+' con ese código.':'No hay '+TIPO_TXT[this.tipo].toLowerCase()+'.'+(this.tipo!=='nucleo'?' Créalas en Alta masiva → "Crear tapas y platabandas".':''))+'</div>';
   },
   async ajuste(sku,signo){
     const inp=document.getElementById('inv_'+cssId(sku));
