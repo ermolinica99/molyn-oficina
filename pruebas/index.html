@@ -566,15 +566,17 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
             <input id="balMin" type="number" min="1" style="width:110px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit" oninput="Bal.calc()"></div>
           <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Eficiencia esperada (OEE) %</div>
             <input id="balOee" type="number" min="10" max="100" value="85" style="width:90px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit" oninput="Bal.calc()"></div>
-          <label style="display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="balStock" checked onchange="Bal.calc()"> Incluir núcleos, tapas y platabandas</label>
+          <label style="display:flex;gap:6px;align-items:center;font-size:12px" title="Normalmente no: el stock de seguridad las separa del ritmo de la línea"><input type="checkbox" id="balStock" onchange="Bal.calc()"> Ver también núcleos, tapas y platabandas en el gráfico</label>
           <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Bal.load()">↻ Recalcular con datos</button>
         </div>
         <div id="balInfo" style="font-size:12px;color:var(--muted);margin-top:10px"></div>
       </div>
       <div id="balKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0"></div>
-      <div class="card"><div class="ch"><div><div class="t">Yamazumi · carga por puesto en cada fase</div><div class="s">Cada barra: minutos de trabajo por colchón que le tocan a cada puesto de esa fase. La línea es el tiempo de ciclo objetivo (takt × eficiencia).</div></div></div>
+      <div class="card"><div class="ch"><div><div class="t">Yamazumi · carga por puesto en cada fase</div><div class="s">Fases de la línea (pegado, cosido, embalado): minutos de trabajo por colchón que le tocan a cada puesto. La línea discontinua es el tiempo de ciclo objetivo (takt × eficiencia).</div></div></div>
         <div id="balChart" style="padding:14px 16px"></div></div>
       <div class="card" style="margin-top:12px"><div id="balTabla"></div></div>
+      <div class="card" style="margin-top:12px"><div class="ch"><div><div class="t">Fases de stock · núcleos, tapas y platabandas</div><div class="s">No van al ritmo de la línea: el stock de seguridad absorbe los picos. Lo que importa es que su capacidad reponga el consumo medio y cuántos días cubre el stock.</div></div></div>
+        <div id="balStockTabla"></div></div>
     </div>
 
     <div class="content" id="view-tsku" style="display:none">
@@ -3915,9 +3917,14 @@ const Bal = {
         }
         tFase[f.k]=tot?sum/tot/60:(f.k==='nucleo'?seg('N000')/60:seg('X'+(f.suf||''))/60); // minutos por colchón
       });
+      // fases de stock: tiempo por UNIDAD (un núcleo solo lo llevan los modelos con núcleo)
+      const conNuc=Object.entries(mix).filter(([m])=>nucDe[m]).reduce((a,[,n])=>a+n,0);
+      const ratioNuc=tot?conNuc/tot:1;
+      const tUnidad={nucleo:ratioNuc>0?tFase.nucleo/ratioNuc:tFase.nucleo, tapa:tFase.tapa, platabanda:tFase.platabanda};
+      if(!Object.keys(MET).length) await refrescarMet(true);
       // puestos por fase (un puesto con varias fases cuenta su parte en cada una)
       const pf={}; puestos.forEach(p=>{ const fs=fasesDePuesto(p); fs.forEach(k=>{ pf[k]=(pf[k]||0)+1/fs.length; }); });
-      this.d={minDisp,turnos:act,tFase,puestosCfg:pf,media,pend:pfPend.length,mixTxt,nMods:Object.keys(mix).length,conAprendido:Object.keys(apr).length};
+      this.d={minDisp,turnos:act,tFase,tUnidad,ratioNuc,puestosCfg:pf,media,pend:pfPend.length,mixTxt,nMods:Object.keys(mix).length,conAprendido:Object.keys(apr).length};
       this.puestosSim={}; FASES.forEach(f=>{ this.puestosSim[f.k]=Math.round((pf[f.k]||0)*100)/100; });
       if(!$('#balMin').value) $('#balMin').value=minDisp;
       if(!$('#balDem').value) $('#balDem').value=pfPend.length||media||60;
@@ -3930,12 +3937,14 @@ const Bal = {
     const d=this.d; if(!d) return;
     const dem=Math.max(1,parseFloat($('#balDem').value)||1), min=Math.max(1,parseFloat($('#balMin').value)||1), oee=Math.min(100,Math.max(10,parseFloat($('#balOee').value)||85))/100;
     const takt=min/dem, ciclo=takt*oee;
-    const fases=FASES.filter(f=>$('#balStock').checked || ['pegado','cosido','embalaje'].includes(f.k));
+    const LINEA=['pegado','cosido','embalaje'];
+    const fases=FASES.filter(f=>$('#balStock').checked || LINEA.includes(f.k));
     const rows=fases.map(f=>{ const t=d.tFase[f.k]||0, n=this.puestosSim[f.k]||0;
       const carga=n>0?t/n:Infinity, cap=t>0&&n>0?Math.floor(min*oee*n/t):0, nec=t>0?Math.ceil(t/ciclo*100)/100:0;
       return {f,t,n,carga,cap,nec,ok:carga<=ciclo}; });
-    const cuello=rows.filter(r=>r.t>0).sort((a,b)=>b.carga-a.carga)[0];
-    const capLinea=rows.filter(r=>r.t>0).reduce((m,r)=>Math.min(m,r.cap),Infinity);
+    const deLinea=rows.filter(r=>LINEA.includes(r.f.k)&&r.t>0);
+    const cuello=deLinea.slice().sort((a,b)=>b.carga-a.carga)[0];
+    const capLinea=deLinea.reduce((m,r)=>Math.min(m,r.cap),Infinity);
     const fm=x=>!isFinite(x)?'—':(x>=10?x.toFixed(1):x.toFixed(2)).replace('.',',');
     const kpi=(v,t,c)=>`<div class="card" style="padding:12px 14px;margin:0"><div style="font-family:'JetBrains Mono';font-size:22px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted)">${t}</div></div>`;
     $('#balKpis').innerHTML=kpi(fm(takt)+' min','Takt time (1 colchón cada…)','var(--ink)')+kpi(fm(ciclo)+' min','Ciclo objetivo (takt × '+Math.round(oee*100)+'%)','var(--blue)')
@@ -3969,6 +3978,38 @@ const Bal = {
         <td style="padding:9px 14px">${r.t<=0?'<span style="color:var(--muted)">sin trabajo</span>':(r.n<=0?'<span style="color:var(--red);font-weight:700">Sin puestos</span>':(r.ok?`<span style="color:var(--green);font-weight:700">Llega</span> <span style="color:var(--muted)">(${Math.round(r.carga/ciclo*100)}% del ciclo)</span>`:`<span style="color:var(--red);font-weight:700">No llega</span> <span style="color:var(--muted)">(${Math.round(r.carga/ciclo*100)}% del ciclo)</span>`))}</td></tr>`).join('')}
       </tbody></table>
       <div style="padding:10px 14px;font-size:12px;color:var(--muted)">Puestos: los marcados en Configuración → Puestos de trabajo (un puesto con varias fases cuenta su parte en cada una). Cambia el número para simular, por ejemplo pasar un puesto de embalado a pegado. "Puestos necesarios" = minutos por colchón ÷ ciclo objetivo.</div>`;
+    this.calcStock(dem,min,oee);
+  },
+  // fases de stock: capacidad de reposición frente al consumo medio, stock y días de cobertura
+  calcStock(dem,min,oee){
+    const d=this.d, fm=x=>!isFinite(x)?'—':(x>=10?Math.round(x):x.toFixed(1)).toString().replace('.',',');
+    const filas=['nucleo','tapa','platabanda'].map(k=>{
+      const f=faseInfo(k), bs=Object.values(MET).filter(b=>(b.tipo||'nucleo')===k && b.enUso!==false);
+      const consumo=bs.reduce((a,b)=>a+(Number(b.D)||0),0);
+      const stock=bs.reduce((a,b)=>a+b.disp+b.madurando,0), fabr=bs.reduce((a,b)=>a+b.fabricando,0);
+      const bajo=bs.filter(b=>b.bajoMin).length;
+      const n=this.puestosSim[k]||0, tU=d.tUnidad[k]||0;
+      const cap=tU>0&&n>0?Math.floor(min*oee*n/tU):0;
+      const hoy=Math.ceil(dem*(k==='nucleo'?d.ratioNuc:1));
+      const cob=consumo>0?stock/consumo:Infinity;
+      let estado, col;
+      if(n<=0){ estado='Sin puestos: no se repone'; col='var(--red)'; }
+      else if(cap>=consumo){ estado='Repone el consumo (sobra '+fm(cap-consumo)+'/día)'; col='var(--green)'; }
+      else { const def=consumo-cap; estado='No llega: el stock baja '+fm(def)+'/día y se vacía en '+fm(stock/def)+' días'; col='var(--red)'; }
+      return {f,consumo,stock,fabr,bajo,n,tU,cap,hoy,cob,estado,col};
+    });
+    $('#balStockTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left">
+      <th style="padding:10px 14px">Fase</th><th style="padding:10px 14px;text-align:right">Consumo medio/día</th><th style="padding:10px 14px;text-align:right">Capacidad/día</th>
+      <th style="padding:10px 14px;text-align:right">Stock (disp+madur.)</th><th style="padding:10px 14px;text-align:right">Cobertura</th><th style="padding:10px 14px;text-align:right">Pide la línea hoy</th><th style="padding:10px 14px">Estado</th></tr></thead><tbody>
+      ${filas.map(r=>`<tr style="border-top:1px solid var(--border)"><td style="padding:9px 14px;font-weight:700">${esc(r.f.txt)}<div style="font-size:11px;color:var(--muted);font-weight:400;display:flex;gap:6px;align-items:center;margin-top:3px"><input type="number" min="0" step="0.5" value="${r.n}" style="width:58px;padding:4px;border:1px solid var(--border);border-radius:6px;text-align:center;font-family:inherit" onchange="Bal.setPuestos('${r.f.k}',this.value)"> puestos · ${fm(r.tU)} min/ud</div></td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono'">${fm(r.consumo)}</td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono'">${r.cap}</td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono'">${r.stock}${r.fabr?`<div style="font-size:11px;color:var(--muted)">+${r.fabr} por fabricar</div>`:''}</td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono';color:${r.cob<1?'var(--red)':(r.cob<3?'#C9862B':'var(--ink)')}">${isFinite(r.cob)?fm(r.cob)+' días':'—'}</td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono';color:${r.stock+r.cap<r.hoy?'var(--red)':'var(--ink)'}">${r.hoy}${r.stock+r.cap<r.hoy?'<div style="font-size:11px">no cubre</div>':''}</td>
+        <td style="padding:9px 14px;color:${r.col};font-weight:700">${esc(r.estado)}${r.bajo?`<div style="font-size:11px;color:var(--muted);font-weight:400">${r.bajo} referencias bajo mínimo</div>`:''}</td></tr>`).join('')}
+      </tbody></table>
+      <div style="padding:10px 14px;font-size:12px;color:var(--muted)">Consumo medio: el del Dashboard (núcleos por su consumo; tapas y platabandas por la demanda de los partes). Capacidad: minutos disponibles × eficiencia × puestos ÷ minutos por unidad (cambia los puestos para simular). Cobertura = stock ÷ consumo medio.</div>`;
   }
 };
 
