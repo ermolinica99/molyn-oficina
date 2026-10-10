@@ -692,6 +692,7 @@ let FILTRO='todos';
 let MEDIDA='';
 let KPI=null;      // 'stock'|'bajo'|'neg'
 let PROG=null;
+let GRID_LIM=120;   // tarjetas pintadas en la rejilla del Dashboard (se amplía con "Ver más")
 
 // ---- carga de datos ----
 async function cargarConfig(){
@@ -709,15 +710,25 @@ async function selectAll(table,cols){
 }
 // paginador con filtro opcional (más rápido: descarga solo lo necesario)
 async function selectWhere(table,cols,filterFn){
-  let out=[],from=0,size=1000;
-  while(true){
-    let q=ordenar(sb.from(table).select(cols),table).range(from,from+size-1);
-    if(filterFn)q=filterFn(q);
-    const {data,error}=await q;
-    if(error)throw error;
-    out=out.concat(data||[]);
-    if(!data||data.length<size)break;
-    from+=size;
+  // Supabase da como mucho 1000 filas por consulta. La primera tanda pide también el total y el resto
+  // de tandas se piden a la vez (de 6 en 6): con tablas grandes (p. ej. ~13.000 productos con tapas y
+  // platabandas) antes se hacían una detrás de otra y se notaba lento.
+  const size=1000;
+  const build=(from,conTotal)=>{ let q=ordenar(sb.from(table).select(cols,conTotal?{count:'exact'}:undefined),table).range(from,from+size-1); if(filterFn)q=filterFn(q); return q; };
+  const first=await build(0,true);
+  if(first.error) throw first.error;
+  let out=first.data||[];
+  if(out.length<size) return out;
+  const total=first.count;
+  if(total==null){
+    let from=size;
+    while(true){ const {data,error}=await build(from); if(error)throw error; out=out.concat(data||[]); if(!data||data.length<size)break; from+=size; }
+    return out;
+  }
+  const froms=[]; for(let f=size; f<total; f+=size) froms.push(f);
+  for(let k=0;k<froms.length;k+=6){
+    const res=await Promise.all(froms.slice(k,k+6).map(f=>build(f)));
+    for(const r of res){ if(r.error) throw r.error; out=out.concat(r.data||[]); }
   }
   return out;
 }
@@ -801,10 +812,10 @@ async function toggleForzado(sku,val){
 }
 
 // ---- filtros ----
-function setKpi(k){KPI=(KPI===k)?null:k;PROG=null;render()}
-function setProg(p){PROG=(PROG===p)?null:p;KPI=null;render()}
-function clearF(){KPI=null;PROG=null;FILTRO='todos';MEDIDA='';const ms=$('#medidaSel');if(ms)ms.value='';render()}
-function setFiltro(f){FILTRO=f;render()}
+function setKpi(k){KPI=(KPI===k)?null:k;PROG=null;GRID_LIM=120;render()}
+function setProg(p){PROG=(PROG===p)?null:p;KPI=null;GRID_LIM=120;render()}
+function clearF(){KPI=null;PROG=null;GRID_LIM=120;FILTRO='todos';MEDIDA='';const ms=$('#medidaSel');if(ms)ms.value='';render()}
+function setFiltro(f){FILTRO=f;GRID_LIM=120;render()}
 function setMedida(m){MEDIDA=m;render()}
 
 // medida legible a partir del SKU (ej. N001160X200EXTRA FIRM -> "160x200")
@@ -860,7 +871,7 @@ if(!window._dashResize){ window._dashResize=true; window.addEventListener('resiz
 // ---- render ----
 // el Dashboard solo cuenta los núcleos en uso (los antiguos sin modelo ni stock se ocultan, no se borran)
 function metEnUso(){ return Object.values(MET).filter(b=>b.enUso!==false && (b.tipo||'nucleo')===TIPO); }
-function setTipo(t){ TIPO=t; KPI=null; PROG=null; MEDIDA=''; const ms=$('#medidaSel'); if(ms)ms.value=''; render(); }
+function setTipo(t){ TIPO=t; KPI=null; PROG=null; MEDIDA=''; GRID_LIM=120; const ms=$('#medidaSel'); if(ms)ms.value=''; render(); }
 function render(){
   const arr=metEnUso();
   const disp=arr.reduce((s,b)=>s+b.disp,0),madur=arr.reduce((s,b)=>s+b.madurando,0),fab=arr.reduce((s,b)=>s+b.fabricando,0);
@@ -1034,7 +1045,9 @@ function render(){
     + medidaSel;
 
   // tarjetas
-  $('#grid').innerHTML=rs.length?rs.map(cardN).join(''):'<div class="vacio">No hay '+TIPO_TXT[TIPO].toLowerCase()+' que cumplan este filtro.</div>';
+  // con tapas y platabandas hay miles de referencias: se pintan de 120 en 120
+  const lim=GRID_LIM;
+  $('#grid').innerHTML=rs.length?rs.slice(0,lim).map(cardN).join('')+(rs.length>lim?`<div style="grid-column:1/-1;text-align:center;padding:10px"><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="GRID_LIM+=240;render()">Ver más (${rs.length-lim} restantes)</button></div>`:''):'<div class="vacio">No hay '+TIPO_TXT[TIPO].toLowerCase()+' que cumplan este filtro.</div>';
   const gridEl=$('#grid');
   if(gridEl && !gridEl._bound){
     gridEl._bound=true;
