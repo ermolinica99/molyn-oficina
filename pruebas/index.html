@@ -481,8 +481,8 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="h1sub">Unidades que se fabrican por lote de cada programa</div>
       <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confLotes"></div></div>
       <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveLotes()">Guardar lotes</button>
-      <div class="h1" style="margin-top:28px;font-size:20px">Tiempos y puestos por fase</div>
-      <div class="h1sub">Tiempo teórico por unidad y puesto de cada fase del colchón (los núcleos van por programa, arriba). Se usa hasta tener tiempo aprendido.</div>
+      <div class="h1" style="margin-top:28px;font-size:20px">Tiempos por fase</div>
+      <div class="h1sub">Tiempo teórico por unidad de cada fase del colchón (los núcleos van por programa, arriba). Se usa hasta tener tiempo aprendido. Qué puestos hacen cada fase se marca en Configuración → Puestos de trabajo (puede haber varios por fase).</div>
       <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confFases"></div></div>
       <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveFases()">Guardar fases</button>
       <div style="height:20px"></div>
@@ -690,6 +690,8 @@ function progDeNucleo(sku_nucleo){ if(!sku_nucleo) return PROG_SN; const b=MET[s
 function progDeSku(sku){ if(tipoDe(sku)==='nucleo') return (MET[sku]&&MET[sku].prog)||progDe({sku}); return MODELO_PROG[modeloDe(sku)]||PROG_SN; }
 function progNombre(p){ return p===PROG_SN?'Sin núcleo':(p||'—'); }
 function progTxt(p){ return p===PROG_SN?'Sin núcleo':(p+(PROG_DESC[p]?' · '+PROG_DESC[p]:'')); }
+// fases que hace un puesto (columna puestos_trabajo.fases); vacío = cualquiera
+function fasesDePuesto(p){ return Array.isArray(p&&p.fases)?p.fases.filter(Boolean):[]; }
 function faseInfo(k){ return FASES.find(f=>f.k===k)||FASES[0]; }
 // fila de lotes_programa que manda en un sku: su programa si es núcleo, la de su fase si no
 function claveTiempoDe(sku){ const f=faseInfo(faseDe(sku)); return f.clave||progDe({sku}); }
@@ -1232,10 +1234,12 @@ const Prod = {
   async cargarCostesPuesto(){
     this.puestoPrograma={}; this.costePuesto={}; this.tiempoTeoricoPrograma={};
     try{
-      const [lp,us]=await Promise.all([
+      const [lp,us,pts]=await Promise.all([
         selectAll('lotes_programa','programa,puesto_id,tiempo_teorico_seg'),
-        selectWhere('usuarios','puesto_id,coste_hora',q=>q.eq('activo',true))
+        selectWhere('usuarios','puesto_id,coste_hora',q=>q.eq('activo',true)),
+        selectWhere('puestos_trabajo','*',q=>q.eq('activo',true)).catch(()=>[])
       ]);
+      this.puestosFase={}; pts.forEach(p=>fasesDePuesto(p).forEach(k=>{ (this.puestosFase[k]=this.puestosFase[k]||[]).push(p.id); }));
       lp.forEach(r=>{
         if(r.puesto_id) this.puestoPrograma[r.programa]=r.puesto_id;
         if(r.tiempo_teorico_seg) this.tiempoTeoricoPrograma[r.programa]=r.tiempo_teorico_seg;
@@ -1253,6 +1257,9 @@ const Prod = {
 
   // coste/hora real a aplicar a un núcleo: el del puesto que lo fabrica (suma de sus trabajadores) o el por defecto
   costeHoraDe(sku){
+    // fases del colchón y de tapas/platabandas: media del coste de los puestos que hacen esa fase
+    const k=faseDe(sku), ids=(this.puestosFase&&this.puestosFase[k])||[];
+    if(k!=='nucleo' && ids.length){ const cs=ids.map(id=>this.costePuesto[id]).filter(c=>c>0); if(cs.length) return cs.reduce((a,b)=>a+b,0)/cs.length; }
     const programa=claveTiempoDe(sku);
     const puestoId=this.puestoPrograma&&this.puestoPrograma[programa];
     const cp=puestoId&&this.costePuesto[puestoId];
@@ -2111,7 +2118,7 @@ const Vivo = {
       // asignación de puestos (cambia poco: cada minuto)
       if(!this.lp || Date.now()-this.lpTs>60000){ this.lp=await safe(sb.from('lotes_programa').select('programa,puesto_id'),[]); this.lpTs=Date.now(); }
       const [ops,evs,pars,turs,pfu]=await Promise.all([
-        safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
+        safe(sb.from('puestos_trabajo').select('*').eq('activo',true).order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini)).catch(()=>[]),
         safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini),[]),
         safe(sb.from('turnos').select('puesto_id,inicio,fin').gte('inicio',ini),[]),
@@ -2124,10 +2131,13 @@ const Vivo = {
       const rows=ops.map(o=>Prodv.buildOperario.call(ctx,o,evs,pars,turs,{},now));
       // fase de cada puesto: la de lo que tiene entre manos, si no la asignada, si no la de su último trabajo de hoy
       const asign={};
-      (this.lp||[]).forEach(r=>{ if(r.puesto_id==null) return; const f=FASES.find(x=>x.clave===r.programa); const k=f?f.k:(/^N\d{3}$/.test(r.programa)?'nucleo':null); if(k) (asign[String(r.puesto_id)]=asign[String(r.puesto_id)]||new Set()).add(k); });
+      ops.forEach(o=>{ const fs=fasesDePuesto(o); if(fs.length) asign[String(o.id)]=new Set(fs); });
+      (this.lp||[]).forEach(r=>{ if(r.puesto_id!=null && asign[String(r.puesto_id)] && fasesDePuesto(ops.find(o=>String(o.id)===String(r.puesto_id))).length) return; if(r.puesto_id==null) return; const f=FASES.find(x=>x.clave===r.programa); const k=f?f.k:(/^N\d{3}$/.test(r.programa)?'nucleo':null); if(k) (asign[String(r.puesto_id)]=asign[String(r.puesto_id)]||new Set()).add(k); });
       const ultFase={}; evs.forEach(e=>{ ultFase[String(e.puesto_id)]=faseDe(e.sku); });
       rows.forEach(r=>{ const id=String(r.id);
-        r.fase=r.actual?faseDe(r.actual.sku):(asign[id]&&asign[id].size?[...asign[id]][0]:(ultFase[id]||null));
+        // trabajando: la fase de lo que tiene entre manos; parado: la última que hizo hoy si es de las suyas, si no la primera suya
+        const suyas=asign[id]&&asign[id].size?[...asign[id]]:null;
+        r.fase=r.actual?faseDe(r.actual.sku):(suyas?(suyas.includes(ultFase[id])?ultFase[id]:suyas[0]):(ultFase[id]||null));
         r.hoyPorFase={}; evs.filter(e=>String(e.puesto_id)===id&&e.tipo==='fin').forEach(e=>{ const k=faseDe(e.sku); r.hoyPorFase[k]=(r.hoyPorFase[k]||0)+1; });
       });
       // hechas hoy por fase y colas de la línea
@@ -2182,7 +2192,7 @@ const Vivo = {
       +flecha(d.hayPF?d.cola.embalaje+'<br>esperan':null,d.cola.embalaje>0)
       +`<div class="pv-col">${this.estacion('embalaje','Embalado','1',linea('embalaje'),R('embalaje'))}</div>`;
     const sinFase=d.rows.filter(r=>!r.fase);
-    $('#vivoSin').innerHTML=sinFase.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Puestos sin fase asignada ni actividad hoy (asígnalos en Configuración → Lotes)</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">${sinFase.map(r=>this.chip(r)).join('')}</div>`:'';
+    $('#vivoSin').innerHTML=sinFase.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Puestos sin fases marcadas ni actividad hoy (márcalas en Configuración → Puestos de trabajo)</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">${sinFase.map(r=>this.chip(r)).join('')}</div>`:'';
     if(!d.hayPF) $('#vivoSub').textContent='Falta preparar la base de datos para el producto final (Actions → "Aplicar SQL a PRUEBAS")';
     this.pintarRelojes();
   }
@@ -2706,7 +2716,7 @@ const Conf = {
       this.raw=data||{};
       const {data:lt}=await sb.from('lotes_programa').select('programa,lote,puesto_id,tiempo_teorico_seg');
       this.lotes={}; (lt||[]).forEach(r=>this.lotes[r.programa]={lote:r.lote,puesto_id:r.puesto_id,tiempo_teorico_seg:r.tiempo_teorico_seg});
-      try{ const {data:ps}=await sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'); this.puestos=ps||[]; }catch(e){ this.puestos=[]; }
+      try{ const {data:ps}=await sb.from('puestos_trabajo').select('*').eq('activo',true).order('nombre'); this.puestos=ps||[]; this.puestosFases=this.puestos; }catch(e){ this.puestos=[]; this.puestosFases=[]; }
       this.loaded=true; this.render();
     }catch(e){ const el=$('#confFields'); if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
   },
@@ -2749,11 +2759,7 @@ const Conf = {
       const info=this.lotes[f.clave]||{};
       return `<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
         <label style="font-size:13px;flex:1;min-width:160px"><b>${esc(f.txt)}</b></label>
-        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Puesto</span>
-          <select id="fpuesto_${f.clave}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
-            <option value="">Sin asignar</option>
-            ${puestos.map(pu=>`<option value="${pu.id}" ${info.puesto_id===pu.id?'selected':''}>${esc(pu.nombre)}</option>`).join('')}
-          </select></div>
+        <div style="font-size:12px;color:var(--muted)">${(()=>{ const ps=(this.puestosFases||[]).filter(pu=>fasesDePuesto(pu).includes(f.k)); return ps.length?'Puestos: '+ps.map(pu=>esc(pu.nombre)).join(', '):'Sin puestos asignados'; })()}</div>
         <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Tiempo teórico</span>
           <input id="fttp_${f.clave}" type="number" min="0" step="0.1" value="${info.tiempo_teorico_seg?(info.tiempo_teorico_seg/60):4.5}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"><span style="font-size:11px;color:var(--muted)">min/ud</span></div>
       </div>`;
@@ -2763,12 +2769,11 @@ const Conf = {
     try{
       const filas=FASES.filter(f=>f.clave).map(f=>({
         programa:f.clave, lote:1,
-        puesto_id:document.getElementById('fpuesto_'+f.clave).value?Number(document.getElementById('fpuesto_'+f.clave).value):null,
         tiempo_teorico_seg:Math.round((parseFloat(document.getElementById('fttp_'+f.clave).value)||4.5)*60)
       }));
       const {error}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
       if(error)throw error;
-      filas.forEach(f=>{ this.lotes[f.programa]={lote:f.lote,puesto_id:f.puesto_id,tiempo_teorico_seg:f.tiempo_teorico_seg}; });
+      filas.forEach(f=>{ this.lotes[f.programa]=Object.assign({},this.lotes[f.programa],{lote:f.lote,tiempo_teorico_seg:f.tiempo_teorico_seg}); });
       if(typeof Prod!=='undefined' && Prod.cargarCostesPuesto) await Prod.cargarCostesPuesto();
       toast('✓ Fases guardadas','ok');
     }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
@@ -2978,13 +2983,29 @@ const Puestos = {
           <div style="font-size:12px;color:var(--muted)">Capacidad: ${p.capacidad||1} · asignados: ${asignados}${p.pin?' · PIN '+esc(p.pin):' · sin PIN'}${Auth.esAdmin()&&asignados?' · coste puesto: '+costeTotal.toFixed(2)+'€/h'+(asignados>1?' (x'+asignados+')':''):''}</div></div>
         <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.editId=${p.id};Puestos.paint()">Editar</button>
         <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Puestos.toggleActivo(${p.id},${!p.activo})">${p.activo?'Desactivar':'Reactivar'}</button>
-        <button class="chip" style="background:var(--red)" onclick="Puestos.eliminar(${p.id},'${esc(p.nombre).replace(/'/g,"\\'")}')">Eliminar</button>
+        <button class="chip" style="background:var(--red)" onclick="Puestos.eliminar(${p.id},'${jsq(p.nombre)}')">Eliminar</button>
+      </div>
+      <div style="padding:0 16px 10px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Fases que hace este puesto${fasesDePuesto(p).length?'':' · <span style="color:var(--terra);text-transform:none;letter-spacing:0">sin marcar: puede hacer cualquiera</span>'}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${FASES.map(f=>{ const on=fasesDePuesto(p).includes(f.k); return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:6px 10px;border:1px solid ${on?'var(--terra)':'var(--border)'};border-radius:20px;background:${on?'#FBF1EC':'var(--surf)'};cursor:pointer">
+          <input type="checkbox" ${on?'checked':''} onchange="Puestos.toggleFase(${p.id},'${f.k}',this.checked)" style="accent-color:var(--terra)">${esc(f.txt)}</label>`; }).join('')}</div>
       </div>
       <div style="padding:0 16px 14px">
         <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Trabajadores en este puesto</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">${chips||'<span style="font-size:12px;color:var(--muted)">No hay operarios/encargados de planta activos.</span>'}</div>
       </div>
       </div>`;}).join('');
+  },
+  async toggleFase(id,k,on){
+    const p=this.data.find(x=>x.id===id); if(!p) return;
+    const fs=new Set(fasesDePuesto(p)); if(on) fs.add(k); else fs.delete(k);
+    const orden=FASES.map(f=>f.k), nuevas=[...fs].sort((a,b)=>orden.indexOf(a)-orden.indexOf(b));
+    try{
+      const {error}=await sb.from('puestos_trabajo').update({fases:nuevas.length?nuevas:null}).eq('id',id);
+      if(error) throw error;
+      p.fases=nuevas.length?nuevas:null; toast('✓ Fases de '+p.nombre+' guardadas','ok'); this.paint();
+      if(typeof Prod!=='undefined') Prod.cargarCostesPuesto();
+    }catch(e){ toast('Error: '+(e.message||e)+(/fases/.test(e.message||'')?' (falta "Aplicar SQL a PRUEBAS")':''),'err'); this.paint(); }
   },
   async asignarTrabajador(usuarioId,puestoId){
     try{
@@ -3362,7 +3383,7 @@ const Prodv = {
       // colchones defectuosos por fallo de cada puesto (en el rango)
       const pInc=selectWhere('pf_incidencias','puesto_culpable,accion,created_at',q=>q.gte('created_at',ini).lte('created_at',fin)).catch(()=>[]);
       let [ops,evs,pars,turs,tsku,roster,lps]=await Promise.all([
-        safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
+        safe(sb.from('puestos_trabajo').select('*').eq('activo',true).order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
         safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('turnos').select('puesto_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
@@ -3375,7 +3396,8 @@ const Prodv = {
       if(this.fase!=='todas'){
         const fi=faseInfo(this.fase);
         evs=evs.filter(e=>faseDe(e.sku)===this.fase);
-        const asign=new Set(lps.filter(r=>r.puesto_id && (fi.clave?r.programa===fi.clave:/^N\d{3}$/.test(r.programa))).map(r=>String(r.puesto_id)));
+        const asign=new Set([...ops.filter(o=>fasesDePuesto(o).includes(this.fase)).map(o=>String(o.id)),
+          ...lps.filter(r=>r.puesto_id && (fi.clave?r.programa===fi.clave:/^N\d{3}$/.test(r.programa))).map(r=>String(r.puesto_id))]);
         const conEv=new Set(evs.map(e=>String(e.puesto_id)));
         ops=ops.filter(o=>asign.has(String(o.id))||conEv.has(String(o.id)));
       }
