@@ -31,6 +31,15 @@ create table if not exists pf_ordenes (
   lanzada_at   timestamptz not null default now(),
   terminada_at timestamptz
 );
+-- si la tabla ya existía de una versión anterior, se le añaden las columnas que falten
+alter table pf_ordenes add column if not exists nombre text;
+alter table pf_ordenes add column if not exists descripcion text;
+alter table pf_ordenes add column if not exists sku_nucleo text;
+alter table pf_ordenes add column if not exists especial boolean not null default false;
+alter table pf_ordenes add column if not exists parte_ref text;
+alter table pf_ordenes add column if not exists estado text not null default 'abierta';
+alter table pf_ordenes add column if not exists lanzada_at timestamptz not null default now();
+alter table pf_ordenes add column if not exists terminada_at timestamptz;
 create index if not exists pf_ordenes_parte on pf_ordenes(parte_ref);
 create index if not exists pf_ordenes_estado on pf_ordenes(estado);
 
@@ -47,6 +56,13 @@ create table if not exists pf_unidades (
   cosido_at     timestamptz,
   embalado_at   timestamptz
 );
+alter table pf_unidades add column if not exists fase text not null default 'pegado';
+alter table pf_unidades add column if not exists nucleo_id text;
+alter table pf_unidades add column if not exists tapa_id text;
+alter table pf_unidades add column if not exists platabanda_id text;
+alter table pf_unidades add column if not exists pegado_at timestamptz;
+alter table pf_unidades add column if not exists cosido_at timestamptz;
+alter table pf_unidades add column if not exists embalado_at timestamptz;
 create index if not exists pf_unidades_pf on pf_unidades(pf);
 create index if not exists pf_unidades_fase on pf_unidades(fase);
 
