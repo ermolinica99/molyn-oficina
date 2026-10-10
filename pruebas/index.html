@@ -234,6 +234,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navEst" onclick="nav('est')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg><span>Estándares</span></button>
     <div class="grp">Análisis</div>
     <button class="nav" id="navProdv" onclick="nav('prodv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10l4 4"/><circle cx="12" cy="12" r="10"/></svg><span>Productividad</span></button>
+    <button class="nav" id="navBal" onclick="nav('bal')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/><path d="M2 8h20" stroke-dasharray="2 2"/></svg><span>Balanceo de línea</span></button>
     <button class="nav" id="navTsku" onclick="nav('tsku')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Tiempos</span></button>
     <button class="nav" id="navApr" onclick="nav('apr')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span>Aprobaciones</span></button>
     <div class="grp">Ajustes</div>
@@ -549,6 +550,31 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       </div>
       <div class="seg" id="prodvFases" style="margin-top:8px;flex-wrap:wrap"></div>
       <div id="prodvLista" style="margin-top:12px"></div>
+    </div>
+
+    <div class="content" id="view-bal" style="display:none">
+      <div class="h1">Balanceo de línea</div>
+      <div class="h1sub">Takt time y carga de cada fase (Yamazumi): dónde está el cuello de botella y cuántos colchones se pueden sacar. Cambia los datos para simular.</div>
+      <div class="card" style="margin-top:14px;padding:14px 16px">
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Colchones a hacer</div>
+            <input id="balDem" type="number" min="1" style="width:110px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit" oninput="Bal.calc()"></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="chip" style="background:var(--surf2);color:var(--ink);padding:8px 10px;font-size:12px" onclick="Bal.usarDemanda('linea')">Pendientes en línea</button>
+            <button class="chip" style="background:var(--surf2);color:var(--ink);padding:8px 10px;font-size:12px" onclick="Bal.usarDemanda('media')">Media diaria de los partes</button></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Minutos disponibles</div>
+            <input id="balMin" type="number" min="1" style="width:110px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit" oninput="Bal.calc()"></div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Eficiencia esperada (OEE) %</div>
+            <input id="balOee" type="number" min="10" max="100" value="85" style="width:90px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit" oninput="Bal.calc()"></div>
+          <label style="display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="balStock" checked onchange="Bal.calc()"> Incluir núcleos, tapas y platabandas</label>
+          <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Bal.load()">↻ Recalcular con datos</button>
+        </div>
+        <div id="balInfo" style="font-size:12px;color:var(--muted);margin-top:10px"></div>
+      </div>
+      <div id="balKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0"></div>
+      <div class="card"><div class="ch"><div><div class="t">Yamazumi · carga por puesto en cada fase</div><div class="s">Cada barra: minutos de trabajo por colchón que le tocan a cada puesto de esa fase. La línea es el tiempo de ciclo objetivo (takt × eficiencia).</div></div></div>
+        <div id="balChart" style="padding:14px 16px"></div></div>
+      <div class="card" style="margin-top:12px"><div id="balTabla"></div></div>
     </div>
 
     <div class="content" id="view-tsku" style="display:none">
@@ -1133,13 +1159,13 @@ const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes','cSinNucleo'
 function nav(v){
   const titulos={dash:'Dashboard',vivo:'Planta en vivo',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',pf:'Producto final',
     cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',cSinNucleo:'Colchones sin núcleo',
-    inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempos',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',vivo:'navVivo',prod:'navProd',partes:'navPartes',ot:'navOT',pf:'navPF',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+    inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempos',bal:'Balanceo de línea',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',vivo:'navVivo',prod:'navProd',partes:'navPartes',ot:'navOT',pf:'navPF',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',bal:'navBal',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  const todas=['dash','vivo','prod','partes','ot','pf','inv','catalogo','est','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
+  const todas=['dash','vivo','prod','partes','ot','pf','inv','catalogo','est','prodv','tsku','bal','apr','alta','pers',...CONF_SUBVIEWS];
   todas.forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
@@ -1168,6 +1194,7 @@ function nav(v){
   else Prodv.stopAuto();
   if(v==='vivo') Vivo.start(); else Vivo.stop();
   if(v==='tsku') Tsku.reload();
+  if(v==='bal') Bal.load();
   if(v==='apr') Apr.reload();
   startViewAuto(v);
 }
@@ -3836,6 +3863,112 @@ const ProdvOld = {
         </div>
       </div></div>`).join('')
       : '<div class="vacio">No hay operarios activos o no hay datos ese día.</div>';
+  }
+};
+
+// ============================================================
+//  BALANCEO DE LÍNEA: takt time y Yamazumi (carga por puesto de cada fase)
+// ============================================================
+const Bal = {
+  d:null, puestosSim:{},
+  async load(){
+    $('#balChart').innerHTML='<div class="loading">Calculando…</div>';
+    try{
+      const desde=new Date(Date.now()-30*86400000).toISOString();
+      const [turnos,puestos,tsku,lp,modelos,pfPend,pfRec]=await Promise.all([
+        selectWhere('turnos_plantilla','*').catch(()=>[]),
+        selectWhere('puestos_trabajo','*',q=>q.eq('activo',true)).catch(()=>[]),
+        selectWhere('tiempos_sku','sku,mediana_seg,n_unidades',q=>q.eq('vigente',true)).catch(()=>[]),
+        selectAll('lotes_programa','programa,tiempo_teorico_seg').catch(()=>[]),
+        selectWhere('modelos','sku_pf,sku_nucleo').catch(()=>[]),
+        selectWhere('pf_unidades','sku_pf',q=>q.in('fase',['pegado','cosido','embalaje'])).catch(()=>[]),
+        selectWhere('pf_ordenes','sku_pf,cantidad,lanzada_at,estado',q=>q.gte('lanzada_at',desde)).catch(()=>[])
+      ]);
+      // minutos disponibles: turnos activos (tramos menos descanso)
+      const hm=t=>{ if(!t) return null; const [h,m]=String(t).split(':').map(Number); return h*60+(m||0); };
+      const minT=t=>{ let m=(hm(t.hora_fin)-hm(t.hora_inicio)); if(t.tipo==='partido'&&t.hora_inicio2&&t.hora_fin2) m+=hm(t.hora_fin2)-hm(t.hora_inicio2); return Math.max(0,m-(Number(t.descanso_min)||0)); };
+      const act=turnos.filter(t=>t.activo!==false);
+      const minDisp=act.reduce((a,t)=>a+minT(t),0)||450;
+      // tiempo por unidad de cada referencia: el aprendido (≥7 uds) o el teórico de su fase / programa
+      const teo={}; lp.forEach(r=>{ if(r.tiempo_teorico_seg) teo[r.programa]=Number(r.tiempo_teorico_seg); });
+      const apr={}; tsku.forEach(t=>{ if(Number(t.n_unidades||0)>=7 && Number(t.mediana_seg)>0) apr[t.sku]=Number(t.mediana_seg); });
+      const seg=sku=>apr[sku]||teo[claveTiempoDe(sku)]||270;
+      const nucDe={}; modelos.forEach(m=>{ nucDe[m.sku_pf]=m.sku_nucleo||null; });
+      // mezcla de modelos: lo pendiente en línea; si no hay, lo lanzado en 30 días
+      const mezcla=(rows,campo)=>{ const m={}; rows.forEach(r=>{ m[r.sku_pf]=(m[r.sku_pf]||0)+(campo?Number(r[campo])||0:1); }); return m; };
+      const recVivas=pfRec.filter(r=>r.estado!=='anulada');
+      let mix=mezcla(pfPend), mixTxt='los colchones pendientes en línea';
+      if(!Object.keys(mix).length){ mix=mezcla(recVivas,'cantidad'); mixTxt='los colchones lanzados en los últimos 30 días'; }
+      // demanda media diaria (días con partes lanzados en 30 días)
+      const dias=new Set(recVivas.map(r=>String(r.lanzada_at||'').slice(0,10)).filter(Boolean));
+      const totRec=recVivas.reduce((a,r)=>a+(Number(r.cantidad)||0),0);
+      const media=dias.size?Math.round(totRec/dias.size):0;
+      // tiempo medio por colchón de cada fase (ponderado por la mezcla)
+      const tot=Object.values(mix).reduce((a,b)=>a+b,0);
+      const tFase={};
+      FASES.forEach(f=>{
+        let sum=0;
+        for(const [mod,n] of Object.entries(mix)){
+          const sku=f.k==='nucleo'?nucDe[mod]:(f.suf?mod+f.suf:null);
+          if(f.k==='nucleo' && !sku) continue;            // modelos sin núcleo no llevan
+          sum+=n*seg(sku);
+        }
+        tFase[f.k]=tot?sum/tot/60:(f.k==='nucleo'?seg('N000')/60:seg('X'+(f.suf||''))/60); // minutos por colchón
+      });
+      // puestos por fase (un puesto con varias fases cuenta su parte en cada una)
+      const pf={}; puestos.forEach(p=>{ const fs=fasesDePuesto(p); fs.forEach(k=>{ pf[k]=(pf[k]||0)+1/fs.length; }); });
+      this.d={minDisp,turnos:act,tFase,puestosCfg:pf,media,pend:pfPend.length,mixTxt,nMods:Object.keys(mix).length,conAprendido:Object.keys(apr).length};
+      this.puestosSim={}; FASES.forEach(f=>{ this.puestosSim[f.k]=Math.round((pf[f.k]||0)*100)/100; });
+      if(!$('#balMin').value) $('#balMin').value=minDisp;
+      if(!$('#balDem').value) $('#balDem').value=pfPend.length||media||60;
+      this.calc();
+    }catch(e){ $('#balChart').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  usarDemanda(k){ if(!this.d) return; $('#balDem').value=k==='linea'?(this.d.pend||0):(this.d.media||0); this.calc(); },
+  setPuestos(k,v){ this.puestosSim[k]=Math.max(0,parseFloat(v)||0); this.calc(); },
+  calc(){
+    const d=this.d; if(!d) return;
+    const dem=Math.max(1,parseFloat($('#balDem').value)||1), min=Math.max(1,parseFloat($('#balMin').value)||1), oee=Math.min(100,Math.max(10,parseFloat($('#balOee').value)||85))/100;
+    const takt=min/dem, ciclo=takt*oee;
+    const fases=FASES.filter(f=>$('#balStock').checked || ['pegado','cosido','embalaje'].includes(f.k));
+    const rows=fases.map(f=>{ const t=d.tFase[f.k]||0, n=this.puestosSim[f.k]||0;
+      const carga=n>0?t/n:Infinity, cap=t>0&&n>0?Math.floor(min*oee*n/t):0, nec=t>0?Math.ceil(t/ciclo*100)/100:0;
+      return {f,t,n,carga,cap,nec,ok:carga<=ciclo}; });
+    const cuello=rows.filter(r=>r.t>0).sort((a,b)=>b.carga-a.carga)[0];
+    const capLinea=rows.filter(r=>r.t>0).reduce((m,r)=>Math.min(m,r.cap),Infinity);
+    const fm=x=>!isFinite(x)?'—':(x>=10?x.toFixed(1):x.toFixed(2)).replace('.',',');
+    const kpi=(v,t,c)=>`<div class="card" style="padding:12px 14px;margin:0"><div style="font-family:'JetBrains Mono';font-size:22px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted)">${t}</div></div>`;
+    $('#balKpis').innerHTML=kpi(fm(takt)+' min','Takt time (1 colchón cada…)','var(--ink)')+kpi(fm(ciclo)+' min','Ciclo objetivo (takt × '+Math.round(oee*100)+'%)','var(--blue)')
+      +kpi(cuello?esc(cuello.f.txt):'—','Cuello de botella',cuello&&!cuello.ok?'var(--red)':'var(--green)')
+      +kpi(isFinite(capLinea)?capLinea:'—','Colchones posibles en '+min+' min',isFinite(capLinea)&&capLinea<dem?'var(--red)':'var(--green)')
+      +kpi(dem,'Colchones a hacer','var(--ink)');
+    $('#balInfo').innerHTML=`Tiempos: los medidos por las tablets (${d.conAprendido} referencias con tiempo aprendido) o el teórico de cada fase, ponderados por ${esc(d.mixTxt)} (${d.nMods} modelos). Turnos activos: ${d.turnos.length?d.turnos.map(t=>esc(t.nombre)).join(', '):'ninguno (450 min por defecto)'} · ${d.minDisp} min/día. Media de los partes: ${d.media} colchones/día · pendientes en línea: ${d.pend}.`;
+    // gráfico Yamazumi (barras = carga por puesto; línea = ciclo objetivo)
+    const maxV=Math.max(ciclo*1.25,...rows.map(r=>isFinite(r.carga)?r.carga:0),0.1);
+    const H=240, y=v=>H-(Math.min(v,maxV)/maxV)*H;
+    const bars=rows.map(r=>{ const v=isFinite(r.carga)?r.carga:0, h=H-y(v);
+      const col=!isFinite(r.carga)&&r.t>0?'#C4BDB0':(r.ok?'var(--green)':'var(--red)');
+      return `<div style="flex:1;min-width:70px;display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div style="font-family:'JetBrains Mono';font-weight:800;font-size:13px;color:${col}">${isFinite(r.carga)?fm(r.carga):(r.t>0?'sin puestos':'—')}</div>
+        <div style="height:${H}px;width:100%;max-width:90px;display:flex;align-items:flex-end"><div style="width:100%;height:${h}px;background:${col};border-radius:8px 8px 0 0;opacity:.88"></div></div>
+        <div style="font-size:12px;font-weight:700;text-align:center">${esc(r.f.txt)}</div>
+        <div style="font-size:11px;color:var(--muted)">${fm(r.n)} puesto${r.n===1?'':'s'}</div></div>`; }).join('');
+    $('#balChart').innerHTML=`<div style="position:relative;display:flex;gap:10px;align-items:flex-end;padding-top:6px">
+        <div style="position:absolute;left:0;right:0;top:${y(ciclo)+30}px;border-top:2px dashed var(--blue);pointer-events:none"><span style="position:absolute;right:0;top:-18px;font-size:11px;color:var(--blue);font-weight:700;background:var(--surf);padding:0 4px">ciclo objetivo ${fm(ciclo)} min</span></div>
+        ${bars}</div>`;
+    // tabla con simulación de puestos
+    $('#balTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left">
+      <th style="padding:10px 14px">Fase</th><th style="padding:10px 14px;text-align:right">Min/colchón</th><th style="padding:10px 14px;text-align:right">Puestos (simular)</th>
+      <th style="padding:10px 14px;text-align:right">Carga por puesto</th><th style="padding:10px 14px;text-align:right">Puestos necesarios</th><th style="padding:10px 14px;text-align:right">Colchones posibles</th><th style="padding:10px 14px">Estado</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr style="border-top:1px solid var(--border)"><td style="padding:9px 14px;font-weight:700">${esc(r.f.txt)}</td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono'">${fm(r.t)}</td>
+        <td style="padding:9px 14px;text-align:right"><input type="number" min="0" step="0.5" value="${r.n}" style="width:70px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:center;font-family:inherit" onchange="Bal.setPuestos('${r.f.k}',this.value)"></td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono'">${isFinite(r.carga)?fm(r.carga)+' min':'—'}</td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono'">${fm(r.nec)}</td>
+        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono'">${r.cap}</td>
+        <td style="padding:9px 14px">${r.t<=0?'<span style="color:var(--muted)">sin trabajo</span>':(r.n<=0?'<span style="color:var(--red);font-weight:700">Sin puestos</span>':(r.ok?`<span style="color:var(--green);font-weight:700">Llega</span> <span style="color:var(--muted)">(${Math.round(r.carga/ciclo*100)}% del ciclo)</span>`:`<span style="color:var(--red);font-weight:700">No llega</span> <span style="color:var(--muted)">(${Math.round(r.carga/ciclo*100)}% del ciclo)</span>`))}</td></tr>`).join('')}
+      </tbody></table>
+      <div style="padding:10px 14px;font-size:12px;color:var(--muted)">Puestos: los marcados en Configuración → Puestos de trabajo (un puesto con varias fases cuenta su parte en cada una). Cambia el número para simular, por ejemplo pasar un puesto de embalado a pegado. "Puestos necesarios" = minutos por colchón ÷ ciclo objetivo.</div>`;
   }
 };
 
