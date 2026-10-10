@@ -11,7 +11,10 @@
 //  con el prefijo "pruebas:" (la app real y la de pruebas comparten dirección y si no se
 //  mezclarían la sesión, la cola sin enviar y la caché) y muestra una franja roja.
 // ============================================================
-const ES_PRUEBAS=/\/pruebas\//.test(location.pathname);
+// Esta copia es la de PRUEBAS: siempre usa la base de datos de pruebas, se abra desde donde se abra
+// (antes dependía de que la dirección tuviera /pruebas/; servida desde otra ruta habría usado la real).
+// Al pasarla a la app real se vuelve a poner: const ES_PRUEBAS=/\/pruebas\//.test(location.pathname);
+const ES_PRUEBAS=true;
 if(ES_PRUEBAS){
   ['getItem','setItem','removeItem'].forEach(m=>{ const o=Storage.prototype[m]; Storage.prototype[m]=function(k,...a){ return o.call(this,'pruebas:'+k,...a); }; });
   document.title='[PRUEBAS] '+document.title;
@@ -322,7 +325,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
 
     <div class="content" id="view-vivo" style="display:none">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
-        <div><div class="h1">Planta en vivo</div><div class="h1sub" id="vivoSub">Qué está pasando ahora en cada fase · se actualiza solo cada 5 s</div></div>
+        <div><div class="h1">Planta en vivo</div><div class="h1sub" id="vivoSub">Qué está pasando ahora en cada fase · se actualiza solo cada 10 s</div></div>
         <div style="display:flex;gap:8px;align-items:center">
           <div class="mono" id="vivoReloj" style="font-size:20px;font-weight:800"></div>
           <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Vivo.pantallaCompleta()">⛶ Pantalla completa</button>
@@ -581,7 +584,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <div class="content" id="view-alta" style="display:none">
       <div style="display:flex;align-items:flex-start;justify-content:space-between">
         <div><div class="h1">Alta masiva</div><div class="h1sub">Importa el catálogo (modelos y núcleos) desde un Excel</div></div>
-        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Alta.crearComponentes(this)" title="Crea la tapa (modelo_TAPA) y la platabanda (P-modelo) de cada modelo del catálogo">Crear tapas y platabandas</button>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Alta.crearComponentes(this)" title="Crea la tapa (modelo_TAPA) y la platabanda (modelo_PTB) de cada modelo del catálogo">Crear tapas y platabandas</button>
         <label class="chip" style="cursor:pointer">Seleccionar Excel
           <input type="file" id="fileAlta" accept=".xls,.xlsx,.csv" style="display:none"></label>
       </div>
@@ -625,6 +628,13 @@ const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=s=>document.querySelector(s);
 function toast(m,t){const e=$('#toast');e.textContent=m;e.className='toast show '+(t||'');setTimeout(()=>e.className='toast',1900)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+// para meter un texto dentro de una cadena JS '…' en un onclick: escapa \ y ' (y lo propio de HTML)
+function jsq(s){return esc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"))}
+// detalle de un operario: los datos se guardan aquí y el onclick solo lleva un número (antes iba el
+// JSON entero dentro del atributo: se rompía con un apóstrofo y llenaba la página cada 5 s)
+let _opN=0; const _opM=new Map();
+function opRef(...a){ const id=++_opN; _opM.set(id,a); if(_opM.size>400) _opM.delete(_opM.keys().next().value); return id; }
+function abrirOp(id){ const a=_opM.get(id); if(a) open_operario(...a); }
 function cssId(s){return String(s).replace(/[^a-zA-Z0-9]/g,'_')}
 // supabase-js NO lanza una excepción cuando falla una escritura: devuelve {error}. Sin comprobarlo,
 // la app mostraba "✓ Guardado" aunque no se hubiera guardado nada. chk() lo convierte en excepción.
@@ -767,7 +777,7 @@ async function calcularMetricas(){
     if(u.estado==='pendiente')b.fabricando++;
     else if(u.estado==='stock'){b.stock++;
       const fab=u.fabricada_at?new Date(u.fabricada_at):null;
-      if(fab&&(now-fab)>=madDiasDe(u.sku)*86400000)b.disp++;else b.madurando++;
+      if(!madDiasDe(u.sku) || (fab&&(now-fab)>=madDiasDe(u.sku)*86400000))b.disp++;else b.madurando++;
     }
   });
   consumo.forEach(u=>{
@@ -950,7 +960,7 @@ function render(){
     <div style="padding:12px 16px 14px;display:flex;flex-direction:column;gap:11px">
       ${peores.length?peores.map(x=>{
         const b=x.b,c=colCob(x.d);
-        return `<div style="cursor:pointer" onclick="open_detalle('${esc(b.sku).replace(/'/g,"")}')">
+        return `<div style="cursor:pointer" onclick="open_detalle('${jsq(b.sku)}')">
           <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
             <span class="mono" style="font-size:12px;font-weight:700">${esc(b.sku)}</span>
             <span style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(etiquetaNuc(b))}</span>
@@ -971,7 +981,7 @@ function render(){
       <span style="font-size:12px;color:var(--muted)">uds por lanzar en ${negs.length} referencia${negs.length===1?'':'s'}</span>
     </div>
     <div style="padding:4px 0">
-      ${repo.length?repo.map(b=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #EDEAE2;cursor:pointer" onclick="open_detalle('${esc(b.sku).replace(/'/g,"")}')">
+      ${repo.length?repo.map(b=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #EDEAE2;cursor:pointer" onclick="open_detalle('${jsq(b.sku)}')">
         <div style="min-width:0;flex:1">
           <div class="mono" style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.sku)}</div>
           <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(etiquetaNuc(b))}</div>
@@ -1027,7 +1037,7 @@ function render(){
 
   // grid header
   let titulo=TIPO_TXT[TIPO];
-  if(KPI==='stock')titulo='Núcleos en stock';else if(KPI==='bajo')titulo='Núcleos bajo mínimo';
+  if(KPI==='stock')titulo=TIPO_TXT[TIPO]+' en stock';else if(KPI==='bajo')titulo=TIPO_TXT[TIPO]+' bajo mínimo';
   else if(KPI==='neg')titulo=TIPO_TXT[TIPO]+' con saldo negativo';else if(PROG)titulo=TIPO_TXT[TIPO]+' · '+(PROG===PROG_SN?'Sin núcleo':'Programa '+PROG);
   $('#gridTitle').textContent=titulo;
   const rs=filtrar();
@@ -1078,8 +1088,8 @@ function cardN(b){
         <div><div class="pv">${b.D||'—'}</div><div class="pk">Cons/día</div></div>
         <div><div class="pv">${b.personalizado?'—':b.ROP}</div><div class="pk">P. pedido</div></div>
       </div>
-      <div class="forzrow"><label><input type="checkbox" ${forz?'checked':''} onchange="toggleForzado('${b.sku.replace(/'/g,"\\'")}',this.checked)">Forzar a diario</label></div>
-      ${b.saldo<0?`<button class="lanzar" onclick="event.stopPropagation();Prod.init().then(()=>{Prod.cant['${b.sku.replace(/'/g,"\'")}']=(Prod.cant['${b.sku.replace(/'/g,"\'")}']||0)+${Math.abs(b.saldo)};Prod.tipo['${b.sku.replace(/'/g,"\'")}']='${b.personalizado?'personalizado':'stock'}';Prod.manual['${b.sku.replace(/'/g,"\'")}']=(Prod.manual['${b.sku.replace(/'/g,"\'")}']||0)+${Math.abs(b.saldo)};Prod.render();toast('✓ Añadido a Producción','ok');});">⟳ Lanzar ${Math.abs(b.saldo)} uds</button>`:''}
+      <div class="forzrow"><label><input type="checkbox" ${forz?'checked':''} onchange="toggleForzado('${jsq(b.sku)}',this.checked)">Forzar a diario</label></div>
+      ${b.saldo<0?`<button class="lanzar" onclick="event.stopPropagation();Prod.init().then(()=>{Prod.cant['${jsq(b.sku)}']=(Prod.cant['${jsq(b.sku)}']||0)+${Math.abs(b.saldo)};Prod.tipo['${jsq(b.sku)}']='${b.personalizado?'personalizado':'stock'}';Prod.manual['${jsq(b.sku)}']=(Prod.manual['${jsq(b.sku)}']||0)+${Math.abs(b.saldo)};Prod.render();toast('✓ Añadido a Producción','ok');});">⟳ Lanzar ${Math.abs(b.saldo)} uds</button>`:''}
     </div></div>`;
 }
 
@@ -1158,11 +1168,11 @@ function nav(v){
 const AUTO_REFRESH_VIEWS={
   dash: async()=>{ await refrescarMet(true); render(); },
   partes: ()=>Partes.reload(),
-  ot: ()=>OT.reload(),
+  ot: ()=>OT.reload(true),
   pf: ()=>PFv.reload(true),
   apr: ()=>Apr.reload(),
-  tsku: ()=>Tsku.reload(),
-  inv: async()=>{ await refrescarMet(true); Inv.paint(); },
+  tsku: ()=>Tsku.refresco(),
+  inv: async()=>{ await refrescarMet(true); Inv.refresco(); },
   catalogo: ()=>Catalogo.load(),
 };
 let _viewAutoTimer=null;
@@ -1185,7 +1195,7 @@ function stopViewAuto(){ if(_viewAutoTimer){ clearInterval(_viewAutoTimer); _vie
 function startViewAuto(v){
   stopViewAuto();
   const fn=AUTO_REFRESH_VIEWS[v];
-  if(fn) _viewAutoTimer=setInterval(fn,30000);
+  if(fn) _viewAutoTimer=setInterval(()=>{ if(!document.hidden) fn(); },30000);
 }
 
 const Prod = {
@@ -1482,7 +1492,7 @@ const Prod = {
         <input type="number" min="0" value="0" class="cfgOp" data-op="${esc(o.nombre)}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit">
       </div>`).join('')}
       <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="chip" style="flex:1;padding:12px" onclick="Prod.aplicarConfig(${i},${cat.id},'${esc(cat.nombre)}')">Aplicar división</button>
+        <button class="chip" style="flex:1;padding:12px" onclick="Prod.aplicarConfig(${i},${cat.id},'${jsq(cat.nombre)}')">Aplicar división</button>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:10px">Se crearán líneas nuevas con las unidades que asignes, restándolas de esta línea. Lo que no asignes se queda sin esa configuración.</div>`;
     // actualizar el contador de restantes
@@ -1534,6 +1544,11 @@ const Prod = {
 
   // ---- LANZAR ----
   async lanzar(){
+    if(this._lanzando) return; // doble clic: no lanzar dos veces
+    this._lanzando=true;
+    try{ await this._lanzar(); } finally{ this._lanzando=false; }
+  },
+  async _lanzar(){
     // las OT se numeran agrupadas: primero núcleos, luego tapas, luego platabandas
     const items=Object.entries(this.cant).filter(([s,n])=>n>0).sort((a,b)=>ORDEN_TIPO[tipoDe(a[0])]-ORDEN_TIPO[tipoDe(b[0])]);
     if(!items.length && !this.lineas.length){ toast('No hay nada que lanzar','err'); return; }
@@ -1542,8 +1557,12 @@ const Prod = {
       try{
         const {data:dup,error}=await sb.from('reservas').select('created_at').eq('parte_ref',this.parteNum).order('created_at').limit(1);
         if(error) throw error;
-        if(dup && dup.length){
-          const f=new Date(dup[0].created_at).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
+        // también OT o PF vivas de ese parte (por si un lanzamiento anterior se cortó antes de reservar)
+        const {data:dOt}=await sb.from('ordenes').select('lanzada_at').eq('parte_ref',this.parteNum).neq('estado','anulada').limit(1);
+        let dPf=null; try{ const r=await sb.from('pf_ordenes').select('lanzada_at').eq('parte_ref',this.parteNum).neq('estado','anulada').limit(1); dPf=r.data; }catch(e){}
+        const prev=(dup&&dup[0]&&dup[0].created_at)||(dOt&&dOt[0]&&dOt[0].lanzada_at)||(dPf&&dPf[0]&&dPf[0].lanzada_at);
+        if(prev){
+          const f=new Date(prev).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
           toast(`⚠️ El parte ${this.parteNum} ya se lanzó el ${f}. Anúlalo en "Partes lanzados" si quieres repetirlo.`,'err');
           return;
         }
@@ -1555,10 +1574,14 @@ const Prod = {
       const {error:ePF}=await sb.from('pf_ordenes').select('pf').limit(1);
       if(ePF){ toast('Falta preparar la base de datos para el producto final: en GitHub → molyn-oficina → Actions → "Aplicar SQL a PRUEBAS". ('+(ePF.message||ePF)+')','err'); return; }
     }
+    // modelos sin núcleo asignado (ni marcados "sin núcleo"): se lanzarían como sin núcleo
+    const sinAsignar=[...new Set(this.lineas.filter(l=>l.cant>0&&!l.sku_nucleo&&!l.sin_nucleo).map(l=>l.sku_pf))];
+    if(sinAsignar.length && !confirm(`⚠️ ${sinAsignar.length} modelo(s) no tienen núcleo asignado: ${sinAsignar.slice(0,6).join(', ')}${sinAsignar.length>6?'…':''}.\n\nSi sigues, se lanzan como SIN NÚCLEO (en el pegado no se pedirá núcleo). Si no es así, asígnales el núcleo en Producto antes de lanzar.\n\n¿Seguir igualmente?`)) return;
     if(!confirm(`¿Lanzar ${items.length} OT (${items.reduce((s,[,n])=>s+n,0)} uds)`+(lineasPF.length?` y ${lineasPF.length} PF de producto final (${lineasPF.reduce((s,x)=>s+x.l.cant,0)} colchones)`:'')+` y generar los partes?`)) return;
     $('#btnLanzar').disabled=true; $('#btnLanzar').textContent='Lanzando…';
+    const creadasOT=[], creadasPF=[]; let reservasHechas=false;
     try{
-      const nucsDem=[...new Set(this.lineas.flatMap(l=>[l.sku_nucleo,skuTapa(l.sku_pf),skuPlat(l.sku_pf)]).filter(Boolean))];
+      const nucsDem=[...new Set(this.lineas.flatMap(l=>[l.sin_nucleo?null:l.sku_nucleo,skuTapa(l.sku_pf),skuPlat(l.sku_pf)]).filter(Boolean))];
       const pools=await this.construirPools(nucsDem);
       const nombres={}; (await selectAll('productos','sku,nombre')).forEach(p=>nombres[p.sku]=p.nombre||p.sku);
       // tapas y platabandas que aún no existen como producto: se crean con el nombre de su modelo
@@ -1577,21 +1600,13 @@ const Prod = {
         // la reposición por mínimo o lo añadido a mano no es demanda de este parte
         const parteDeEsto=(this.parteNum && this.demandaSkus && this.demandaSkus.has(sku))?this.parteNum:null;
         let e1=(await sb.from('ordenes').insert({ot,sku,nombre,cantidad:n,lanzada_at:now,fabricada_at:null,estado:'abierta',parte_ref:parteDeEsto})).error; if(e1)throw e1;
+        creadasOT.push(ot);
         const uds=[]; for(let i=1;i<=n;i++) uds.push({id:`${ot}-${String(i).padStart(4,'0')}`,ot,sku,estado:'pendiente',lanzada_at:now});
         let e2=(await sb.from('unidades').insert(uds)).error; if(e2)throw e2;
         uds.forEach(u=>nuevos.push({id:u.id,sku,ot,nombre,lanzada_at:now,tipo:this.tipo[sku]||'stock',parte_ref:parteDeEsto}));
         otByNuc[sku]=ot;
         nucRows.push({ot,sku,nombre,cant:n,tipo:this.tipo[sku]||'stock'});
       }
-      const {bA,bB,bC,bD}=this.repartirFifo(pools,otByNuc);
-      const _bA=JSON.parse(JSON.stringify(bA)),_bB=JSON.parse(JSON.stringify(bB)),_bC=JSON.parse(JSON.stringify(bC)),_bD=JSON.parse(JSON.stringify(bD));
-      const res=[];
-      [[bA,'disponible'],[bB,'maduracion'],[bC,'pendiente']].forEach(([blk,name])=>{
-        blk.forEach(x=>{ if(x.nucleo) res.push({parte_ref:this.parteNum||null,sku:x.nucleo,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:name}); });
-      });
-      // reservas de tapas y platabandas de cada modelo
-      this.repartirComp(pools,otByNuc).forEach(x=>res.push({parte_ref:this.parteNum||null,sku:x.sku,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:x.bloque}));
-      if(res.length){ let e3=(await sb.from('reservas').insert(res)).error; if(e3)throw e3; }
       // PRODUCTO FINAL: una PF por línea, con una etiqueta por colchón (PF00001-0001…)
       const pfRows=[], pfUds=[], pfByLine={}, lanzPF=new Date().toISOString();
       for(const {l,li} of lineasPF){
@@ -1601,10 +1616,27 @@ const Prod = {
         const row={pf,sku_pf:l.sku_pf,nombre,descripcion:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,cantidad:l.cant,
           sku_nucleo:l.sin_nucleo?null:(l.sku_nucleo||null),especial:!!l.especial,parte_ref:this.parteNum||null,estado:'abierta',lanzada_at:lanzPF};
         let e4=(await sb.from('pf_ordenes').insert(row)).error; if(e4)throw e4;
+        creadasPF.push(pf);
         const uds=[]; for(let i=1;i<=l.cant;i++) uds.push({id:`${pf}-${String(i).padStart(4,'0')}`,pf,sku_pf:l.sku_pf,fase:'pegado'});
         for(let i=0;i<uds.length;i+=500){ let e5=(await sb.from('pf_unidades').insert(uds.slice(i,i+500))).error; if(e5)throw e5; }
         pfRows.push(row); pfByLine[li]=pf;
         uds.forEach(u=>pfUds.push({id:u.id,pf,sku_pf:l.sku_pf,nombre,descripcion:row.descripcion,sku_nucleo:row.sku_nucleo,especial:row.especial,parte_ref:row.parte_ref}));
+      }
+      const {bA,bB,bC,bD}=this.repartirFifo(pools,otByNuc);
+      const _bA=JSON.parse(JSON.stringify(bA)),_bB=JSON.parse(JSON.stringify(bB)),_bC=JSON.parse(JSON.stringify(bC)),_bD=JSON.parse(JSON.stringify(bD));
+      const res=[];
+      [[bA,'disponible'],[bB,'maduracion'],[bC,'pendiente']].forEach(([blk,name])=>{
+        blk.forEach(x=>{ if(x.nucleo&&!x.sin_nucleo) res.push({parte_ref:this.parteNum||null,sku:x.nucleo,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:name,estado:'pendiente',pf:pfByLine[x.li]||null}); });
+      });
+      // reservas de tapas y platabandas de cada modelo
+      this.repartirComp(pools,otByNuc).forEach(x=>res.push({parte_ref:this.parteNum||null,sku:x.sku,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:x.bloque,estado:'pendiente',pf:pfByLine[x.li]||null}));
+      if(res.length){
+        // cada reserva sabe de qué PF es (para liberarla al anular esa PF). Si la base de datos aún
+        // no tiene la columna (falta "Aplicar SQL a PRUEBAS"), se guarda sin ella.
+        let e3=(await sb.from('reservas').insert(res)).error;
+        if(e3 && /\bpf\b/.test(e3.message||'')){ res.forEach(r=>delete r.pf); e3=(await sb.from('reservas').insert(res)).error; }
+        if(e3)throw e3;
+        reservasHechas=true;
       }
       // documento de parte + etiquetas QR
       const docParte=this.imprimirParte(nucRows,_bA,_bB,_bC,_bD,{pfByLine});
@@ -1621,7 +1653,16 @@ const Prod = {
       // refrescar dashboard
       await refrescarMet(true); render();
       Partes.reload();
-    }catch(e){ toast('Error al lanzar: '+(e.message||e),'err'); }
+    }catch(e){
+      // deshacer lo que se llegó a crear, para que no queden OT/PF a medias y se pueda reintentar
+      let deshecho=true;
+      if(!reservasHechas){
+        const now=new Date().toISOString();
+        for(const ot of creadasOT){ try{ await anularOTPorNumero(ot,now); }catch(x){ deshecho=false; } }
+        for(const pf of creadasPF){ try{ await anularPF(pf,now); }catch(x){ deshecho=false; } }
+      }
+      toast('Error al lanzar: '+(e.message||e)+((creadasOT.length||creadasPF.length)?(deshecho&&!reservasHechas?' · Se ha deshecho lo creado: puedes reintentar.':' · Revisa Partes lanzados: pudo quedar algo a medias.'):''),'err');
+    }
     finally{ $('#btnLanzar').disabled=false; $('#btnLanzar').textContent='Lanzar OT · partes · reservas'; }
   },
 
@@ -1673,13 +1714,13 @@ const Prod = {
   // reparte tapas y platabandas a cada modelo del parte: stock, luego OT abiertas, luego la OT nueva
   repartirComp(pools,otByNuc){
     const out=[];
-    this.lineas.forEach(l=>{ if(l.cant<=0) return;
+    this.lineas.forEach((l,li)=>{ if(l.cant<=0) return;
       [skuTapa(l.sku_pf),skuPlat(l.sku_pf)].forEach(sku=>{
         let rest=l.cant; const p=pools[sku]||{disp:[],madur:[],fabri:[]};
         [['disp','disponible'],['madur','disponible'],['fabri','pendiente']].forEach(([k,bl])=>{
-          while(rest>0&&p[k].length){ const g=p[k][0],t=Math.min(rest,g.n); out.push({sku,ot:g.ot,sku_pf:l.sku_pf,cant:t,bloque:bl}); g.n-=t;rest-=t; if(g.n<=0)p[k].shift(); }
+          while(rest>0&&p[k].length){ const g=p[k][0],t=Math.min(rest,g.n); out.push({li,sku,ot:g.ot,sku_pf:l.sku_pf,cant:t,bloque:bl}); g.n-=t;rest-=t; if(g.n<=0)p[k].shift(); }
         });
-        if(rest>0) out.push({sku,ot:otByNuc[sku]||null,sku_pf:l.sku_pf,cant:rest,bloque:'pendiente'});
+        if(rest>0) out.push({li,sku,ot:otByNuc[sku]||null,sku_pf:l.sku_pf,cant:rest,bloque:'pendiente'});
       });
     });
     return out;
@@ -1947,7 +1988,7 @@ const Partes = {
       const otsHtml=[...g.ots].map(ot=>{
         const sumOt=g.lineas.filter(l=>l.ot===ot).reduce((s,l)=>s+(l.cantidad||0),0);
         return `<span class="chip" style="background:var(--surf2);color:var(--ink);padding:6px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center">${esc(ot)} · ${sumOt}u
-          <button title="Anular esta OT de núcleo" onclick="Partes.anularOT('${esc(ot)}')" style="border:none;background:none;color:var(--red);cursor:pointer;font-weight:700">✕</button>
+          <button title="Anular esta OT" onclick="Partes.anularOT('${esc(ot)}')" style="border:none;background:none;color:var(--red);cursor:pointer;font-weight:700">✕</button>
         </span>`;
       }).join(' ');
       return `<div id="parte-${esc(g.parte_ref)}" style="border-bottom:1px solid var(--border);padding:14px 16px">
@@ -1969,7 +2010,10 @@ const Partes = {
   },
 
   async anularOT(ot){
-    if(!confirm(`¿Anular la OT de núcleo ${ot}? Se borrarán sus reservas y unidades pendientes, y quedará marcada como anulada.`)) return;
+    // ¿abastece a más de un parte? avisar: se quitará la reserva a todos
+    let otros=[];
+    try{ const {data}=await sb.from('reservas').select('parte_ref').eq('ot',ot).eq('estado','pendiente'); otros=[...new Set((data||[]).map(r=>r.parte_ref).filter(Boolean))]; }catch(e){}
+    if(!confirm(`¿Anular la OT ${ot}? Se borrarán sus reservas y unidades pendientes, y quedará marcada como anulada.`+(otros.length>1?`\n\n⚠️ Esta OT abastece a ${otros.length} partes (${otros.join(', ')}): todos perderán su reserva.`:''))) return;
     try{
       await anularOTPorNumero(ot);
       toast('✓ OT '+ot+' anulada','ok');
@@ -2004,27 +2048,34 @@ const Partes = {
   },
 
   async anularReservasModelo(parte_ref,sku_pf){
-    if(!confirm('¿Anular las reservas de núcleo de '+sku_pf+' en este parte?')) return;
+    if(!confirm('¿Quitar '+sku_pf+' de este parte? Se borran sus reservas (núcleo, tapa y platabanda) y se anulan sus PF de producto final que sigan abiertas.')) return;
     try{
       const {error}=await sb.from('reservas').delete().eq('parte_ref',parte_ref).eq('sku_pf',sku_pf);
       if(error)throw error;
+      const {data:pfs,error:ep}=await sb.from('pf_ordenes').select('pf').eq('parte_ref',parte_ref).eq('sku_pf',sku_pf).eq('estado','abierta');
+      if(ep && !/pf_ordenes|relation|schema cache/i.test(ep.message||'')) throw ep;
+      for(const x of (pfs||[])) await anularPF(x.pf);
       toast('✓ Reservas anuladas','ok');
       await this.reload(); await refrescarMet(true); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
 
   async anularParte(parte_ref){
-    if(!confirm(`¿Anular el parte ${parte_ref} completo? Se anularán las OT de núcleo lanzadas solo para este parte, sus PF de producto final y se borrarán todas sus reservas.`)) return;
+    if(!confirm(`¿Anular el parte ${parte_ref} completo? Se anularán las OT lanzadas para este parte (salvo las que también abastezcan a otros partes), sus PF de producto final y se borrarán todas sus reservas.`)) return;
     try{
       const {data:ordenesProp,error:e0}=await sb.from('ordenes').select('ot').eq('parte_ref',parte_ref);
       if(e0)throw e0;
       const now=new Date().toISOString();
-      for(const o of (ordenesProp||[])) await anularOTPorNumero(o.ot,now);
-      // y sus PF de producto final (si la base de datos ya las tiene)
-      try{ const {data:pfs}=await sb.from('pf_ordenes').select('pf').eq('parte_ref',parte_ref).eq('estado','abierta'); for(const x of (pfs||[])) await anularPF(x.pf,now); }catch(e){}
+      let compartidas=[];
+      for(const o of (ordenesProp||[])){ const ok=await anularOTPorNumero(o.ot,now,parte_ref); if(ok===false) compartidas.push(o.ot); }
+      // y sus PF de producto final (si la base de datos aún no tiene esas tablas, no hay nada que anular)
+      const {data:pfs,error:ep}=await sb.from('pf_ordenes').select('pf').eq('parte_ref',parte_ref).eq('estado','abierta');
+      if(ep && !/pf_ordenes|relation|schema cache/i.test(ep.message||'')) throw ep;
+      for(const x of (pfs||[])) await anularPF(x.pf,now);
+      if(compartidas.length) toast('Se mantienen '+compartidas.join(', ')+': también abastecen a otros partes','ok');
       const {error:e1}=await sb.from('reservas').delete().eq('parte_ref',parte_ref);
       if(e1)throw e1;
-      toast('✓ Parte '+parte_ref+' anulado','ok');
+      if(!compartidas.length) toast('✓ Parte '+parte_ref+' anulado','ok');
       await this.reload(); await refrescarMet(true); OT.reload(); render();
     }catch(e){ toast('Error al anular el parte: '+(e.message||e)+' (¿ejecutaste el ALTER TABLE ordenes ADD COLUMN parte_ref?)','err'); }
   }
@@ -2036,7 +2087,7 @@ const Partes = {
 // ============================================================
 const Vivo = {
   timer:null, tick:null, loading:false, ultimoMet:0, lp:null, lpTs:0,
-  start(){ this.stop(); this.reload(); this.timer=setInterval(()=>this.reload(),5000); this.tick=setInterval(()=>this.pintarRelojes(),1000); },
+  start(){ this.stop(); this.reload(); this.timer=setInterval(()=>{ if(!document.hidden) this.reload(); },10000); this.tick=setInterval(()=>this.pintarRelojes(),1000); },
   stop(){ if(this.timer){clearInterval(this.timer);this.timer=null;} if(this.tick){clearInterval(this.tick);this.tick=null;} },
   pantallaCompleta(){ const el=$('#view-vivo'); try{ if(document.fullscreenElement) document.exitFullscreen(); else (el.requestFullscreen||el.webkitRequestFullscreen).call(el); }catch(e){} },
   pintarRelojes(){
@@ -2059,7 +2110,7 @@ const Vivo = {
         selectWhere('pf_unidades','id,pf,fase,embalado_at',q=>q.in('fase',['pegado','cosido','embalaje'])).catch(()=>null)
       ]);
       // stock de núcleos, tapas y platabandas (las métricas se recalculan cada 30 s)
-      if(Date.now()-this.ultimoMet>30000){ await refrescarMet(true); this.ultimoMet=Date.now(); }
+      if(Date.now()-this.ultimoMet>180000){ await refrescarMet(true); this.ultimoMet=Date.now(); }
       const now=new Date();
       const ctx={alerts:[],hourly:null,bucketIdx:()=>-1};
       const rows=ops.map(o=>Prodv.buildOperario.call(ctx,o,evs,pars,turs,{},now));
@@ -2156,8 +2207,8 @@ const PFv = {
         const vivos=us.filter(u=>u.fase!=='anulada');
         if(vivos.length && vivos.every(u=>u.fase==='terminado')){
           const fin=vivos.map(u=>u.embalado_at).filter(Boolean).sort().pop()||new Date().toISOString();
-          const {error:e2}=await sb.from('pf_ordenes').update({estado:'terminada',terminada_at:fin}).eq('pf',r.pf).eq('estado','abierta');
-          if(!e2){ r.estado='terminada'; r.terminada_at=fin; }
+          const {error:e2}=await sb.from('pf_ordenes').update({estado:'terminada',terminada_at:fin,cantidad:vivos.length}).eq('pf',r.pf).eq('estado','abierta');
+          if(!e2){ r.estado='terminada'; r.terminada_at=fin; r.cantidad=vivos.length; }
         }
       }
       this.paint();
@@ -2250,6 +2301,8 @@ const PFv = {
 async function anularPF(pf,now){
   now=now||new Date().toISOString();
   chk(await sb.from('pf_unidades').update({fase:'anulada'}).eq('pf',pf).neq('fase','terminado'));
+  // sus reservas de núcleo, tapa y platabanda que aún no se han consumido (si la columna pf existe)
+  try{ const {error}=await sb.from('reservas').delete().eq('pf',pf).eq('estado','pendiente'); if(error && !/\bpf\b/.test(error.message||'')) throw error; }catch(e){ if(!/\bpf\b/.test(e.message||'')) throw e; }
   const us=await selectWhere('pf_unidades','id,fase',q=>q.eq('pf',pf));
   const hechos=us.filter(u=>u.fase==='terminado').length;
   chk(await sb.from('pf_ordenes').update(hechos?{estado:'terminada',cantidad:hechos,terminada_at:now}:{estado:'anulada',terminada_at:now}).eq('pf',pf));
@@ -2261,18 +2314,20 @@ async function anularPF(pf,now){
 const OT = {
   rows:[], sel:new Set(), estado:'abierta',
 
-  async reload(){
-    $('#otTabla').innerHTML='<div class="loading">Cargando órdenes…</div>';
+  async reload(silent){
+    if(this._cargando) return; this._cargando=true;
+    if(!silent) $('#otTabla').innerHTML='<div class="loading">Cargando órdenes…</div>';
     try{
       const ords=await selectAll('ordenes','*');
       // traer el conteo de unidades de TODAS las OT (para saber pendientes/stock reales)
       const ots=ords.map(o=>o.ot);
       // paginado por bloques: 200 OT pueden tener más de 1000 unidades y Supabase cortaba el resultado
       // (las OT afectadas salían con 0 pendientes y desaparecían de "Abiertas")
-      let uds=[];
-      for(let i=0;i<ots.length;i+=200){
-        const chunk=ots.slice(i,i+200);
-        uds=uds.concat(await selectWhere('unidades','ot,estado',q=>q.in('ot',chunk)));
+      let uds=[]; const trozos=[];
+      for(let i=0;i<ots.length;i+=200) trozos.push(ots.slice(i,i+200));
+      for(let k=0;k<trozos.length;k+=4){
+        const res=await Promise.all(trozos.slice(k,k+4).map(chunk=>selectWhere('unidades','ot,estado',q=>q.in('ot',chunk))));
+        res.forEach(r=>{ uds=uds.concat(r); });
       }
       const cont={};
       uds.forEach(u=>{const c=cont[u.ot]||(cont[u.ot]={pend:0,stock:0,cons:0});
@@ -2287,9 +2342,12 @@ const OT = {
       const selP=$('#otProg');
       if(selP){ const cur=selP.value; selP.innerHTML='<option value="">Todos los programas</option>'+
         progs.map(p=>`<option value="${p}">${esc(progTxt(p))}</option>`).join(''); selP.value=cur; }
-      this.sel.clear();
+      // al refrescar se conserva lo marcado (salvo OT que ya no estén)
+      if(silent){ const vivas=new Set(this.rows.map(r=>r.ot)); [...this.sel].forEach(ot=>{ if(!vivas.has(ot)) this.sel.delete(ot); }); }
+      else this.sel.clear();
       this.paint();
-    }catch(e){ $('#otTabla').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+    }catch(e){ if(!silent) $('#otTabla').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+    finally{ this._cargando=false; }
   },
 
   setEstado(est){
@@ -2586,8 +2644,8 @@ const Conf = {
       const cfg={
         id:1,
         dias_historico:parseInt(val('cf_dias'))||5,
-        umbral_semanal:parseFloat(val('cf_umbral'))||2,
-        maduracion:parseInt(val('cf_madur'))||2,
+        umbral_semanal:(v=>Number.isFinite(v)&&v>=0?v:2)(parseFloat(val('cf_umbral'))),
+        maduracion:(v=>Number.isFinite(v)&&v>=0?v:2)(parseInt(val('cf_madur'))),
         dias_fabricacion:parseInt(val('cf_fab'))||0,
         updated_at:new Date().toISOString()
       };
@@ -2601,7 +2659,7 @@ const Conf = {
   },
   async saveLotes(){
     try{
-      const progs=Object.keys(PROG_DESC);
+      const progs=Object.keys(PROG_DESC).filter(p=>document.getElementById('lote_'+p));
       const filas=progs.map(p=>({
         programa:p,
         lote:parseInt(document.getElementById('lote_'+p).value)||10,
@@ -2990,25 +3048,29 @@ function otInventario(){
 // ============================================================
 const Inv = {
   tipo:'nucleo',
-  setTipo(t){ this.tipo=t; this.paint(); },
+  setTipo(t){ this.tipo=t; this.lim=120; this.paint(); },
+  // refresco automático: no repintar si se está escribiendo una cantidad
+  refresco(){ const a=document.activeElement; if(a && a.id && a.id.startsWith('inv_')) return; this.paint(); },
   paint(){
     const ti=$('#invTipos'); if(ti) ti.innerHTML=['nucleo','tapa','platabanda'].map(t=>`<button class="${this.tipo===t?'on':''}" onclick="Inv.setTipo('${t}')">${TIPO_TXT[t]}</button>`).join('');
     const q=($('#invSearch').value||'').toLowerCase().trim();
     let rs=Object.values(MET).filter(b=>(b.tipo||'nucleo')===this.tipo);
     if(q)rs=rs.filter(b=>b.sku.toLowerCase().includes(q)||(b.nombre||'').toLowerCase().includes(q));
     rs.sort((a,b)=>a.sku.localeCompare(b.sku));
-    rs=rs.slice(0,120); // no pintar 272 de golpe si no hay búsqueda
+    const total=rs.length; this.lim=this.lim||120;
+    rs=rs.slice(0,this.lim); // no pintar miles de golpe (tapas y platabandas)
     $('#invLista').innerHTML=rs.length?rs.map(b=>`
       <div class="nc ${b.forzado?'forz':(b.personalizado?'':'diario')}">
         <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(etiquetaNuc(b))}</div></div></div>
         <div class="nb">
           <div class="saldo"><span class="big ${(b.disp+b.madurando)<=0?'zero':''}">${b.disp+b.madurando}</span><span class="sl">EN STOCK<br>disp+madur</span></div>
           <div style="display:flex;gap:8px;align-items:center">
-            <button class="chip" style="background:var(--red);flex:1" onclick="Inv.ajuste('${esc(b.sku)}',-1)">− Baja</button>
+            <button class="chip" style="background:var(--red);flex:1" onclick="Inv.ajuste('${jsq(b.sku)}',-1)">− Baja</button>
             <input id="inv_${cssId(b.sku)}" type="number" min="1" value="1" style="width:60px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit">
-            <button class="chip" style="background:var(--green);flex:1" onclick="Inv.ajuste('${esc(b.sku)}',1)">+ Alta</button>
+            <button class="chip" style="background:var(--green);flex:1" onclick="Inv.ajuste('${jsq(b.sku)}',1)">+ Alta</button>
           </div>
         </div></div>`).join('')
+      +(total>rs.length?`<div style="grid-column:1/-1;text-align:center;padding:10px"><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Inv.lim+=240;Inv.paint()">Ver más (${total-rs.length} restantes) · o escribe en el buscador</button></div>`:'')
       : '<div class="vacio">'+(q?'No hay '+TIPO_TXT[this.tipo].toLowerCase()+' con ese código.':'No hay '+TIPO_TXT[this.tipo].toLowerCase()+'.'+(this.tipo!=='nucleo'?' Créalas en Alta masiva → "Crear tapas y platabandas".':''))+'</div>';
   },
   async ajuste(sku,signo){
@@ -3016,8 +3078,9 @@ const Inv = {
     const n=Math.max(1,parseInt(inp?.value)||1);
     const b=MET[sku];
     if(signo<0){
-      const disp=b?b.disp:0;
-      if(n>disp){ toast('No hay tantas unidades disponibles ('+disp+')','err'); return; }
+      // se puede dar de baja cualquier unidad en stock (también una que esté madurando, p. ej. rota)
+      const enStock=b?(b.disp+b.madurando):0;
+      if(n>enStock){ toast('No hay tantas unidades en stock ('+enStock+')','err'); return; }
     }
     // pedir motivo
     const opciones=signo>0?'Motivo (alta):\n1 = Recuento / inventario\n2 = Devolución\n3 = Corrección de fabricación\n4 = Otro'
@@ -3088,7 +3151,8 @@ const Prodv = {
   startAuto(){
     this.stopAuto();
     this.reload();
-    this.timer=setInterval(()=>this.reload(true),this.autoMs);
+    // solo se refresca en vivo si el rango incluye hoy (un periodo pasado no cambia)
+    this.timer=setInterval(()=>{ if(document.hidden) return; const r=this.getRango(); const hoy=new Date(); hoy.setHours(0,0,0,0); if(r.fin>=hoy) this.reload(true); },this.autoMs);
   },
   stopAuto(){
     if(this.timer){ clearInterval(this.timer); this.timer=null; }
@@ -3156,7 +3220,7 @@ const Prodv = {
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
         safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('turnos').select('puesto_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
-        safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[]),
+        selectWhere('tiempos_sku','*',q=>q.eq('vigente',true)).catch(()=>[]),
         safe(sb.from('usuarios').select('id,nombre,rol,puesto_id').eq('activo',true).order('nombre'),[]),
         safe(sb.from('lotes_programa').select('programa,puesto_id'),[])
       ]);
@@ -3188,7 +3252,7 @@ const Prodv = {
     const evO=evs.filter(e=>String(e.puesto_id)===oid).sort((a,b)=>new Date(a.ts)-new Date(b.ts));
     const parO=pars.filter(p=>String(p.puesto_id)===oid).sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
     const turO=turs.filter(t=>String(t.puesto_id)===oid).sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
-    const byU={}; evO.forEach(e=>{ if(e.unidad_id)(byU[e.unidad_id]=byU[e.unidad_id]||[]).push(e); });
+    const byU={}; evO.forEach(e=>{ if(e.unidad_id){ const k=e.unidad_id+'|'+faseDe(e.sku); (byU[k]=byU[k]||[]).push(e); } });
     const retraIntervalos=parO.filter(p=>p.motivo==='Retrabajo'&&p.fin).map(p=>[new Date(p.inicio).getTime(),new Date(p.fin).getTime()]);
 
     let efectivo=0, hechas=0, retrabajos=0; const porSku={}; let abierta=null;
@@ -3513,7 +3577,7 @@ const Prodv = {
         <div style="display:flex;flex-direction:column;gap:11px">${refs||'<div style="font-size:12px;color:var(--muted)">Sin unidades cerradas</div>'}</div>
       </div>
       <div style="padding:0 20px 18px">
-        <button class="lanzar" style="background:var(--ink)" onclick='open_operario(${JSON.stringify(sel.nombre)},${JSON.stringify(sel.porSku)},${sel.hechas},${sel.efectivo})'>Ver eventos de fabricación</button>
+        <button class="lanzar" style="background:var(--ink)" onclick="abrirOp(${opRef(sel.nombre,sel.porSku,sel.hechas,sel.efectivo)})">Ver eventos de fabricación</button>
       </div></div>`;
     return `<div style="display:grid;grid-template-columns:1fr 400px;gap:14px">${lista}${panel}</div>`;
   },
@@ -3533,7 +3597,7 @@ const Prodv = {
     return `<div class="card"><div class="ch"><div class="t">Resumen del turno</div><div class="s">Por puesto de trabajo · ordenado por unidades fabricadas</div></div>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Puesto</th><th style="padding:11px 14px">Estado</th><th style="padding:11px 14px;text-align:right">Uds</th><th style="padding:11px 14px;text-align:right">Efectivo</th><th style="padding:11px 14px;text-align:right">Pausas</th><th style="padding:11px 14px;text-align:right">Uds/h</th><th style="padding:11px 14px;text-align:right">Vs hist.</th></tr></thead>
-        <tbody>${[...rows].sort((a,b)=>b.hechas-a.hechas).map(r=>`<tr style="border-bottom:1px solid var(--border);cursor:pointer" onclick='open_operario(${JSON.stringify(r.nombre)},${JSON.stringify(r.porSku)},${r.hechas},${r.efectivo})'>
+        <tbody>${[...rows].sort((a,b)=>b.hechas-a.hechas).map(r=>`<tr style="border-bottom:1px solid var(--border);cursor:pointer" onclick="abrirOp(${opRef(r.nombre,r.porSku,r.hechas,r.efectivo)})">
           <td style="padding:10px 14px;font-weight:700">${esc(r.nombre)}</td><td style="padding:10px 14px"><span class="tag" style="background:${r.tint};color:${r.color}">${esc(r.estado)}</span></td>
           <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono';font-weight:700;color:var(--terra)">${r.hechas}</td>
           <td style="padding:10px 14px;text-align:right;font-family:'JetBrains Mono'">${fmtDur(r.efectivo)}</td>
@@ -3584,7 +3648,7 @@ const ProdvOld = {
     const bar=(pct,col)=>`<div style="height:7px;border-radius:4px;background:var(--surf2);overflow:hidden"><div style="width:${Math.min(pct*100,100)}%;height:100%;background:${col}"></div></div>`;
     $('#prodvLista').innerHTML=res.length?res.map(r=>`
       <div class="card" style="margin-bottom:12px"><div style="padding:16px 20px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;cursor:pointer" onclick='open_operario(${JSON.stringify(r.nombre)},${JSON.stringify(r.porSku)},${r.hechas},${r.efectivo})'>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;cursor:pointer" onclick="abrirOp(${opRef(r.nombre,r.porSku,r.hechas,r.efectivo)})">
           <div style="width:40px;height:40px;border-radius:50%;background:#F5E7DF;color:var(--terra);display:flex;align-items:center;justify-content:center;font-weight:700">${esc((r.nombre||'?')[0].toUpperCase())}</div>
           <div style="font-weight:700;font-size:16px">${esc(r.nombre)} <span style="font-size:11px;color:var(--muted);font-weight:400">› ver detalle</span></div>
           <div style="margin-left:auto;font-family:'JetBrains Mono';font-size:22px;font-weight:700">${r.hechas}<span style="font-size:12px;color:var(--muted);font-family:'Archivo'"> uds</span></div>
@@ -3609,11 +3673,11 @@ const ProdvOld = {
 // ============================================================
 const Tsku = {
   data:[], fase:'nucleo',
+  async refresco(){ try{ this.data=await selectWhere('tiempos_sku','*',q=>q.eq('vigente',true)); this.paint(); }catch(e){} },
   setFase(k){ this.fase=k; this.paint(); },
   async reload(){
     $('#tskuTabla').innerHTML='<div class="loading">Cargando…</div>';
-    try{ const {data}=await sb.from('tiempos_sku').select('*').eq('vigente',true).order('sku');
-      this.data=data||[]; this.paint();
+    try{ this.data=await selectWhere('tiempos_sku','*',q=>q.eq('vigente',true)); this.paint();
     }catch(e){ $('#tskuTabla').innerHTML='<div class="vacio">Aún no hay tiempos registrados (se aprenden con el uso).</div>'; }
   },
   paint(){
@@ -4535,8 +4599,16 @@ async function guardarCosteMaterial(sku,costeMO){
 }
 
 // anula una OT de núcleo: borra sus reservas y unidades, marca la orden anulada
-async function anularOTPorNumero(ot,now){
+// parte_ref (opcional): se anula para ese parte. Si la OT también abastece reservas de OTROS partes,
+// no se anula (se les quedarían los modelos sin núcleo): solo se quitan las reservas de este parte.
+// Devuelve false si la OT se ha mantenido por eso.
+async function anularOTPorNumero(ot,now,parte_ref){
   now=now||new Date().toISOString();
+  if(parte_ref){
+    const {data:otras,error}=await sb.from('reservas').select('parte_ref').eq('ot',ot).eq('estado','pendiente').neq('parte_ref',parte_ref).limit(1);
+    if(error) throw error;
+    if(otras&&otras.length){ chk(await sb.from('reservas').delete().eq('ot',ot).eq('parte_ref',parte_ref)); return false; }
+  }
   chk(await sb.from('reservas').delete().eq('ot',ot));
   // respeta lo que ya esté fabricado (o consumido): solo se borran las unidades pendientes.
   // si queda algo fabricado, la OT se cierra con esa cantidad en vez de anularse del todo.
@@ -4548,18 +4620,21 @@ async function anularOTPorNumero(ot,now){
   }else{
     chk(await sb.from('ordenes').update({estado:'anulada',cerrada_at:now}).eq('ot',ot));
   }
+  return true;
 }
 
 // ---- arranque ----
 let _metLoading=false, _metTs=0;
+let _metProm=null, _metOtra=false;
 async function refrescarMet(force){
-  // evita recargas duplicadas simultáneas; usa caché si es muy reciente (<4s) salvo force
-  if(_metLoading) return MET;
+  // evita recargas duplicadas simultáneas; usa caché si es muy reciente (<4s) salvo force.
+  // Si se fuerza mientras ya hay una en curso (p. ej. justo tras un ajuste), se hace otra al acabar:
+  // la que está en marcha pudo empezar antes del cambio.
+  if(_metProm){ if(!force) return _metProm; _metOtra=true; await _metProm.catch(()=>{}); if(_metProm) return _metProm; }
   if(!force && Date.now()-_metTs<4000 && Object.keys(MET).length) return MET;
-  _metLoading=true;
-  try{ MET=await calcularMetricas(); _metTs=Date.now(); }
-  finally{ _metLoading=false; }
-  return MET;
+  _metLoading=true; _metOtra=false;
+  _metProm=(async()=>{ try{ MET=await calcularMetricas(); _metTs=Date.now(); return MET; } finally{ _metLoading=false; _metProm=null; } })();
+  return _metProm;
 }
 
 async function boot(){
@@ -4568,16 +4643,17 @@ async function boot(){
     // config y métricas arrancan a la vez
     await cargarConfig();
     MET=await calcularMetricas(); _metTs=Date.now();
-    $('#conn').innerHTML='<b>Conectado</b>'+Object.keys(MET).length+' núcleos';
+    $('#conn').innerHTML='<b>Conectado</b>'+Object.keys(MET).length+' referencias';
     render();
     Avisos.start(); // peticiones de planta pendientes
+    startViewAuto('dash'); // el Dashboard inicial también se refresca solo
   }catch(e){
     $('#conn').innerHTML='<b>Error de conexión</b>'+esc(e.message||'');
     $('#grid').innerHTML='<div class="vacio">Error al cargar: '+esc(e.message||e)+'</div>';
   }
 }
 $('#search').addEventListener('input',render);
-if($('#invSearch'))$('#invSearch').addEventListener('input',()=>Inv.paint());
+if($('#invSearch'))$('#invSearch').addEventListener('input',()=>{ Inv.lim=120; Inv.paint(); });
 if($('#tskuSearch'))$('#tskuSearch').addEventListener('input',()=>Tsku.paint());
 $('#logo').src='data:image/png;base64,'+LOGO_B64;
 Auth.init();  // pide login y arranca la app al entrar

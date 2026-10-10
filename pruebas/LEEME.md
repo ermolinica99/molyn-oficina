@@ -25,3 +25,9 @@ Copia de la app para probar cambios sin tocar la app real ni sus datos.
   "Copiar datos reales a PRUEBAS" también los aplica al final, porque la copia borra la base de pruebas.
 - Al pasar los cambios a la app real, estos SQL se ejecutan también en la base real (a mano, en el
   Editor SQL de Supabase).
+
+## Notas
+- `pruebas/index.html` usa **siempre** la base de pruebas (`ES_PRUEBAS=true`), se abra desde donde se abra.
+  Al pasarlo a la app real hay que volver a poner `const ES_PRUEBAS=/\/pruebas\//.test(location.pathname);`.
+- "Copiar datos reales a PRUEBAS" reinicia el contador de PF (PF00001…). Antes de copiar, sincroniza las tablets
+  de pruebas (que no tengan nada pendiente de enviar), para que no se apliquen a colchones nuevos con el mismo número.
