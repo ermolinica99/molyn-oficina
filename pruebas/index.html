@@ -97,6 +97,23 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
 
 /* programas (rejilla de tarjetas) */
 .progGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;padding:16px}
+.pv-flow{display:flex;gap:10px;align-items:stretch;overflow-x:auto;padding-bottom:6px}
+.pv-col{flex:1 1 0;min-width:190px;display:flex;flex-direction:column;gap:10px}
+.pv-arrow{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--muted);font-size:22px;min-width:46px}
+.pv-arrow .q{font-family:'JetBrains Mono';font-size:11px;font-weight:700;background:var(--surf2);color:var(--ink);border-radius:8px;padding:4px 7px;text-align:center;line-height:1.25}
+.pv-arrow .q.hot{background:#F7E1DC;color:var(--red)}
+.pv-st{background:var(--surf);border:1px solid var(--border);border-radius:14px;padding:12px 13px;display:flex;flex-direction:column;gap:8px}
+.pv-st h4{margin:0;font-size:14px;display:flex;align-items:center;gap:8px}
+.pv-st h4 .n{font-family:'JetBrains Mono';color:var(--terra)}
+.pv-kp{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.pv-kp b{display:block;font-family:'JetBrains Mono';font-size:18px;color:var(--ink)}
+.pv-p{border:1px solid var(--border);border-left-width:5px;border-radius:10px;padding:8px 10px;background:var(--surf);font-size:12px}
+.pv-p .t{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.pv-p .t b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-p .cr{font-family:'JetBrains Mono';font-weight:800;font-size:15px}
+.pv-p .d{color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-vacio{font-size:12px;color:var(--muted);border:1px dashed var(--border);border-radius:10px;padding:8px 10px;text-align:center}
+@media (max-width:700px){.pv-flow{flex-direction:column}.pv-arrow{flex-direction:row;min-width:0;transform:none}.pv-arrow .ar{transform:rotate(90deg)}}
 .progCard{background:var(--surf);border:1px solid var(--border);border-radius:14px;padding:15px 16px;cursor:pointer;transition:.15s ease}
 .progCard:hover{border-color:var(--terra);transform:translateY(-2px);box-shadow:0 8px 20px rgba(27,26,23,.07)}
 .progCard.on{border-color:var(--terra);border-width:2px;padding:14px 15px;background:#FBF8F4}
@@ -204,6 +221,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     </div>
     <div class="grp">Operación</div>
     <button class="nav on" id="navDash" onclick="nav('dash')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Dashboard</span></button>
+    <button class="nav" id="navVivo" onclick="nav('vivo')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg><span>Planta en vivo</span></button>
     <button class="nav" id="navProd" onclick="nav('prod')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span>Producción</span></button>
     <button class="nav" id="navPartes" onclick="nav('partes')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Partes lanzados</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
@@ -300,6 +318,20 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="card" style="margin-top:14px">
         <div id="prodPartes"><div class="loading">Cargando…</div></div>
       </div>
+    </div>
+
+    <div class="content" id="view-vivo" style="display:none">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div><div class="h1">Planta en vivo</div><div class="h1sub" id="vivoSub">Qué está pasando ahora en cada fase · se actualiza solo cada 5 s</div></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="mono" id="vivoReloj" style="font-size:20px;font-weight:800"></div>
+          <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Vivo.pantallaCompleta()">⛶ Pantalla completa</button>
+        </div>
+      </div>
+      <div id="vivoKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:10px;margin:14px 0"></div>
+      <div id="vivoAlertas"></div>
+      <div id="vivoFlow" class="pv-flow"><div class="loading">Cargando planta…</div></div>
+      <div id="vivoSin" style="margin-top:12px"></div>
     </div>
 
     <div class="content" id="view-pf" style="display:none">
@@ -1065,15 +1097,15 @@ const ADMIN_VIEWS = new Set(['apr','alta','pers']);
 
 const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes','cSinNucleo'];
 function nav(v){
-  const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',pf:'Producto final',
+  const titulos={dash:'Dashboard',vivo:'Planta en vivo',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',pf:'Producto final',
     cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',cSinNucleo:'Colchones sin núcleo',
     inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempos',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',pf:'navPF',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
+  const navIds={dash:'navDash',vivo:'navVivo',prod:'navProd',partes:'navPartes',ot:'navOT',pf:'navPF',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  const todas=['dash','prod','partes','ot','pf','inv','catalogo','est','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
+  const todas=['dash','vivo','prod','partes','ot','pf','inv','catalogo','est','prodv','tsku','apr','alta','pers',...CONF_SUBVIEWS];
   todas.forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
@@ -1100,6 +1132,7 @@ function nav(v){
   if(v==='catalogo') Catalogo.load();
   if(v==='prodv') Prodv.startAuto();
   else Prodv.stopAuto();
+  if(v==='vivo') Vivo.start(); else Vivo.stop();
   if(v==='tsku') Tsku.reload();
   if(v==='apr') Apr.reload();
   startViewAuto(v);
@@ -1983,6 +2016,103 @@ const Partes = {
   }
 };
 
+
+// ============================================================
+//  PLANTA EN VIVO: cada fase con sus puestos (estado y cronómetro), colas y lo hecho hoy
+// ============================================================
+const Vivo = {
+  timer:null, tick:null, loading:false, ultimoMet:0, lp:null, lpTs:0,
+  start(){ this.stop(); this.reload(); this.timer=setInterval(()=>this.reload(),5000); this.tick=setInterval(()=>this.pintarRelojes(),1000); },
+  stop(){ if(this.timer){clearInterval(this.timer);this.timer=null;} if(this.tick){clearInterval(this.tick);this.tick=null;} },
+  pantallaCompleta(){ const el=$('#view-vivo'); try{ if(document.fullscreenElement) document.exitFullscreen(); else (el.requestFullscreen||el.webkitRequestFullscreen).call(el); }catch(e){} },
+  pintarRelojes(){
+    const now=Date.now();
+    const r=$('#vivoReloj'); if(r) r.textContent=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    document.querySelectorAll('#view-vivo [data-t0]').forEach(el=>{ el.textContent=fmtDur((now-Number(el.dataset.t0))/1000); });
+  },
+  async reload(){
+    if(this.loading) return; this.loading=true;
+    try{
+      const hoy=new Date(); hoy.setHours(0,0,0,0); const ini=hoy.toISOString();
+      const safe=(p,f)=>p.then(r=>r.data||f).catch(()=>f);
+      // asignación de puestos (cambia poco: cada minuto)
+      if(!this.lp || Date.now()-this.lpTs>60000){ this.lp=await safe(sb.from('lotes_programa').select('programa,puesto_id'),[]); this.lpTs=Date.now(); }
+      const [ops,evs,pars,turs,pfu]=await Promise.all([
+        safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
+        selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini)).catch(()=>[]),
+        safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini),[]),
+        safe(sb.from('turnos').select('puesto_id,inicio,fin').gte('inicio',ini),[]),
+        selectWhere('pf_unidades','id,pf,fase,embalado_at',q=>q.in('fase',['pegado','cosido','embalaje'])).catch(()=>null)
+      ]);
+      // stock de núcleos, tapas y platabandas (las métricas se recalculan cada 30 s)
+      if(Date.now()-this.ultimoMet>30000){ await refrescarMet(true); this.ultimoMet=Date.now(); }
+      const now=new Date();
+      const ctx={alerts:[],hourly:null,bucketIdx:()=>-1};
+      const rows=ops.map(o=>Prodv.buildOperario.call(ctx,o,evs,pars,turs,{},now));
+      // fase de cada puesto: la de lo que tiene entre manos, si no la asignada, si no la de su último trabajo de hoy
+      const asign={};
+      (this.lp||[]).forEach(r=>{ if(r.puesto_id==null) return; const f=FASES.find(x=>x.clave===r.programa); const k=f?f.k:(/^N\d{3}$/.test(r.programa)?'nucleo':null); if(k) (asign[String(r.puesto_id)]=asign[String(r.puesto_id)]||new Set()).add(k); });
+      const ultFase={}; evs.forEach(e=>{ ultFase[String(e.puesto_id)]=faseDe(e.sku); });
+      rows.forEach(r=>{ const id=String(r.id);
+        r.fase=r.actual?faseDe(r.actual.sku):(asign[id]&&asign[id].size?[...asign[id]][0]:(ultFase[id]||null));
+        r.hoyPorFase={}; evs.filter(e=>String(e.puesto_id)===id&&e.tipo==='fin').forEach(e=>{ const k=faseDe(e.sku); r.hoyPorFase[k]=(r.hoyPorFase[k]||0)+1; });
+      });
+      // hechas hoy por fase y colas de la línea
+      const hechas={}; evs.filter(e=>e.tipo==='fin').forEach(e=>{ const k=faseDe(e.sku); hechas[k]=(hechas[k]||0)+1; });
+      const enCurso={}; rows.forEach(r=>{ if(r.actual){ const k=faseDe(r.actual.sku); enCurso[k]=(enCurso[k]||0)+1; } });
+      const cola={pegado:0,cosido:0,embalaje:0}; (pfu||[]).forEach(u=>{ if(cola[u.fase]!=null) cola[u.fase]++; });
+      // las que están en curso no esperan
+      ['pegado','cosido','embalaje'].forEach(k=>{ cola[k]=Math.max(0,cola[k]-(enCurso[k]||0)); });
+      const stock={}; Object.values(MET).forEach(b=>{ const k=b.tipo||'nucleo'; const x=stock[k]||(stock[k]={disp:0,madur:0,fab:0,bajo:0}); x.disp+=b.disp; x.madur+=b.madurando; x.fab+=b.fabricando; if(b.bajoMin&&b.enUso!==false) x.bajo++; });
+      this.pintar({rows,hechas,enCurso,cola,stock,alerts:ctx.alerts,hayPF:pfu!==null});
+    }catch(e){ const el=$('#vivoFlow'); if(el) el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+    finally{ this.loading=false; }
+  },
+  chip(r){
+    const t0=Date.now()-(r.currentSecs||0)*1000;
+    const que=r.actual?`${esc(r.actual.unidad_id||r.actual.ot||'')} · ${esc(r.actual.sku||'')}`:esc(r.detalle||'');
+    const hoy=Object.values(r.hoyPorFase||{}).reduce((a,b)=>a+b,0);
+    return `<div class="pv-p" style="border-left-color:${r.color};background:${r.estado==='Fuera de turno'?'var(--surf)':r.tint}">
+      <div class="t"><b>${esc(r.nombre)}</b>${r.estado!=='Fuera de turno'?`<span class="cr" style="color:${r.color}" data-t0="${t0}">${fmtDur(r.currentSecs||0)}</span>`:''}</div>
+      <div class="d"><span style="color:${r.color};font-weight:700">${esc(r.estado)}</span> · ${que}</div>
+      <div class="d">${hoy} uds hoy${r.miembros&&r.miembros.length?' · '+r.miembros.map(m=>esc(m.nombre.split(' ')[0])).join(', '):''}</div>
+    </div>`;
+  },
+  estacion(k,titulo,num,kpis,rows){
+    return `<div class="pv-st"><h4>${num?`<span class="n">${num}</span>`:''}${esc(titulo)}</h4>
+      <div class="pv-kp">${kpis.map(([v,t,c])=>`<div><b style="${c?'color:'+c:''}">${v}</b>${t}</div>`).join('')}</div>
+      ${rows.length?rows.map(r=>this.chip(r)).join(''):'<div class="pv-vacio">Ningún puesto en esta fase</div>'}</div>`;
+  },
+  pintar(d){
+    const R=k=>d.rows.filter(r=>r.fase===k).sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
+    const st=k=>d.stock[k]||{disp:0,madur:0,fab:0,bajo:0};
+    const n=st('nucleo'), t=st('tapa'), pl=st('platabanda');
+    const trab=d.rows.filter(r=>r.estado==='Trabajando').length, pau=d.rows.filter(r=>r.estado==='En pausa').length, sin=d.rows.filter(r=>r.estado==='Sin actividad').length;
+    const enLinea=d.cola.pegado+d.cola.cosido+d.cola.embalaje+(d.enCurso.pegado||0)+(d.enCurso.cosido||0)+(d.enCurso.embalaje||0);
+    const kpi=(v,t2,c)=>`<div class="card" style="padding:12px 14px;margin:0"><div style="font-family:'JetBrains Mono';font-size:24px;font-weight:800;color:${c}">${v}</div><div style="font-size:12px;color:var(--muted)">${t2}</div></div>`;
+    $('#vivoKpis').innerHTML=kpi(trab,'Puestos trabajando','var(--green)')+kpi(pau,'En pausa','var(--red)')+kpi(sin,'Sin actividad','var(--blue)')
+      +kpi(d.hechas.nucleo||0,'Núcleos hoy','var(--terra)')+kpi((d.hechas.tapa||0)+(d.hechas.platabanda||0),'Tapas + platabandas hoy','var(--terra)')
+      +kpi(enLinea,'Colchones en línea','#7A4B8C')+kpi(d.hechas.embalaje||0,'Embalados hoy','var(--green)');
+    $('#vivoAlertas').innerHTML=d.alerts.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${d.alerts.map(a=>`<span style="background:${a.sev==='bad'?'#F7E1DC':'#F7EDDF'};color:${a.sev==='bad'?'var(--red)':'#8a5a1e'};padding:6px 10px;font-size:12px;font-weight:700;border-radius:8px;max-width:100%">⚠ ${esc(a.msg)}</span>`).join('')}</div>`:'';
+    const flecha=(txt,hot)=>`<div class="pv-arrow"><span class="ar">→</span>${txt!=null?`<span class="q${hot?' hot':''}">${txt}</span>`:''}</div>`;
+    const stockKp=x=>[[x.disp,'disponibles','var(--terra)'],[x.madur,'madurando'],[x.fab,'por fabricar'],...(x.bajo?[[x.bajo,'bajo mínimo','var(--red)']]:[])];
+    const linea=k=>[[d.cola[k],'esperan',d.cola[k]>0?'#7A4B8C':''],[d.enCurso[k]||0,'en curso','var(--green)'],[d.hechas[k]||0,'hechos hoy']];
+    $('#vivoFlow').innerHTML=
+      `<div class="pv-col">${this.estacion('nucleo','Núcleos','',[...stockKp(n).slice(0,2),[d.hechas.nucleo||0,'hechos hoy']],R('nucleo'))}
+        ${this.estacion('tapa','Tapas','',[[t.disp,'en stock','var(--terra)'],[t.fab,'por fabricar'],[d.hechas.tapa||0,'hechas hoy']],R('tapa'))}
+        ${this.estacion('platabanda','Platabandas','',[[pl.disp,'en stock','var(--terra)'],[pl.fab,'por fabricar'],[d.hechas.platabanda||0,'hechas hoy']],R('platabanda'))}</div>`
+      +flecha(d.hayPF?d.cola.pegado+'<br>esperan':null,d.cola.pegado>0)
+      +`<div class="pv-col">${this.estacion('pegado','Pegado','3',linea('pegado'),R('pegado'))}</div>`
+      +flecha(d.hayPF?d.cola.cosido+'<br>esperan':null,d.cola.cosido>0)
+      +`<div class="pv-col">${this.estacion('cosido','Cosido','2',linea('cosido'),R('cosido'))}</div>`
+      +flecha(d.hayPF?d.cola.embalaje+'<br>esperan':null,d.cola.embalaje>0)
+      +`<div class="pv-col">${this.estacion('embalaje','Embalado','1',linea('embalaje'),R('embalaje'))}</div>`;
+    const sinFase=d.rows.filter(r=>!r.fase);
+    $('#vivoSin').innerHTML=sinFase.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Puestos sin fase asignada ni actividad hoy (asígnalos en Configuración → Lotes)</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">${sinFase.map(r=>this.chip(r)).join('')}</div>`:'';
+    if(!d.hayPF) $('#vivoSub').textContent='Falta preparar la base de datos para el producto final (Actions → "Aplicar SQL a PRUEBAS")';
+    this.pintarRelojes();
+  }
+};
 
 // ============================================================
 //  PRODUCTO FINAL (PF): fases en línea 3 Pegado → 2 Cosido → 1 Embalado
