@@ -5018,16 +5018,22 @@ const Inf = {
         udh:y.seg?y.n/(y.seg/3600):0, med:y.n?y.seg/y.n:0, ef:y.seg?y.teo/y.seg:0,
         nP:p.n, efP:p.seg?p.teo/p.seg:0, ret:def.filter(x=>x.accion!=='baja').length, baja:def.filter(x=>x.accion==='baja').length};
       f.calidad=f.n?Math.max(0,(f.n-f.ret-f.baja)/f.n):1;
-      if(this.por==='puesto'){ f.turno=turno[y.k]||0; f.pausa=pausa[y.k]||0; f.ocup=f.turno>0?Math.min(1,y.seg/f.turno):null; f.gente=this.trabajadores(y.k); }
+      if(this.por==='puesto'){ f.turno=turno[y.k]||0; f.pausa=Math.min(pausa[y.k]||0,f.turno); f.ocup=f.turno>0?Math.min(1,y.seg/f.turno):null; f.gente=this.trabajadores(y.k);
+        f.oee=f.turno>0?(f.teo/f.turno)*f.calidad:null; }
       return f;
     });
     const orden=FASES.map(f=>f.k);
     filas.sort(this.por==='fase'?(x,y)=>orden.indexOf(x.k)-orden.indexOf(y.k):(x,y)=>y.n-x.n);
-    // ranking de puestos: eficiencia (tiempo teórico de lo hecho / tiempo real), con un mínimo de unidades
+    // ranking de puestos por OEE = disponibilidad × rendimiento × calidad:
+    // disponibilidad = (turno − paradas) / turno; rendimiento = tiempo teórico de lo hecho / (turno − paradas),
+    // así el tiempo en turno sin hacer nada y sin parada registrada también resta;
+    // calidad = unidades sin defecto / unidades. Necesita turno y un mínimo de 5 unidades.
     const gPu=this.agrupar(d.cur,x=>String(x.puesto_id));
-    const rank=Object.values(gPu).filter(y=>y.n>=5&&y.seg>0).map(y=>{ const def=d.inc.filter(x=>String(x.puesto_culpable)===y.k).length;
-      return {k:y.k,txt:this.nombrePuesto(y.k),gente:this.trabajadores(y.k),n:y.n,ef:y.teo/y.seg,udh:y.n/(y.seg/3600),def,calidad:Math.max(0,(y.n-def)/y.n)}; })
-      .sort((x,y)=>y.ef-x.ef);
+    const rank=Object.values(gPu).filter(y=>y.n>=5&&y.seg>0&&turno[y.k]>0).map(y=>{
+      const def=d.inc.filter(x=>String(x.puesto_culpable)===y.k).length, t=turno[y.k], pa=Math.min(pausa[y.k]||0,t);
+      const disp=(t-pa)/t, rend=t-pa>0?y.teo/(t-pa):0, cal=Math.max(0,(y.n-def)/y.n);
+      return {k:y.k,txt:this.nombrePuesto(y.k),gente:this.trabajadores(y.k),n:y.n,disp,rend,cal,oee:disp*rend*cal,ef:rend,udh:y.n/(y.seg/3600),def,calidad:cal}; })
+      .sort((x,y)=>y.oee-x.oee);
     // tiempos por referencia: mediana de este periodo frente a la del anterior
     const durs=(ds)=>{ const o={}; ds.forEach(x=>(o[x.sku]=o[x.sku]||[]).push(x.seg)); return o; };
     const dC=durs(d.cur), dP=durs(d.prev);
@@ -5074,27 +5080,27 @@ const Inf = {
     h+=card('Productividad '+(esP?'por puesto de trabajo':'por fase'),'Unidades terminadas en el periodo, tiempo real (sin pausas) y comparación con '+ant+'.',
       c.filas.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left">
         <th style="padding:8px 10px">${esP?'Puesto':'Fase'}</th><th style="${th}">Uds</th><th style="${th}">Horas</th><th style="${th}">Uds/hora</th><th style="${th}">Tiempo medio</th><th style="${th}">Eficiencia</th>
-        ${esP?`<th style="${th}">Turno</th><th style="${th}">Ocupación</th>`:''}<th style="${th}">Defectos</th><th style="${th}">Calidad</th><th style="${th}">Coste M.O.</th><th style="${th}">€/ud</th></tr></thead><tbody>
+        ${esP?`<th style="${th}">Turno</th><th style="${th}">Ocupación</th><th style="${th}">OEE</th>`:''}<th style="${th}">Defectos</th><th style="${th}">Calidad</th><th style="${th}">Coste M.O.</th><th style="${th}">€/ud</th></tr></thead><tbody>
         ${c.filas.map(f=>`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 10px"><b>${esc(f.txt)}</b>${esP&&f.gente.length?`<div style="font-size:10px;color:var(--muted)">${f.gente.map(esc).join(', ')}</div>`:''}</td>
           <td style="${tdn}">${n0(f.n)} ${delta(f.n,f.nP)}</td><td style="${tdn}">${n1(f.seg/3600)}</td><td style="${tdn}">${n1(f.udh)}</td><td style="${tdn}">${fmtDur(f.med)}</td>
           <td style="${tdn};font-weight:700;color:${f.ef>=1?'var(--green)':f.ef<0.85?'var(--red)':'var(--ink)'}">${pc(f.ef)} ${delta(f.ef,f.efP)}</td>
-          ${esP?`<td style="${tdn}">${f.turno?n1(f.turno/3600)+' h':'—'}</td><td style="${tdn}">${f.ocup!=null?pc(f.ocup):'—'}</td>`:''}
+          ${esP?`<td style="${tdn}">${f.turno?n1(f.turno/3600)+' h':'—'}</td><td style="${tdn}">${f.ocup!=null?pc(f.ocup):'—'}</td><td style="${tdn};font-weight:800">${f.oee!=null?pc(f.oee):'—'}</td>`:''}
           <td style="${tdn}">${f.ret+f.baja?`${f.ret} / ${f.baja}`:'—'}</td><td style="${tdn};color:${f.calidad<0.97?'var(--red)':'var(--ink)'}">${pc(f.calidad)}</td>
           <td style="${tdn}">${e(f.eur)}</td><td style="${tdn}">${e(f.n?f.eur/f.n:0)}</td></tr>`).join('')}
         </tbody></table></div>
-        <div style="font-size:11px;color:var(--muted);padding:8px 14px">Defectos: rehechos / bajas que se le cuentan (Producto final → Calidad).${esP?' Ocupación: tiempo trabajando unidades sobre las horas de turno.':''}</div>`
+        <div style="font-size:11px;color:var(--muted);padding:8px 14px">Defectos: rehechos / bajas que se le cuentan (Producto final → Calidad).${esP?' Ocupación: tiempo trabajando unidades sobre las horas de turno. OEE = disponibilidad × rendimiento × calidad.':''}</div>`
       :'<div class="vacio">No hay unidades terminadas en este periodo.</div>');
 
     // 3) puestos más productivos
-    h+=card('Los más productivos '+(this.tipo==='semana'?'de la semana':'del mes'),'Ordenados por eficiencia: lo que han hecho medido en tiempo teórico, dividido por el tiempo que han tardado. Así se puede comparar un puesto de cosido con uno de embalado. Mínimo 5 unidades. Los datos se registran por puesto: si un puesto tiene varios trabajadores, el resultado es de todos.',
-      c.rank.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;padding:12px 14px">
+    h+=card((this.tipo==='semana'?'Trabajador de la semana':'Trabajador del mes')+' · OEE','OEE = <b>disponibilidad</b> (tiempo de turno sin paradas) × <b>rendimiento</b> (tiempo teórico de lo que ha hecho ÷ tiempo de turno sin paradas) × <b>calidad</b> (unidades sin defecto). Dicho de otra forma: qué parte de su turno se ha convertido en unidades buenas a ritmo teórico. Permite comparar puestos de fases distintas. Entran los puestos con turno y 5 unidades o más. Los datos se registran por puesto: si un puesto tiene varios trabajadores, el resultado es de todos.',
+      c.rank.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;padding:12px 14px">
         ${c.rank.slice(0,3).map((x,i)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:${i===0?'#FBF3E4':'var(--surf)'}">
           <div style="font-size:22px">${['🥇','🥈','🥉'][i]}</div><div style="font-weight:800;font-size:15px">${esc(x.gente.length?x.gente.join(', '):x.txt)}</div>
-          <div style="font-size:11px;color:var(--muted)">${esc(x.txt)}</div>
-          <div style="font-family:'JetBrains Mono';font-size:22px;font-weight:800;color:var(--green);margin-top:6px">${pc(x.ef)}</div>
-          <div style="font-size:12px;color:var(--muted)">${n0(x.n)} uds · ${n1(x.udh)} uds/h · calidad ${pc(x.calidad)}</div></div>`).join('')}</div>
-        ${c.rank.length>3?`<div style="padding:0 14px 12px;font-size:12px;color:var(--muted)">${c.rank.slice(3).map((x,i)=>`${i+4}. ${esc(x.gente.length?x.gente.join(', '):x.txt)} (${esc(x.txt)}) ${pc(x.ef)}`).join(' · ')}</div>`:''}`
-      :'<div class="vacio">Ningún puesto llega a 5 unidades en este periodo.</div>');
+          <div style="font-size:11px;color:var(--muted)">${esc(x.txt)} · ${n0(x.n)} uds</div>
+          <div style="font-family:'JetBrains Mono';font-size:24px;font-weight:800;color:var(--green);margin-top:6px">${pc(x.oee)} <span style="font-size:11px;color:var(--muted);font-weight:600">OEE</span></div>
+          <div style="display:flex;gap:10px;font-size:11px;color:var(--muted);margin-top:4px"><span>Disp. <b style="color:var(--ink)">${pc(x.disp)}</b></span><span>Rend. <b style="color:var(--ink)">${pc(x.rend)}</b></span><span>Calidad <b style="color:var(--ink)">${pc(x.cal)}</b></span></div></div>`).join('')}</div>
+        ${c.rank.length>3?`<div style="padding:0 14px 12px;font-size:12px;color:var(--muted)">${c.rank.slice(3).map((x,i)=>`${i+4}. ${esc(x.gente.length?x.gente.join(', '):x.txt)} (${esc(x.txt)}) ${pc(x.oee)}`).join(' · ')}</div>`:''}`
+      :'<div class="vacio">Ningún puesto con turno registrado llega a 5 unidades en este periodo.</div>');
 
     // 4) tiempos por referencia
     const mej=c.refs.filter(x=>x.pct<=-5).sort((a,b)=>a.pct-b.pct), emp=c.refs.filter(x=>x.pct>=5).sort((a,b)=>b.pct-a.pct);
@@ -5147,8 +5153,8 @@ const Inf = {
     const c=this.calc, d=this.d, r2=x=>Math.round(x*100)/100, wb=XLSX.utils.book_new();
     const hoja=(nombre,rows)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{'':'Sin datos'}]),nombre);
     hoja('Productividad',c.filas.map(f=>({[this.por==='fase'?'Fase':'Puesto']:f.txt,...(this.por==='puesto'?{Trabajadores:f.gente.join(', ')}:{}),Uds:f.n,'Uds periodo anterior':f.nP,Horas:r2(f.seg/3600),'Uds/hora':r2(f.udh),
-      'Tiempo medio (min)':r2(f.med/60),'Eficiencia %':Math.round(f.ef*100),'Eficiencia anterior %':Math.round(f.efP*100),Rehechos:f.ret,Bajas:f.baja,'Calidad %':Math.round(f.calidad*100),'Coste MO €':r2(f.eur),'€/ud':r2(f.n?f.eur/f.n:0)})));
-    hoja('Ranking',c.rank.map((x,i)=>({Puesto:i+1,'Puesto de trabajo':x.txt,Trabajadores:x.gente.join(', '),Uds:x.n,'Eficiencia %':Math.round(x.ef*100),'Uds/hora':r2(x.udh),'Calidad %':Math.round(x.calidad*100)})));
+      'Tiempo medio (min)':r2(f.med/60),'Eficiencia %':Math.round(f.ef*100),'Eficiencia anterior %':Math.round(f.efP*100),Rehechos:f.ret,Bajas:f.baja,'Calidad %':Math.round(f.calidad*100),...(this.por==='puesto'?{'Horas turno':r2(f.turno/3600),'OEE %':f.oee!=null?Math.round(f.oee*100):''}:{}),'Coste MO €':r2(f.eur),'€/ud':r2(f.n?f.eur/f.n:0)})));
+    hoja('Ranking OEE',c.rank.map((x,i)=>({Posición:i+1,'Puesto de trabajo':x.txt,Trabajadores:x.gente.join(', '),Uds:x.n,'OEE %':Math.round(x.oee*100),'Disponibilidad %':Math.round(x.disp*100),'Rendimiento %':Math.round(x.rend*100),'Calidad %':Math.round(x.cal*100),'Uds/hora':r2(x.udh)})));
     hoja('Tiempos referencia',c.refs.sort((a,b)=>a.pct-b.pct).map(x=>({Referencia:x.sku,Fase:faseInfo(x.fase).txt,'Uds antes':x.nP,'Uds ahora':x.n,'Antes (min)':r2(x.medP/60),'Ahora (min)':r2(x.med/60),'Cambio %':Math.round(x.pct),'Teórico (min)':r2(x.teo/60)})));
     hoja('Coste colchones',d.costes.sort((a,b)=>b.pct-a.pct).map(x=>({Colchón:x.id,PF:x.pf,Modelo:x.sku_pf,'Estimado €':r2(x.teo),'Real €':r2(x.real),'Desviación %':Math.round(x.pct*10)/10,'Fuera de umbral':Math.abs(x.pct)>=this.umbral?'Sí':'',Dónde:x.peor?x.peor.txt:'','Piezas estimadas':x.estimadas||''})));
     hoja('Paradas',c.motivos.map(x=>({Motivo:x.motivo,Veces:x.n,Horas:r2(x.seg/3600)})));
@@ -5160,8 +5166,10 @@ const Inf = {
     const w=window.open('','_blank'); if(!w){ toast('Permite las ventanas emergentes para imprimir','err'); return; }
     const estilos=[...document.querySelectorAll('style,link[rel=stylesheet]')].map(x=>x.outerHTML).join('');
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Informe ${esc(this.etiqueta(this.d.r))}</title>${estilos}
-      <style>body{background:#fff;padding:18px}select{border:none;appearance:none}.card{break-inside:avoid}</style></head>
-      <body><div class="h1">Informe de producción</div><div class="h1sub">${esc(this.etiqueta(this.d.r))} · ${this.por==='fase'?'por fase':'por puesto'}</div>${body.innerHTML}</body></html>`);
+      <style>@page{size:A4;margin:12mm}html,body{height:auto!important;overflow:visible!important;display:block!important}body{background:#fff;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}select{border:none;appearance:none;background:none;font-weight:700}.card{break-inside:avoid;box-shadow:none}tr{break-inside:avoid}table{font-size:10px!important}th,td{padding:4px 5px!important;white-space:normal!important}.h1{font-size:24px}</style></head>
+      <body><div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:10px">
+        <div><div class="h1">Informe de producción</div><div class="h1sub">${esc(this.etiqueta(this.d.r))} · ${this.por==='fase'?'por fase':'por puesto'}</div></div>
+        <div style="text-align:right;font-size:11px;color:var(--muted)"><b style="font-size:16px;color:var(--ink)">MOLYN</b><br>Generado el ${new Date().toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})}</div></div>${body.innerHTML}</body></html>`);
     w.document.close(); setTimeout(()=>{ w.focus(); w.print(); },400);
   }
 };
