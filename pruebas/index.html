@@ -3854,7 +3854,7 @@ const ProdvOld = {
 // ============================================================
 const Bal = {
   d:null, plan:null, planPF:null, planTs:0, loading:false,
-  LINEA:['pegado','cosido','embalaje'],
+  LINEA:['pegado','cosido','embalaje'], STOCK:['nucleo','tapa','platabanda'],
   // día laborable k (0 = hoy si es laborable, si no el siguiente)
   diaLab(k){ const d=new Date(); d.setHours(0,0,0,0); let n=0; while(true){ if(d.getDay()!==0&&d.getDay()!==6){ if(n===k) return new Date(d); n++; } d.setDate(d.getDate()+1); } },
   // primer día laborable en el que esa fecha ya ha llegado
@@ -3884,6 +3884,27 @@ const Bal = {
       // puestos de cada fase (un puesto con varias fases reparte su tiempo entre ellas)
       const nPuestos={}, nombres={};
       puestos.forEach(p=>{ const fs=fasesDePuesto(p); fs.forEach(k=>{ nPuestos[k]=(nPuestos[k]||0)+1/fs.length; (nombres[k]=nombres[k]||[]).push(p.nombre); }); });
+      // OT de núcleos, tapas y platabandas por fabricar: se cargan en sus puestos día a día (por orden de
+      // lanzamiento). Así se sabe hasta qué día llega lo lanzado y el día en que estará cada pieza.
+      const udsPend=await selectWhere('unidades','id,ot,sku',q=>q.eq('estado','pendiente')).catch(()=>[]);
+      const otsPend=[...new Set(udsPend.map(u=>u.ot))]; let ordPend=[];
+      for(let i=0;i<otsPend.length;i+=150){ ordPend=ordPend.concat(await selectWhere('ordenes','ot,lanzada_at,estado',q=>q.in('ot',otsPend.slice(i,i+150))).catch(()=>[])); }
+      const lzP={}, anul=new Set(); ordPend.forEach(o=>{ lzP[o.ot]=o.lanzada_at||''; if(o.estado==='anulada') anul.add(o.ot); });
+      const capS={}; this.STOCK.forEach(k=>capS[k]=(nPuestos[k]||0)*minDia);
+      const colaS={nucleo:[],tapa:[],platabanda:[]};
+      udsPend.filter(u=>!anul.has(u.ot)).forEach(u=>{ const k=tipoDe(u.sku); if(colaS[k]) colaS[k].push({id:u.id,ot:u.ot,sku:u.sku,min:minDe(u.sku)}); });
+      const diaPieza={}, planS={};
+      this.STOCK.forEach(k=>{
+        const cola=colaS[k].sort((a,b)=>String(lzP[a.ot]||'').localeCompare(String(lzP[b.ot]||''))||String(a.ot).localeCompare(String(b.ot))||String(a.id).localeCompare(String(b.id)));
+        const carga=[], n=[]; let dia=0, libre=capS[k];
+        if(!(capS[k]>0)){ planS[k]={carga,n,total:cola.length,sinPuestos:cola.length>0,hasta:null}; return; }
+        for(const x of cola){
+          while(x.min>libre+1e-9 && x.min<=capS[k]){ dia++; libre=capS[k]; if(dia>365) break; }
+          if(x.min>capS[k]) continue;
+          libre-=x.min; carga[dia]=(carga[dia]||0)+x.min; n[dia]=(n[dia]||0)+1; diaPieza[x.id]=dia;
+        }
+        planS[k]={carga,n,total:cola.length,hasta:cola.length?dia:null};
+      });
       // material de cada colchón pendiente: reservas de su PF y cuándo estará disponible cada unidad de su OT
       const pfIds=[...new Set(pfPend.map(u=>u.pf))];
       const [pfOrdArr,res]=await Promise.all([
@@ -3892,7 +3913,7 @@ const Bal = {
       const ots=[...new Set(res.map(r=>r.ot).filter(Boolean))];
       let uds=[], ords=[];
       for(let i=0;i<ots.length;i+=150){ const ch=ots.slice(i,i+150);
-        const [a,b]=await Promise.all([selectWhere('unidades','ot,sku,estado,fabricada_at',q=>q.in('ot',ch).in('estado',['stock','pendiente'])).catch(()=>[]),
+        const [a,b]=await Promise.all([selectWhere('unidades','id,ot,sku,estado,fabricada_at',q=>q.in('ot',ch).in('estado',['stock','pendiente'])).catch(()=>[]),
                                        selectWhere('ordenes','ot,lanzada_at',q=>q.in('ot',ch)).catch(()=>[])]);
         uds=uds.concat(a); ords=ords.concat(b); }
       const pfOrd={}; pfOrdArr.forEach(o=>pfOrd[o.pf]=o);
@@ -3900,6 +3921,9 @@ const Bal = {
       const fabMs=(CFG.dias_fabricacion||0)*DAY, porOt={};
       uds.forEach(u=>{ const mad=madDiasDe(u.sku)*DAY; let t;
         if(u.estado==='stock') t=u.fabricada_at?Math.max(now,new Date(u.fabricada_at).getTime()+mad):now;
+        // por fabricar: el día en que le toca según la carga de su fase (+ maduración); si su fase no tiene
+        // puestos, la estimación de siempre (lanzamiento + días de fabricación + maduración)
+        else if(diaPieza[u.id]!=null) t=this.diaLab(diaPieza[u.id]).getTime()+86399999+mad;
         else t=lz[u.ot]?Math.max(now,new Date(lz[u.ot]).getTime()+fabMs+mad):Infinity;
         (porOt[u.ot]=porOt[u.ot]||[]).push(t); });
       Object.values(porOt).forEach(a=>a.sort((x,y)=>x-y));
@@ -3927,7 +3951,7 @@ const Bal = {
           items.push({pf,u,mins,listo:this.idxDia(t),enLinea:u.fase!=='pegado'});
         });
       });
-      this.d={minDia,turnos:act,nPuestos,nombres,items,pfOrd,conAprendido:Object.keys(apr).length};
+      this.d={minDia,turnos:act,nPuestos,nombres,items,pfOrd,planS,capS,conAprendido:Object.keys(apr).length};
       this.planificar(); this.planTs=Date.now();
       if(!silent || $('#view-bal').style.display!=='none') this.pintar();
     }catch(e){ const h=$('#balHoy'); if(h&&!silent) h.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
@@ -3974,20 +3998,29 @@ const Bal = {
         ${kpi(n0?'cada '+fm(d.minDia/n0):'—','Ritmo: 1 colchón…','var(--blue)','en '+fm(d.minDia)+' de turno')}
         ${kpi(N,'Colchones lanzados pendientes','var(--ink)')}
         ${kpi(ult?fd(ult.fecha):'—','Lo lanzado llega hasta…',pl.sinFecha.length||pl.imposible.length?'var(--red)':'var(--green)',ult?(ult.k+1)+(ult.k?' días laborables':' día laborable'):'')}
-        ${limita&&limita.u>0?kpi('<span style="font-size:18px">'+esc(faseInfo(limita.k).txt)+'</span>','Fase más cargada '+tit0,limita.u>=0.95?'var(--red)':'var(--ink)',Math.round(limita.u*100)+'% de su tiempo'):''}
+        ${limita&&limita.u>0?kpi(esc(faseInfo(limita.k).txt),'Fase más cargada '+tit0,limita.u>=0.95?'var(--red)':'var(--ink)',Math.round(limita.u*100)+'% de su tiempo'):''}
       </div>
+      ${(()=>{ const bl=this.STOCK.map(k=>{ const p=d.planS[k]; if(!p||!p.total) return `<div class="card" style="padding:12px 14px;margin:0"><div style="font-weight:800">${esc(faseInfo(k).txt)}</div><div style="font-size:12px;color:var(--muted)">Nada lanzado por fabricar</div></div>`;
+          if(p.sinPuestos) return `<div class="card" style="padding:12px 14px;margin:0"><div style="font-weight:800">${esc(faseInfo(k).txt)} · ${p.total} uds</div><div style="font-size:12px;color:var(--red);font-weight:700">Sin puestos asignados</div></div>`;
+          return `<div class="card" style="padding:12px 14px;margin:0"><div style="font-weight:800">${esc(faseInfo(k).txt)} · ${p.total} uds por fabricar</div><div style="font-size:12px;color:var(--muted)">Lo lanzado llega hasta <b style="color:var(--ink)">${fd(this.diaLab(p.hasta))}</b> (${p.hasta+1} día${p.hasta?'s':''}) · hoy ${p.n[0]||0} uds${p.n[0]?', 1 cada '+fm(d.minDia/p.n[0]):''}</div></div>`; }).join('');
+        return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px">${bl}</div>`; })()}
       ${pl.sinFecha.length?`<div style="margin-top:10px;background:#F7E1DC;color:var(--red);border-radius:10px;padding:10px 14px;font-size:13px;font-weight:700">⚠ ${pl.sinFecha.length} colchones no se pueden planificar: alguna de sus piezas no tiene OT lanzada.</div>`:''}
       ${pl.imposible.length?`<div style="margin-top:10px;background:#F7E1DC;color:var(--red);border-radius:10px;padding:10px 14px;font-size:13px;font-weight:700">⚠ ${pl.imposible.length} colchones no caben: alguna fase no tiene puestos asignados (Configuración → Puestos de trabajo).</div>`:''}`;
     // carga de máquinas: fases × días
-    const dias=pl.dias.slice(0,20);
+    // columnas: hasta el último día con carga (colchones o piezas), como mucho 20
+    const maxS=Math.max(-1,...this.STOCK.map(k=>d.planS[k]&&d.planS[k].hasta!=null?d.planS[k].hasta:-1));
+    const nDias=Math.min(20,Math.max(pl.dias.length,maxS+1));
+    const dias=[]; for(let k=0;k<nDias;k++) dias.push(pl.dias[k]||{k,fecha:this.diaLab(k),hechos:[],carga:{pegado:0,cosido:0,embalaje:0},esperan:0});
     const celda=(c,cap)=>{ if(!(cap>0)) return `<td style="padding:6px 8px;text-align:center;color:var(--muted);font-size:11px">sin puestos</td>`;
       const u=c/cap, pct=Math.round(u*100), col=u>=0.95?'#C24A2E':(u>=0.7?'#C9862B':(u>0?'#4C9A5E':'#E4E0D8'));
-      return `<td style="padding:6px 8px;min-width:78px"><div style="height:34px;background:var(--surf2);border-radius:6px;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:${Math.min(100,pct)}%;background:${col};opacity:.85"></div>
-        <div style="position:relative;text-align:center;font-family:'JetBrains Mono';font-size:12px;font-weight:700;line-height:34px;color:var(--ink)">${pct}%</div></div>
+      return `<td style="padding:6px 8px;min-width:78px"><div style="height:34px;background:var(--surf2);border-radius:6px;position:relative;overflow:hidden"><div style="position:absolute;left:0;bottom:0;width:100%;height:${Math.min(100,pct)}%;background:${col};opacity:.85"></div>
+        <div style="position:relative;text-align:center;font-family:'JetBrains Mono';font-size:12px;font-weight:700;line-height:34px;color:${pct>55?'#fff':'var(--ink)'}">${pct}%</div></div>
         <div style="text-align:center;font-size:10px;color:var(--muted);margin-top:2px">${fm(c)}</div></td>`; };
     $('#balCarga').innerHTML=!dias.length?'<div class="vacio">Sin carga.</div>':`<table style="border-collapse:collapse;font-size:12px;width:100%">
       <thead><tr><th style="padding:8px 12px;text-align:left;position:sticky;left:0;background:var(--surf)">Fase</th>${dias.map(x=>`<th style="padding:8px 6px;text-align:center;white-space:nowrap">${fd(x.fecha)}${esHoy(x.fecha)?'<div style="color:var(--terra)">hoy</div>':''}</th>`).join('')}</tr></thead><tbody>
       ${this.LINEA.map(k=>`<tr style="border-top:1px solid var(--border)"><td style="padding:8px 12px;position:sticky;left:0;background:var(--surf);min-width:150px"><b>${esc(faseInfo(k).txt)}</b><div style="font-size:10px;color:var(--muted)">${(d.nombres[k]||[]).map(esc).join(', ')||'sin puestos'} · ${fm(pl.cap[k])}/día</div></td>${dias.map(x=>celda(x.carga[k],pl.cap[k])).join('')}</tr>`).join('')}
+      <tr><td colspan="${dias.length+1}" style="padding:10px 12px 4px;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-top:2px solid var(--border)">Piezas (OT lanzadas por fabricar)</td></tr>
+      ${this.STOCK.map(k=>{ const p=d.planS[k]||{carga:[],n:[]}; return `<tr style="border-top:1px solid var(--border)"><td style="padding:8px 12px;position:sticky;left:0;background:var(--surf);min-width:150px"><b>${esc(faseInfo(k).txt)}</b><div style="font-size:10px;color:var(--muted)">${(d.nombres[k]||[]).map(esc).join(', ')||'sin puestos'} · ${fm(d.capS[k])}/día</div></td>${dias.map(x=>{ const c=p.carga[x.k]||0; return celda(c,d.capS[k]).replace('</td>',(p.n[x.k]?`<div style="text-align:center;font-size:10px;color:var(--muted)">${p.n[x.k]} uds</div>`:'')+'</td>'); }).join('')}</tr>`; }).join('')}
       <tr style="border-top:2px solid var(--border)"><td style="padding:8px 12px;position:sticky;left:0;background:var(--surf)"><b>Colchones</b><div style="font-size:10px;color:var(--muted)">y los que esperan material</div></td>${dias.map(x=>`<td style="padding:6px 8px;text-align:center"><div style="font-family:'JetBrains Mono';font-weight:800;font-size:15px">${x.hechos.length}</div><div style="font-size:10px;color:${x.esperan?'#C9862B':'var(--muted)'}">${x.esperan?x.esperan+' esperan':'—'}</div></td>`).join('')}</tr>
       </tbody></table>`;
     // fecha prevista por PF
@@ -3998,7 +4031,7 @@ const Bal = {
           <td style="padding:7px 14px;text-align:right">${p.n+(p.sinOT||0)+(p.sinCap||0)}</td>
           <td style="padding:7px 14px">${p.sinOT?'<span style="color:var(--red);font-weight:700">Falta pieza sin OT</span>':(p.materialDesde?'<span style="color:#C9862B">desde '+fd(this.diaLab(p.materialDesde))+'</span>':'<span style="color:var(--green)">disponible</span>')}</td>
           <td style="padding:7px 14px;font-weight:700">${p.desde==null?'—':(p.desde===p.hasta?fd(this.diaLab(p.desde)):fd(this.diaLab(p.desde))+' → '+fd(this.diaLab(p.hasta)))}</td></tr>`; }).join('')}</tbody></table>`;
-    $('#balInfo').innerHTML=`Tiempo de trabajo: ${d.turnos.length?d.turnos.map(t=>esc(t.nombre)).join(', '):'sin turnos (450 min por defecto)'} · ${fm(d.minDia)} al día, solo días laborables. Tiempos por colchón: los medidos por las tablets (${d.conAprendido} referencias) o el teórico de cada fase. Material: disponible ya; madurando, cuando acaba la maduración; por fabricar, lanzamiento de su OT + ${CFG.dias_fabricacion||0} días de fabricación + maduración. Puestos: Configuración → Puestos de trabajo.`;
+    $('#balInfo').innerHTML=`Tiempo de trabajo: ${d.turnos.length?d.turnos.map(t=>esc(t.nombre)).join(', '):'sin turnos (450 min por defecto)'} · ${fm(d.minDia)} al día, solo días laborables. Tiempos por colchón: los medidos por las tablets (${d.conAprendido} referencias) o el teórico de cada fase. Material: disponible ya; madurando, cuando acaba la maduración; por fabricar, el día en que se fabrica según la carga de su fase (núcleos + maduración). Las piezas se fabrican por orden de lanzamiento de su OT. Puestos: Configuración → Puestos de trabajo.`;
   }
 };
 
