@@ -1270,12 +1270,26 @@ const Prod = {
     const programa=claveTiempoDe(sku);
     const puestoId=this.puestoPrograma&&this.puestoPrograma[programa];
     const cp=puestoId&&this.costePuesto[puestoId];
-    return cp||CFG.coste_hora_operario||0;
+    if(cp) return cp;
+    // núcleo sin puesto en su programa: media de los puestos marcados con la fase Núcleos
+    if(ids.length){ const cs=ids.map(id=>this.costePuesto[id]).filter(c=>c>0); if(cs.length) return cs.reduce((a,b)=>a+b,0)/cs.length; }
+    return CFG.coste_hora_operario||0;
   },
 
   // minutos estimados para fabricar n uds de un núcleo
   minutosDe(sku,n){ return Math.round(this.segPorUdDe(sku)*n/60); },
 
+  // coste de UN colchón de un modelo: sus piezas (mano de obra + material) y las fases de la línea (mano de obra)
+  costeColchon(m){
+    const partes=[];
+    const add=(txt,sku,conMat)=>{ const seg=this.segPorUdDe(sku), eh=this.costeHoraDe(sku), t=this.tiempos[sku];
+      partes.push({txt,sku,min:seg/60,eh,mo:seg*eh/3600,conMat,mat:conMat?(this.costeMat[sku]||0):0,medido:!!(t&&t.n>=this.TIEMPO_MIN_UDS&&t.seg>0)}); };
+    if(m.sku_nucleo && !m.sin_nucleo) add('Núcleo',m.sku_nucleo,true);
+    add('Tapa',skuTapa(m.sku_pf),true); add('Platabanda',skuPlat(m.sku_pf),true);
+    add('3 · Pegado',m.sku_pf+'_PEG',false); add('2 · Cosido',m.sku_pf+'_COS',false); add('1 · Embalado',m.sku_pf+'_EMB',false);
+    const mo=partes.reduce((a,x)=>a+x.mo,0), mat=partes.reduce((a,x)=>a+x.mat,0), min=partes.reduce((a,x)=>a+x.min,0);
+    return {partes,mo,mat,total:mo+mat,min,sinCosteHora:partes.some(x=>!(x.eh>0))};
+  },
   // coste estimado (mano de obra + material) para fabricar n uds de un núcleo
   costeDe(sku,n){ const mo=this.segPorUdDe(sku)*this.costeHoraDe(sku)/3600; return (mo+(this.costeMat[sku]||0))*n; },
 
@@ -4804,7 +4818,7 @@ const Catalogo = {
   async load(){
     const el=$('#catLista'); if(el && !this.loaded) el.innerHTML='<div class="loading">Cargando…</div>';
     try{
-      const [modelos]=await Promise.all([ selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id') ]);
+      const [modelos]=await Promise.all([ selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id'), Auth.esAdmin()?Prod.init():null ]);
       await NucCat.load();
       this.rows=modelos;
       this.map={}; modelos.forEach(m=>this.map[m.sku_pf]=m);
@@ -4841,7 +4855,7 @@ const Catalogo = {
     if($('#catCount')) $('#catCount').textContent=rs.length+' modelo(s)';
     if(!rs.length){ el.innerHTML='<div class="vacio">Sin resultados.</div>'; return; }
     el.innerHTML=`<div style="max-height:64vh;overflow:auto">`
-      +`<div style="display:flex;gap:10px;padding:8px 16px;background:var(--surf2);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0"><span style="flex:1">Modelo</span><span style="width:170px">Núcleo</span><span style="width:110px"></span></div>`
+      +`<div style="display:flex;gap:10px;padding:8px 16px;background:var(--surf2);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0"><span style="flex:1">Modelo</span><span style="width:170px">Núcleo</span>${Auth.esAdmin()?'<span style="width:90px;text-align:right">Coste/colchón</span>':''}<span style="width:110px"></span></div>`
       +rs.map(m=>{
         const estado = m.sku_nucleo ? `<span style="color:var(--muted)">${esc(m.sku_nucleo)}</span>`
           : (m.sin_nucleo ? `<span style="color:var(--pur)">🚫 ${esc(NucCat.nombreDe(m.categoria_sin_nucleo_id)||'Sin núcleo')}</span>` : `<span style="color:var(--red)">— sin asignar</span>`);
@@ -4849,11 +4863,33 @@ const Catalogo = {
           <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-size:12px;font-weight:700">${esc(m.sku_pf)}</div>
             <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.nombre||'')}${m.medida?' · '+esc(m.medida):''}</div></div>
           <div style="width:170px;font-family:'JetBrains Mono';font-size:12px">${estado}</div>
+          ${Auth.esAdmin()?(c=>`<div style="width:90px;text-align:right"><a href="#" onclick="event.preventDefault();event.stopPropagation();Catalogo.verCoste('${jsq(m.sku_pf)}')" style="font-family:'JetBrains Mono';font-weight:700;color:${c.sinCosteHora?'var(--muted)':'var(--terra)'};text-decoration:none" title="Ver desglose">${c.total.toFixed(2).replace(".",",")} €</a></div>`)(Prod.costeColchon(m)):''}
           <div style="width:110px;text-align:right"><button class="chip" style="background:var(--surf2);color:var(--ink);padding:7px 10px;font-size:12px" onclick="event.stopPropagation();Catalogo.addAProduccion('${esc(m.sku_pf)}')">+ Producción</button></div>
         </div>`;
       }).join('')+`</div>`;
   },
 
+  verCoste(sku_pf){
+    const m=this.map[sku_pf]; if(!m) return;
+    const c=Prod.costeColchon(m), e=x=>x.toFixed(2).replace('.',',')+' €';
+    abrirModal('Coste de un colchón · '+sku_pf,(m.nombre||'')+(m.medida?' · '+m.medida:''));
+    $('#modalBody').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left">
+      <th style="padding:8px 10px">Fase / pieza</th><th style="padding:8px 10px;text-align:right">Minutos</th><th style="padding:8px 10px;text-align:right">€/hora</th><th style="padding:8px 10px;text-align:right">Mano de obra</th><th style="padding:8px 10px;text-align:right">Material</th><th style="padding:8px 10px;text-align:right">Total</th></tr></thead><tbody>
+      ${c.partes.map(x=>`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 10px"><b>${esc(x.txt)}</b><div style="font-size:10px;color:var(--muted)">${esc(x.sku)} · ${x.medido?'tiempo medido':'tiempo teórico'}</div></td>
+        <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono'">${x.min.toFixed(1).replace('.',',')}</td>
+        <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono';color:${x.eh>0?'var(--ink)':'var(--red)'}">${x.eh>0?x.eh.toFixed(2).replace('.',','):'sin coste'}</td>
+        <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono'">${e(x.mo)}</td>
+        <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono'">${x.conMat?`<a href="#" onclick="event.preventDefault();cerrarModal();open_detalle('${jsq(x.sku)}')" title="Editar coste de material" style="color:inherit">${e(x.mat)}</a>`:'—'}</td>
+        <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${e(x.mo+x.mat)}</td></tr>`).join('')}
+      <tr style="border-top:2px solid var(--ink)"><td style="padding:9px 10px;font-weight:800">Colchón</td><td style="padding:9px 10px;text-align:right;font-family:'JetBrains Mono'">${c.min.toFixed(1).replace('.',',')}</td><td></td>
+        <td style="padding:9px 10px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${e(c.mo)}</td><td style="padding:9px 10px;text-align:right;font-family:'JetBrains Mono';font-weight:700">${e(c.mat)}</td>
+        <td style="padding:9px 10px;text-align:right;font-family:'JetBrains Mono';font-weight:800;font-size:16px;color:var(--terra)">${e(c.total)}</td></tr></tbody></table>
+      <div style="font-size:12px;color:var(--muted);margin-top:12px;line-height:1.5">
+        <b>Mano de obra</b> = minutos × €/hora ÷ 60. Minutos: los medidos por las tablets (con 7 unidades o más) o el tiempo teórico de cada fase o programa (Configuración → Lotes).
+        €/hora: el coste de los trabajadores del puesto que hace esa fase (Configuración → Usuarios y costes); si hay varios puestos, la media.
+        <b>Material</b>: el coste de material de cada pieza; pulsa el importe para cambiarlo.
+        ${c.sinCosteHora?'<div style="color:var(--red);font-weight:700;margin-top:6px">⚠ Alguna fase no tiene coste por hora: asigna trabajadores con su coste a sus puestos, o pon un coste por defecto.</div>':''}</div>`;
+  },
   addAProduccion(sku_pf){
     const m=this.map[sku_pf]; if(!m){ toast('Modelo no encontrado','err'); return; }
     Prod.addModeloDesde(m,1);
