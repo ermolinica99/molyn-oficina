@@ -3511,6 +3511,8 @@ const Prodv = {
       this.pintarFases();
       // colchones defectuosos por fallo de cada puesto (en el rango)
       const pInc=selectWhere('pf_incidencias','puesto_culpable,accion,created_at',q=>q.gte('created_at',ini).lte('created_at',fin)).catch(()=>[]);
+      // tiempos teóricos por fase/programa (rendimiento del OEE)
+      if(!Prod.tiempoTeoricoPrograma) await Prod.cargarCostesPuesto();
       let [ops,evs,pars,turs,tsku,roster,lps]=await Promise.all([
         safe(sb.from('puestos_trabajo').select('*').eq('activo',true).order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
@@ -3599,12 +3601,14 @@ const Prodv = {
     const ponder=refs.filter(s=>s.hist>0&&s.n>0).reduce((acc,s)=>{ acc.real+=s.mediana*s.n; acc.hist+=s.hist*s.n; return acc; },{real:0,hist:0});
     if(ponder.real>0&&ponder.hist>0) eficiencia=ponder.hist/ponder.real;
     const calidad=hechas>0?Math.max(0,(hechas-retrabajos)/hechas):1;
+    // lo hecho medido en tiempo teórico (Configuración → Lotes): base del rendimiento del OEE
+    const teoHecho=refs.reduce((a,x)=>a+Prod.tiempoDefaultDe(x.sku)*x.n,0);
 
     if(pausa && currentSecs>30*60)this.alerts.push({tipo:'Pausa larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en pausa',sev:'bad'});
     if(!pausa && !abierta && (inTurno||turno>0) && idle!=null && idle>15*60)this.alerts.push({tipo:'Sin actividad',msg:o.nombre+' lleva '+fmtDur(idle)+' sin registrar avance',sev:'warn'});
     if(abierta && currentSecs>45*60)this.alerts.push({tipo:'Tarea larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en '+(abierta.sku||abierta.ot||'una tarea'),sev:'warn'});
 
-    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
+    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,teoHecho,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
   },
   // agrupa las filas por operario (this.rows) en filas por puesto de trabajo, sumando sus métricas
   fmtUd(s){ s=Math.round(s||0); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); },
@@ -3662,7 +3666,10 @@ const Prodv = {
     const efG=efs.length?efs.reduce((a,r)=>a+r.eficiencia*r.hechas,0)/Math.max(1,efs.reduce((a,r)=>a+r.hechas,0)):0;
     const retrabajosG=sum('retrabajos'), defectosG=sum('defectos');
     const calidadG=uds>0?Math.max(0,(uds-retrabajosG-defectosG)/uds):1;
-    const oee=dispG*(efG||1)*calidadG;
+    // OEE (igual que en Informes): disponibilidad × rendimiento × calidad, con rendimiento = tiempo teórico de
+    // lo hecho / tiempo disponible (turno − paradas). El "vs histórico" queda aparte, como comparación con lo habitual.
+    const teoG=sum('teoHecho'), rendT=disp?teoG/disp:0;
+    const oee=dispG*rendT*calidadG;
     const ritmoG=efectivo?uds/(efectivo/3600):0;
     const hs=this.horasActivas(), H=this.hourly||[];
     const serieUds=hs.map(h=>(H[h]&&H[h].uds)||0);
@@ -3688,11 +3695,11 @@ const Prodv = {
         </svg>
         <div style="display:flex;flex-direction:column;gap:9px;flex:1">
           ${barra('Disponibilidad',Math.round(dispG*100)+'%',dispG*100,'#F0EFEB')}
-          ${barra('Rendimiento',efG?Math.round(efG*100)+'%':'--',efG*100,'#D9A78F')}
+          ${barra('Rendimiento',disp?Math.round(rendT*100)+'%':'--',rendT*100,'#D9A78F')}
           ${barra('Calidad',Math.round(calidadG*100)+'%'+(retrabajosG?' · '+retrabajosG+' retrab.':'')+(defectosG?' · '+defectosG+' defect.':''),calidadG*100,(retrabajosG||defectosG)?'#C24A2E':'#4C9A5E')}
         </div>
       </div>
-      <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento (vs histórico) × calidad</div>
+      <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento (frente al tiempo teórico, sobre el turno sin paradas) × calidad</div>
     </div>`;
     const esDia=!this.rangoInfo || this.rangoInfo.bucketBy==='hora';
     const kpis=[
