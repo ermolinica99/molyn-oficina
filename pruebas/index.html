@@ -5311,7 +5311,7 @@ const Traza = {
         ${id?`<a href="#" onclick="event.preventDefault();Traza.buscar('${jsq(id)}')" style="font-family:'JetBrains Mono';font-weight:800;color:var(--ink)">${esc(id)}</a>`:'<div style="font-weight:800;color:var(--red)">Sin escanear</div>'}
         <div style="font-size:12px;color:var(--muted)">${esc(sku)}${un&&un.ot?' · '+esc(un.ot):''}</div>
         ${x?`<div style="font-size:12px;margin-top:6px">Hecho en <b>${esc(D.pn[x.puesto_id]||'Puesto '+x.puesto_id)}</b>${D.gente(x.puesto_id).length?' ('+D.gente(x.puesto_id).map(esc).join(', ')+')':''}<br>${this.f(x.fin)} · ${fmtDur(x.seg)}${ps.length>1?' · <b style="color:var(--red)">hecho '+ps.length+' veces</b>':''}</div>`
-          :(id?`<div style="font-size:12px;margin-top:6px;color:var(--muted)">${un&&un.fabricada_at?'Fabricado '+this.f(un.fabricada_at):'Sin registro de fabricación'}</div>`:'<div style="font-size:12px;margin-top:6px;color:var(--muted)">No se escaneó su etiqueta en el pegado</div>')}</div>`; };
+          :(id?`<div style="font-size:12px;margin-top:6px;color:var(--muted)">${un&&un.fabricada_at?'Fabricado '+this.f(un.fabricada_at):'Sin registro de fabricación'}</div>`:'<div style="font-size:12px;margin-top:6px;color:var(--muted)">No se escaneó su etiqueta en el pegado: se descontó una del stock (la más antigua), pero no se sabe cuál lleva</div>')}</div>`; };
     // línea de tiempo
     const hitos=[];
     if(o.lanzada_at) hitos.push({ts:o.lanzada_at,html:`<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)"><div style="width:10px;height:10px;border-radius:50%;background:var(--muted);margin-top:5px"></div><div><div style="font-weight:700">Lanzado en ${esc(u.pf)}</div><div style="font-size:12px;color:var(--muted)">${this.f(o.lanzada_at)}${o.parte_ref?' · parte '+esc(o.parte_ref):''}</div></div></div>`});
@@ -5337,7 +5337,7 @@ const Traza = {
       </div>
       <div class="card" style="margin-top:12px;padding:14px 16px"><div style="font-weight:800;margin-bottom:10px">Piezas</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">${piezas.map(tarjPieza).join('')}</div>
-        ${sinEscanear?'<div style="font-size:12px;color:#8a5a1e;margin-top:8px">⚠ Alguna pieza no se escaneó en el pegado: no se sabe cuál lleva y su coste se estima.</div>':''}</div>
+        ${sinEscanear?'<div style="font-size:12px;color:#8a5a1e;margin-top:8px">⚠ Alguna pieza no se escaneó en el pegado: se descontó del stock igualmente, pero no se sabe cuál lleva y su coste se estima.</div>':''}</div>
       <div class="card" style="margin-top:12px;padding:14px 16px"><div style="font-weight:800">Historia</div>
         ${hitos.map(h=>h.html).join('')||'<div class="vacio">Sin movimientos todavía.</div>'}
         <div style="font-size:11px;color:var(--muted);margin-top:8px">Los tiempos son los de las tablets, sin pausas. Junto al puesto se muestran sus trabajadores asignados ahora.</div></div>`;
