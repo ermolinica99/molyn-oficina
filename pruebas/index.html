@@ -483,8 +483,8 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="h1sub">Unidades que se fabrican por lote de cada programa</div>
       <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confLotes"></div></div>
       <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveLotes()">Guardar lotes</button>
-      <div class="h1" style="margin-top:28px;font-size:20px">Tiempos por fase</div>
-      <div class="h1sub">Tiempo teórico por unidad de cada fase del colchón (los núcleos van por programa, arriba). Se usa hasta tener tiempo aprendido. Qué puestos hacen cada fase se marca en Configuración → Puestos de trabajo (puede haber varios por fase).</div>
+      <div class="h1" style="margin-top:28px;font-size:20px">Tiempos y lotes por fase</div>
+      <div class="h1sub">Tiempo teórico por unidad de cada fase del colchón (los núcleos van por programa, arriba). Tapas y platabandas tienen además un lote de reposición de stock, el mismo para todas las tapas y otro para todas las platabandas: lo que falte para su stock de seguridad se redondea a ese lote. Se usa hasta tener tiempo aprendido. Qué puestos hacen cada fase se marca en Configuración → Puestos de trabajo (puede haber varios por fase).</div>
       <div class="card" style="margin-top:14px;padding:8px 16px 4px"><div id="confFases"></div></div>
       <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveFases()">Guardar fases</button>
       <div style="height:20px"></div>
@@ -1409,7 +1409,12 @@ const Prod = {
   },
 
   // ---- calcular_lanzamiento (réplica) ----
-  loteDe(nuc){ if(tipoDe(nuc)!=='nucleo') return 1; const b=MET[nuc]; const prog=b?b.prog:nuc.slice(0,4); return Math.max(1, LOTES[prog]||LOTE_DFLT); },
+  // lote de reposición de stock: núcleos por programa (N001…); tapas y platabandas, uno común para todas
+  // las tapas y otro para todas las platabandas (Configuración → Lotes → Tiempos y lotes por fase)
+  loteDe(sku){ const t=tipoDe(sku);
+    if(t==='tapa') return Math.max(1, LOTES.TAPA||1);
+    if(t==='platabanda') return Math.max(1, LOTES.PTB||1);
+    const b=MET[sku]; const prog=b?b.prog:sku.slice(0,4); return Math.max(1, LOTES[prog]||LOTE_DFLT); },
   redondearLote(x,l){ return x>0? Math.ceil(x/l)*l : 0; },
 
   async recompute(){
@@ -2889,6 +2894,8 @@ const Conf = {
       return `<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
         <label style="font-size:13px;flex:1;min-width:160px"><b>${esc(f.txt)}</b></label>
         <div style="font-size:12px;color:var(--muted)">${(()=>{ const ps=(this.puestosFases||[]).filter(pu=>fasesDePuesto(pu).includes(f.k)); return ps.length?'Puestos: '+ps.map(pu=>esc(pu.nombre)).join(', '):'Sin puestos asignados'; })()}</div>
+        ${f.k==='tapa'||f.k==='platabanda'?`<div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Lote de reposición</span>
+          <input id="flote_${f.clave}" type="number" min="1" step="1" value="${info.lote||1}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"><span style="font-size:11px;color:var(--muted)">uds</span></div>`:''}
         <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--muted)">Tiempo teórico</span>
           <input id="fttp_${f.clave}" type="number" min="0" step="0.1" value="${info.tiempo_teorico_seg?(info.tiempo_teorico_seg/60):4.5}" style="width:70px;padding:8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-family:inherit"><span style="font-size:11px;color:var(--muted)">min/ud</span></div>
       </div>`;
@@ -2897,12 +2904,13 @@ const Conf = {
   async saveFases(){
     try{
       const filas=FASES.filter(f=>f.clave).map(f=>({
-        programa:f.clave, lote:1,
+        programa:f.clave, lote:Math.max(1,parseInt((document.getElementById('flote_'+f.clave)||{}).value)||1),
         tiempo_teorico_seg:Math.round((parseFloat(document.getElementById('fttp_'+f.clave).value)||4.5)*60)
       }));
       const {error}=await sb.from('lotes_programa').upsert(filas,{onConflict:'programa'});
       if(error)throw error;
-      filas.forEach(f=>{ this.lotes[f.programa]=Object.assign({},this.lotes[f.programa],{lote:f.lote,tiempo_teorico_seg:f.tiempo_teorico_seg}); });
+      filas.forEach(f=>{ LOTES[f.programa]=f.lote; this.lotes[f.programa]=Object.assign({},this.lotes[f.programa],{lote:f.lote,tiempo_teorico_seg:f.tiempo_teorico_seg}); });
+      if(typeof Prod!=='undefined' && Prod.lineas && Prod.lineas.length) Prod.recompute();
       if(typeof Prod!=='undefined' && Prod.cargarCostesPuesto) await Prod.cargarCostesPuesto();
       toast('✓ Fases guardadas','ok');
     }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
