@@ -694,6 +694,20 @@ function etiquetaNuc(b){const med=medida(b.sku), nom=(b.nombre&&b.nombre!==b.sku
 function tipoDe(sku){ sku=String(sku||''); return sku.endsWith('_TAPA')?'tapa':(sku.endsWith('_PTB')?'platabanda':'nucleo'); }
 function skuTapa(sku_pf){ return sku_pf+'_TAPA'; }
 function skuPlat(sku_pf){ return sku_pf+'_PTB'; }
+// piezas de stock que lleva un modelo además del núcleo: tapa y platabanda, salvo que el modelo esté
+// marcado "sin tapa" / "sin platabanda" (se marca al clasificar un aviso de la tablet en Producto final)
+function modeloInfo(sku_pf){ return (typeof Prod!=='undefined'&&Prod.modelosMap&&Prod.modelosMap[sku_pf])||{}; }
+function piezasModelo(sku_pf){ const m=modeloInfo(sku_pf); return [m.sin_tapa?null:skuTapa(sku_pf), m.sin_platabanda?null:skuPlat(sku_pf)].filter(Boolean); }
+// descuenta 1 de la reserva pendiente de una pieza: la de esa PF; si no, la de ese modelo
+async function consumirReservaOf(sku,pf,sku_pf){
+  for(const f of [q=>q.eq('pf',pf), q=>q.eq('sku_pf',sku_pf)]){
+    const {data,error}=await f(sb.from('reservas').select('id,cantidad').eq('sku',sku).eq('estado','pendiente')).order('created_at').order('id').limit(1);
+    if(error){ if(/\bpf\b/.test(error.message||'')) continue; throw error; }
+    const r=data&&data[0]; if(!r) continue;
+    chk(await sb.from('reservas').update(r.cantidad>1?{cantidad:r.cantidad-1}:{estado:'consumida'}).eq('id',r.id)); return true;
+  }
+  return false;
+}
 // modelo de una tapa o platabanda (quita el sufijo)
 function modeloDe(sku){ return String(sku||'').replace(/_(TAPA|PTB|PEG|COS|EMB)$/,''); }
 const ORDEN_TIPO={nucleo:0,tapa:1,platabanda:2};
@@ -1247,6 +1261,7 @@ const Prod = {
       try{ modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id,especial'); this.hayEspecial=true; }
       catch(e){ modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id'); this.hayEspecial=false; }
       this.modelosMap = {}; modelos.forEach(m=>this.modelosMap[m.sku_pf]=m);
+      try{ (await selectAll('modelos','sku_pf,sin_tapa,sin_platabanda')).forEach(r=>{ const m=this.modelosMap[r.sku_pf]; if(m){ m.sin_tapa=!!r.sin_tapa; m.sin_platabanda=!!r.sin_platabanda; } }); }catch(e){} // sin la migración 05: llevan las dos
       const prods = await selectAll('productos','sku,nombre,coste_material');
       this.prodMap = {}; this.costeMat={}; prods.forEach(p=>{ this.prodMap[p.sku]=p.nombre||p.sku; this.costeMat[p.sku]=Number(p.coste_material||0)||0; });
       const tsku = await selectWhere('tiempos_sku','sku,mediana_seg,n_unidades',q=>q.eq('vigente',true));
@@ -1308,7 +1323,8 @@ const Prod = {
       partes.push({txt,sku,conMat,mat,min:seg/60,eh,mo:seg*eh/3600,
         real:r&&r.n?{n:r.n,min:r.seg/r.n/60,eh:r.seg?r.eur*3600/r.seg:0,mo:r.eur/r.n,sinCoste:r.sinCoste}:null}); };
     if(m.sku_nucleo && !m.sin_nucleo) add('Núcleo',m.sku_nucleo,true);
-    add('Tapa',skuTapa(m.sku_pf),true); add('Platabanda',skuPlat(m.sku_pf),true);
+    const mi=Object.assign({},modeloInfo(m.sku_pf),m);
+    if(!mi.sin_tapa) add('Tapa',skuTapa(m.sku_pf),true); if(!mi.sin_platabanda) add('Platabanda',skuPlat(m.sku_pf),true);
     add('3 · Pegado',m.sku_pf+'_PEG',false); add('2 · Cosido',m.sku_pf+'_COS',false); add('1 · Embalado',m.sku_pf+'_EMB',false);
     const sum=f=>partes.reduce((a,x)=>a+f(x),0);
     const mo=sum(x=>x.mo), mat=sum(x=>x.mat), min=sum(x=>x.min);
@@ -1340,7 +1356,11 @@ const Prod = {
   // y el núcleo, la tapa y la platabanda que se le pusieron, cada una con lo que se tardó en hacerla.
   // Una pieza sin etiqueta escaneada, o sin tiempos, cuenta con su coste teórico (estimada).
   async costeUnidades(us,sku_pf,sku_nucleo){
-    const piezas=u=>[['Núcleo',u.nucleo_id,sku_nucleo],['Tapa',u.tapa_id,skuTapa(sku_pf)],['Platabanda',u.platabanda_id,skuPlat(sku_pf)]].filter(x=>x[2]);
+    // piezas que ese colchón no lleva (marcado en la tablet y no clasificado como error): no cuentan
+    const sinP={};
+    for(let i=0;i<us.length;i+=150){ const ch=us.slice(i,i+150).map(u=>u.id);
+      try{ (await selectWhere('pf_sin_pieza','pf_unidad,sku,estado',q=>q.in('pf_unidad',ch).neq('estado','error'))).forEach(x=>(sinP[x.pf_unidad]=sinP[x.pf_unidad]||new Set()).add(x.sku)); }catch(e){} }
+    const mi=modeloInfo(sku_pf), piezas=u=>[['Núcleo',u.nucleo_id,sku_nucleo],['Tapa',u.tapa_id,mi.sin_tapa?null:skuTapa(sku_pf)],['Platabanda',u.platabanda_id,mi.sin_platabanda?null:skuPlat(sku_pf)]].filter(x=>x[2]&&!(sinP[u.id]&&sinP[u.id].has(x[2])));
     const ids=[...new Set(us.flatMap(u=>[u.id,...piezas(u).map(x=>x[1]).filter(Boolean)]))];
     let evs=[]; for(let i=0;i<ids.length;i+=150){ const ch=ids.slice(i,i+150); evs=evs.concat(await selectWhere('fabricacion_eventos','unidad_id,sku,puesto_id,tipo,ts',q=>q.in('unidad_id',ch))); }
     let pars=[];
@@ -1433,7 +1453,7 @@ const Prod = {
     this.lineas.forEach(l=>{ if(l.cant<=0) return;
       if(l.sku_nucleo) demanda[l.sku_nucleo]=(demanda[l.sku_nucleo]||0)+l.cant;
       // cada modelo lleva su tapa y su platabanda (fase 2), lleve núcleo o no
-      [skuTapa(l.sku_pf),skuPlat(l.sku_pf)].forEach(s=>{ demanda[s]=(demanda[s]||0)+l.cant; });
+      piezasModelo(l.sku_pf).forEach(s=>{ demanda[s]=(demanda[s]||0)+l.cant; });
     });
     const cant={}, tipo={};
     for(const nuc in demanda){
@@ -1706,7 +1726,7 @@ const Prod = {
     $('#btnLanzar').disabled=true; $('#btnLanzar').textContent='Lanzando…';
     const creadasOT=[], creadasPF=[]; let reservasHechas=false;
     try{
-      const nucsDem=[...new Set(this.lineas.flatMap(l=>[l.sin_nucleo?null:l.sku_nucleo,skuTapa(l.sku_pf),skuPlat(l.sku_pf)]).filter(Boolean))];
+      const nucsDem=[...new Set(this.lineas.flatMap(l=>[l.sin_nucleo?null:l.sku_nucleo,...piezasModelo(l.sku_pf)]).filter(Boolean))];
       const pools=await this.construirPools(nucsDem);
       const nombres={}; (await selectAll('productos','sku,nombre')).forEach(p=>nombres[p.sku]=p.nombre||p.sku);
       // tapas y platabandas que aún no existen como producto: se crean con el nombre de su modelo
@@ -1840,7 +1860,7 @@ const Prod = {
   repartirComp(pools,otByNuc){
     const out=[];
     this.lineas.forEach((l,li)=>{ if(l.cant<=0) return;
-      [skuTapa(l.sku_pf),skuPlat(l.sku_pf)].forEach(sku=>{
+      piezasModelo(l.sku_pf).forEach(sku=>{
         let rest=l.cant; const p=pools[sku]||{disp:[],madur:[],fabri:[]};
         [['disp','disponible'],['madur','disponible'],['fabri','pendiente']].forEach(([k,bl])=>{
           while(rest>0&&p[k].length){ const g=p[k][0],t=Math.min(rest,g.n); out.push({li,sku,ot:g.ot,sku_pf:l.sku_pf,cant:t,bloque:bl}); g.n-=t;rest-=t; if(g.n<=0)p[k].shift(); }
@@ -2328,6 +2348,8 @@ const PFv = {
       this.rows=data||[];
       // colchones en el almacén de producto terminado (embalados, sin expedir)
       try{ const {count}=await sb.from('pf_unidades').select('id',{count:'exact',head:true}).eq('fase','terminado').is('expedido_at',null); this.almacen=count||0; }catch(e){}
+      // avisos de la tablet de colchones que no llevan alguna pieza, pendientes de clasificar
+      try{ const {count,error}=await sb.from('pf_sin_pieza').select('id',{count:'exact',head:true}).eq('estado','pendiente'); if(!error) this.nSinPieza=count||0; }catch(e){}
       // colchones de las PF abiertas (y de las últimas cerradas, para el resumen de hoy)
       const ids=this.rows.filter(r=>r.estado==='abierta'||(r.terminada_at&&Date.now()-new Date(r.terminada_at)<2*86400000)).map(r=>r.pf);
       this.uds={};
@@ -2356,11 +2378,12 @@ const PFv = {
     return {n:us.length||r.cantidad, pegado:hecho('pegado'), cosido:hecho('cosido'), embalaje:hecho('embalaje'), cargado:!!this.uds[r.pf]};
   },
   paint(){
-    $('#pfVista').innerHTML=[['pf','Órdenes PF'],['almacen','Almacén · '+this.almacen],['calidad','Calidad']].map(([k,t])=>`<button class="${this.vista===k?'on':''}" onclick="PFv.setVista('${k}')">${t}</button>`).join('');
+    $('#pfVista').innerHTML=[['pf','Órdenes PF'],['almacen','Almacén · '+this.almacen],['calidad','Calidad'],['sinpieza','Sin pieza'+(this.nSinPieza?' · <b style="color:var(--red)">'+this.nSinPieza+'</b>':'')]].map(([k,t])=>`<button class="${this.vista===k?'on':''}" onclick="PFv.setVista('${k}')">${t}</button>`).join('');
     const enPF=this.vista==='pf';
     ['#pfTabs','#pfSearch','#pfProg'].forEach(id=>{ const el=$(id); if(el) el.style.display=enPF?'':'none'; });
     if(this.vista==='almacen') return this.paintAlmacen();
     if(this.vista==='calidad') return this.paintCalidad();
+    if(this.vista==='sinpieza') return this.paintSinPieza();
     const tabs=[['abierta','Abiertas'],['terminada','Terminadas'],['anulada','Anuladas'],['todas','Todas']];
     const cuenta=e=>e==='todas'?this.rows.length:this.rows.filter(r=>r.estado===e).length;
     $('#pfTabs').innerHTML=tabs.map(([k,t])=>`<button class="${this.estado===k?'on':''}" onclick="PFv.setEstado('${k}')">${t} · ${cuenta(k)}</button>`).join('');
@@ -2536,6 +2559,76 @@ const PFv = {
         <div style="padding:16px 16px 8px;font-weight:800;border-top:2px solid var(--border);margin-top:8px">Expediciones · últimos 30 días</div>
         ${Object.values(cargas).sort((a,b)=>b.ts.localeCompare(a.ts)).map(c=>`<div style="padding:8px 16px;border-top:1px solid var(--border);font-size:12px"><b>${f(c.ts)}</b> · ${c.n} colchones${c.ref?' · <b>'+esc(c.ref)+'</b>':''}<div style="color:var(--muted)">${Object.entries(c.mods).map(([k,v])=>esc(k)+' ×'+v).join(' · ')}</div></div>`).join('')||'<div class="vacio">Sin expediciones.</div>'}`;
     }catch(e){ el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  // ---------- colchones sin alguna pieza (marcado en la tablet): Oficina lo clasifica ----------
+  async paintSinPieza(){
+    const el=$('#pfLista'); el.innerHTML='<div class="loading">Cargando avisos…</div>';
+    try{
+      const desde=new Date(Date.now()-30*86400000).toISOString();
+      const [pend,hechos,pts]=await Promise.all([
+        selectWhere('pf_sin_pieza','*',q=>q.eq('estado','pendiente')),
+        selectWhere('pf_sin_pieza','*',q=>q.neq('estado','pendiente').gte('resuelto_at',desde)),
+        selectAll('puestos_trabajo','id,nombre').catch(()=>[])]);
+      this._sp=pend; this.nSinPieza=pend.length;
+      const pn={}; pts.forEach(p=>pn[p.id]=p.nombre);
+      const txtP={nucleo:'núcleo',tapa:'tapa',platabanda:'platabanda'};
+      const f=d=>d?new Date(d).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'—';
+      const est={ok_colchon:['Solo ese colchón','var(--green)'],ok_modelo:['El modelo nunca la lleva','var(--blue)'],error:['Error: sí la llevaba','var(--red)']};
+      el.innerHTML=`<div style="padding:12px 16px;font-weight:800">Pendientes de clasificar · ${pend.length}</div>
+        <div style="padding:0 16px 8px;font-size:12px;color:var(--muted)">En el pegado hay que escanear el núcleo, la tapa y la platabanda. Si un colchón no lleva alguna, la tablet la marca "No lleva" y no descuenta nada: aquí se revisa si es correcto.</div>
+        ${pend.sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))).map(x=>`<div style="padding:12px 16px;border-top:1px solid var(--border)">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <a href="#" onclick="event.preventDefault();Traza.abrir('${jsq(x.pf_unidad)}')" style="font-family:'JetBrains Mono';font-weight:800;color:var(--ink)">${esc(x.pf_unidad)}</a>
+            <span><b>${esc(x.sku_pf||'')}</b> no lleva <b style="color:var(--red)">${esc(txtP[x.pieza]||x.pieza)}</b> <span style="color:var(--muted)">(${esc(x.sku||'')})</span></span>
+            <span style="font-size:12px;color:var(--muted)">${f(x.created_at)}${x.puesto_id!=null?' · '+esc(pn[x.puesto_id]||'puesto '+x.puesto_id):''}</span></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button class="chip" style="background:var(--green);padding:7px 12px" onclick="PFv.resolverSinPieza(${x.id},'ok_colchon')">✓ Correcto, solo este colchón</button>
+            <button class="chip" style="background:var(--blue);padding:7px 12px" onclick="PFv.resolverSinPieza(${x.id},'ok_modelo')">✓ Correcto, el modelo ${esc(x.sku_pf||'')} nunca lleva ${esc(txtP[x.pieza]||'')}</button>
+            <button class="chip" style="background:var(--red);padding:7px 12px" onclick="PFv.resolverSinPieza(${x.id},'error')">✕ Error, sí la llevaba</button></div></div>`).join('')||'<div class="vacio">No hay avisos pendientes.</div>'}
+        <div style="padding:16px 16px 8px;font-weight:800;border-top:2px solid var(--border);margin-top:8px">Clasificados · últimos 30 días</div>
+        ${hechos.sort((a,b)=>String(b.resuelto_at).localeCompare(String(a.resuelto_at))).map(x=>`<div style="padding:8px 16px;border-top:1px solid var(--border);font-size:12px">
+          <b>${esc(x.pf_unidad)}</b> · ${esc(x.sku_pf||'')} sin ${esc(txtP[x.pieza]||x.pieza)} · <b style="color:${(est[x.estado]||['',''])[1]}">${esc((est[x.estado]||[x.estado])[0])}</b>${x.pieza_id?' · pieza '+esc(x.pieza_id):''}${x.nota?' · '+esc(x.nota):''}
+          <span style="color:var(--muted)"> · ${f(x.resuelto_at)}</span></div>`).join('')||'<div class="vacio">Ninguno.</div>'}`;
+      const tb=$('#pfVista')&&$('#pfVista').querySelector('button:last-child'); if(tb) tb.innerHTML='Sin pieza'+(pend.length?' · <b style="color:var(--red)">'+pend.length+'</b>':'');
+    }catch(e){ el.innerHTML='<div class="vacio">'+(/pf_sin_pieza|relation|schema cache/i.test(e.message||'')?'Falta preparar la base de datos: Actions → "Aplicar SQL a PRUEBAS".':'Error: '+esc(e.message||e))+'</div>'; }
+  },
+  async resolverSinPieza(id,estado){
+    const x=(this._sp||[]).find(r=>r.id===id); if(!x) return;
+    const txtP={nucleo:'núcleo',tapa:'tapa',platabanda:'platabanda'}[x.pieza]||x.pieza;
+    let pieza_id=null, nota=null;
+    try{
+      if(estado==='ok_colchon'){
+        // esa pieza ya no se va a gastar en este colchón: se libera su reserva
+        await consumirReservaOf(x.sku,x.pf,x.sku_pf);
+      }else if(estado==='ok_modelo'){
+        if(!confirm('¿El modelo '+x.sku_pf+' NUNCA lleva '+txtP+'?\n\nSe marca en el modelo: la tablet ya no la pedirá, no se reservará al lanzar y no contará en el coste.')) return;
+        const patch=x.pieza==='nucleo'?{sin_nucleo:true,sku_nucleo:null}:{[x.pieza==='tapa'?'sin_tapa':'sin_platabanda']:true};
+        chk(await sb.from('modelos').update(patch).eq('sku_pf',x.sku_pf));
+        if(x.pieza==='nucleo') chk(await sb.from('pf_ordenes').update({sku_nucleo:null}).eq('sku_pf',x.sku_pf).eq('estado','abierta'));
+        // sus reservas pendientes de esa pieza ya no se van a gastar
+        chk(await sb.from('reservas').delete().eq('sku',x.sku).eq('sku_pf',x.sku_pf).eq('estado','pendiente'));
+        const m=Prod.modelosMap&&Prod.modelosMap[x.sku_pf]; if(m) Object.assign(m,patch);
+        if(typeof Catalogo!=='undefined'&&Catalogo.map&&Catalogo.map[x.sku_pf]) Object.assign(Catalogo.map[x.sku_pf],patch);
+      }else{
+        const c=prompt('Sí llevaba '+txtP+'. Si sabes cuál, escribe o escanea su etiqueta para descontarla del stock y apuntarla en el colchón.\nSi no se sabe, déjalo vacío (el stock tendrá una de más: ajústalo en Inventario).','');
+        if(c===null) return;
+        pieza_id=c.trim().toUpperCase()||null;
+        if(pieza_id){
+          const {data:un,error:e1}=await sb.from('unidades').select('id,sku,estado').eq('id',pieza_id).limit(1); if(e1) throw e1;
+          const u=un&&un[0];
+          if(!u){ toast('No existe la etiqueta '+pieza_id,'err'); return; }
+          if(u.sku!==x.sku){ toast(pieza_id+' es '+u.sku+', no '+x.sku,'err'); return; }
+          if(u.estado!=='stock'){ toast(pieza_id+' no está en stock ('+u.estado+')','err'); return; }
+          const {data:upd,error:e2}=await sb.from('unidades').update({estado:'consumida',consumida_at:new Date().toISOString()}).eq('id',pieza_id).eq('estado','stock').select('id'); if(e2) throw e2;
+          if(!upd||!upd.length){ toast(pieza_id+' acaba de usarse en otro sitio','err'); return; }
+          chk(await sb.from('pf_unidades').update({[x.pieza+'_id']:pieza_id}).eq('id',x.pf_unidad));
+          await consumirReservaOf(x.sku,x.pf,x.sku_pf);
+        }else nota='sin identificar la pieza';
+      }
+      chk(await sb.from('pf_sin_pieza').update({estado,pieza_id,nota,resuelto_at:new Date().toISOString()}).eq('id',id).eq('estado','pendiente'));
+      toast('✓ '+x.pf_unidad+' clasificado','ok');
+      this.paintSinPieza();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   // ---------- calidad: colchones defectuosos por puesto ----------
   async paintCalidad(){
@@ -5296,7 +5389,9 @@ const Traza = {
   async colchon(u,marcar){
     const el=$('#trzBody');
     const {data:od}=await sb.from('pf_ordenes').select('*').eq('pf',u.pf).limit(1); const o=(od&&od[0])||{sku_pf:u.sku_pf};
-    const piezas=[['nucleo','Núcleo',u.nucleo_id,o.sku_nucleo],['tapa','Tapa',u.tapa_id,skuTapa(u.sku_pf)],['platabanda','Platabanda',u.platabanda_id,skuPlat(u.sku_pf)]].filter(x=>x[3]);
+    let mo={}; try{ const {data:md}=await sb.from('modelos').select('*').eq('sku_pf',o.sku_pf||u.sku_pf).limit(1); mo=(md&&md[0])||{}; }catch(e){}
+    const sp=await selectWhere('pf_sin_pieza','*',q=>q.eq('pf_unidad',u.id)).catch(()=>[]);
+    const piezas=[['nucleo','Núcleo',u.nucleo_id,o.sku_nucleo],['tapa','Tapa',u.tapa_id,(mo.sin_tapa&&!u.tapa_id)?null:skuTapa(u.sku_pf)],['platabanda','Platabanda',u.platabanda_id,(mo.sin_platabanda&&!u.platabanda_id)?null:skuPlat(u.sku_pf)]].filter(x=>x[3]);
     const ids=[u.id,...piezas.map(x=>x[2]).filter(Boolean)];
     const [D,inc,pu]=await Promise.all([this.datos(ids),
       selectWhere('pf_incidencias','*',q=>q.eq('pf_unidad',u.id)).catch(()=>[]),
@@ -5308,10 +5403,11 @@ const Traza = {
     const tarjPieza=([k,txt,id,sku])=>{ const un=pu.find(x=>x.id===id), ps=id?this.pasos(D,id,sku):[], x=ps[ps.length-1];
       return `<div style="flex:1;min-width:200px;border:${marcar&&id===marcar?'2px solid var(--terra)':'1px solid var(--border)'};border-radius:12px;padding:12px 14px;background:var(--surf)">
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${txt}</div>
-        ${id?`<a href="#" onclick="event.preventDefault();Traza.buscar('${jsq(id)}')" style="font-family:'JetBrains Mono';font-weight:800;color:var(--ink)">${esc(id)}</a>`:'<div style="font-weight:800;color:var(--red)">Sin escanear</div>'}
+        ${id?`<a href="#" onclick="event.preventDefault();Traza.buscar('${jsq(id)}')" style="font-family:'JetBrains Mono';font-weight:800;color:var(--ink)">${esc(id)}</a>`:(sp.some(z=>z.pieza===k&&z.estado!=='error')?'<div style="font-weight:800;color:#5B3F7A">No lleva</div>':'<div style="font-weight:800;color:var(--red)">Sin escanear</div>')}
         <div style="font-size:12px;color:var(--muted)">${esc(sku)}${un&&un.ot?' · '+esc(un.ot):''}</div>
         ${x?`<div style="font-size:12px;margin-top:6px">Hecho en <b>${esc(D.pn[x.puesto_id]||'Puesto '+x.puesto_id)}</b>${D.gente(x.puesto_id).length?' ('+D.gente(x.puesto_id).map(esc).join(', ')+')':''}<br>${this.f(x.fin)} · ${fmtDur(x.seg)}${ps.length>1?' · <b style="color:var(--red)">hecho '+ps.length+' veces</b>':''}</div>`
-          :(id?`<div style="font-size:12px;margin-top:6px;color:var(--muted)">${un&&un.fabricada_at?'Fabricado '+this.f(un.fabricada_at):'Sin registro de fabricación'}</div>`:'<div style="font-size:12px;margin-top:6px;color:var(--muted)">No se escaneó su etiqueta en el pegado: se descontó una del stock (la más antigua), pero no se sabe cuál lleva</div>')}</div>`; };
+          :(id?`<div style="font-size:12px;margin-top:6px;color:var(--muted)">${un&&un.fabricada_at?'Fabricado '+this.f(un.fabricada_at):'Sin registro de fabricación'}</div>`:
+          (x=>x?`<div style="font-size:12px;margin-top:6px;color:#5B3F7A">Marcado en la tablet: <b>no lleva</b> (${this.f(x.created_at)}). ${({pendiente:'Pendiente de revisar en Producto final → Sin pieza.',ok_colchon:'Oficina: correcto, solo este colchón.',ok_modelo:'Oficina: el modelo nunca la lleva.',error:'Oficina: error, sí la llevaba.'})[x.estado]||''}</div>`:null)(sp.filter(z=>z.pieza===k).pop())||'<div style="font-size:12px;margin-top:6px;color:var(--muted)">No se escaneó su etiqueta en el pegado: se descontó una del stock (la más antigua), pero no se sabe cuál lleva</div>')}</div>`; };
     // línea de tiempo
     const hitos=[];
     if(o.lanzada_at) hitos.push({ts:o.lanzada_at,html:`<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)"><div style="width:10px;height:10px;border-radius:50%;background:var(--muted);margin-top:5px"></div><div><div style="font-weight:700">Lanzado en ${esc(u.pf)}</div><div style="font-size:12px;color:var(--muted)">${this.f(o.lanzada_at)}${o.parte_ref?' · parte '+esc(o.parte_ref):''}</div></div></div>`});
@@ -5323,7 +5419,7 @@ const Traza = {
     if(u.expedido_at) hitos.push({ts:u.expedido_at,html:`<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)"><div style="width:10px;height:10px;border-radius:50%;background:var(--ink);margin-top:5px"></div><div><div style="font-weight:700">🚚 Expedido</div><div style="font-size:12px;color:var(--muted)">${this.f(u.expedido_at)}${u.expedicion?' · '+esc(u.expedicion):''}</div></div></div>`});
     if(u.baja_at) hitos.push({ts:u.baja_at,html:`<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)"><div style="width:10px;height:10px;border-radius:50%;background:var(--red);margin-top:5px"></div><div><div style="font-weight:700;color:var(--red)">Dado de baja</div><div style="font-size:12px;color:var(--muted)">${this.f(u.baja_at)}</div></div></div>`});
     hitos.sort((a,b)=>String(a.ts).localeCompare(String(b.ts)));
-    const sinEscanear=piezas.filter(x=>!x[2]).length && ['cosido','embalaje','terminado'].includes(u.fase);
+    const sinEscanear=piezas.filter(x=>!x[2]&&!sp.some(z=>z.pieza===x[0]&&z.estado!=='error')).length && ['cosido','embalaje','terminado'].includes(u.fase);
     el.innerHTML=`<div class="card" style="padding:16px 18px">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <div style="font-family:'JetBrains Mono';font-weight:800;font-size:20px">${esc(u.id)}</div>
