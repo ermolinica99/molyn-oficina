@@ -229,6 +229,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
     <button class="nav" id="navPartes" onclick="nav('partes')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Partes lanzados</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
     <button class="nav" id="navPF" onclick="nav('pf')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 7v10M18 7v10"/></svg><span>Producto final</span></button>
+    <button class="nav" id="navTraza" onclick="nav('traza')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6M11 8v6"/></svg><span>Trazabilidad</span></button>
     <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
     <button class="nav" id="navCatalogo" onclick="nav('catalogo')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>Producto</span></button>
     <button class="nav" id="navEst" onclick="nav('est')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg><span>Estándares</span></button>
@@ -352,6 +353,15 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
         <input id="pfSearch" placeholder="Buscar PF, modelo o parte…" oninput="PFv.paint()" style="flex:1;min-width:200px;max-width:380px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
       <div class="card"><div id="pfLista"></div></div>
+    </div>
+
+    <div class="content" id="view-traza" style="display:none">
+      <div class="h1">Trazabilidad</div>
+      <div class="h1sub">Escanea o escribe la etiqueta de un colchón, de un núcleo, tapa o platabanda, o el número de una PF: qué piezas lleva, quién hizo cada fase, cuándo y cuánto tardó, defectos y expedición.</div>
+      <div style="display:flex;gap:10px;margin:14px 0;max-width:620px">
+        <input id="trzCode" placeholder="PF00001-0001, etiqueta de núcleo, tapa, platabanda o PF…" onkeydown="if(event.key==='Enter')Traza.buscar()" style="flex:1;min-width:0;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-family:'JetBrains Mono';font-size:14px">
+        <button class="chip" onclick="Traza.buscar()">Buscar</button></div>
+      <div id="trzBody"></div>
     </div>
 
     <div class="content" id="view-ot" style="display:none">
@@ -1145,15 +1155,15 @@ const ADMIN_VIEWS = new Set(['apr','alta','pers','inf']);
 
 const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes','cSinNucleo'];
 function nav(v){
-  const titulos={dash:'Dashboard',vivo:'Planta en vivo',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',pf:'Producto final',
+  const titulos={dash:'Dashboard',vivo:'Planta en vivo',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',pf:'Producto final',traza:'Trazabilidad',
     cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',cSinNucleo:'Colchones sin núcleo',
     inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempos',bal:'Balanceo de línea',inf:'Informes',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',vivo:'navVivo',prod:'navProd',partes:'navPartes',ot:'navOT',pf:'navPF',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',bal:'navBal',inf:'navInf',apr:'navApr',alta:'navAlta',pers:'navPers'};
+  const navIds={dash:'navDash',vivo:'navVivo',prod:'navProd',partes:'navPartes',ot:'navOT',pf:'navPF',traza:'navTraza',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',bal:'navBal',inf:'navInf',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  const todas=['dash','vivo','prod','partes','ot','pf','inv','catalogo','est','prodv','tsku','bal','inf','apr','alta','pers',...CONF_SUBVIEWS];
+  const todas=['dash','vivo','prod','partes','ot','pf','traza','inv','catalogo','est','prodv','tsku','bal','inf','apr','alta','pers',...CONF_SUBVIEWS];
   todas.forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
@@ -1168,6 +1178,7 @@ function nav(v){
   if(v==='partes') Partes.reload();
   if(v==='ot') OT.reload();
   if(v==='pf') PFv.reload();
+  if(v==='traza') setTimeout(()=>{ const i=$('#trzCode'); if(i) i.focus(); },50);
   if(v==='est') Est.pintar();
   if(v==='cDiario') Conf.load();
   if(v==='cLotes') Conf.load();
@@ -2404,7 +2415,7 @@ const PFv = {
       const adm=Auth.esAdmin();
       $('#modalBody').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:8px">Colchón</th><th style="padding:8px">Estado</th><th style="padding:8px">3 Pegado</th><th style="padding:8px">2 Cosido</th><th style="padding:8px">1 Embalado</th>${adm?'<th style="padding:8px;text-align:right">Coste real</th>':''}</tr></thead><tbody>
-        ${us.map(u=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 8px;font-family:'JetBrains Mono';font-weight:700">${esc(u.id)}</td>
+        ${us.map(u=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 8px;font-family:'JetBrains Mono';font-weight:700"><a href="#" onclick="event.preventDefault();cerrarModal();Traza.abrir('${jsq(u.id)}')" style="color:inherit" title="Ver trazabilidad">${esc(u.id)}</a></td>
           <td style="padding:7px 8px">${esc(faseTxt[u.fase]||u.fase)}${u.expedido_at?`<div style="color:var(--green);font-size:10px">Expedido ${f(u.expedido_at)}${u.expedicion?' · '+esc(u.expedicion):''}</div>`:''}
             <div style="margin-top:4px">${(['pegado','cosido','embalaje'].includes(u.fase)||(u.fase==='terminado'&&!u.expedido_at))?`<button class="chip" style="background:var(--red);padding:4px 8px;font-size:11px" onclick="PFv.defecto('${jsq(u.id)}')">⚠ Defectuoso</button>`:''}
             ${u.fase==='baja'?`<button class="chip" style="background:var(--ink);padding:4px 8px;font-size:11px" onclick="PFv.reponer('${jsq(u.pf)}')">+ Reponer colchón</button>`:''}</div></td>
@@ -5231,6 +5242,116 @@ const Inf = {
         <div><div class="h1">Informe de producción</div><div class="h1sub">${esc(this.etiqueta(this.d.r))} · ${this.por==='fase'?'por fase':'por puesto'}</div></div>
         <div style="text-align:right;font-size:11px;color:var(--muted)"><b style="font-size:16px;color:var(--ink)">MOLYN</b><br>Generado el ${new Date().toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})}</div></div>${body.innerHTML}</body></html>`);
     w.document.close(); setTimeout(()=>{ w.focus(); w.print(); },400);
+  }
+};
+
+// ============================================================
+//  TRAZABILIDAD: un colchón (o una pieza) de principio a fin
+// ============================================================
+const Traza = {
+  abrir(code){ nav('traza'); $('#trzCode').value=code||''; if(code) this.buscar(code); },
+  async buscar(code){
+    code=String(code||$('#trzCode').value||'').trim(); const el=$('#trzBody');
+    if(!code){ el.innerHTML=''; return; }
+    $('#trzCode').value=code; el.innerHTML='<div class="loading">Buscando…</div>';
+    try{
+      const uno=async(t,c,v)=>{ const {data,error}=await sb.from(t).select('*').eq(c,v).limit(1); if(error) throw error; return data&&data[0]; };
+      // 1) un colchón por su etiqueta
+      let u=await uno('pf_unidades','id',code);
+      if(u) return this.colchon(u,null);
+      // 2) una pieza: si ya está puesta en un colchón, se enseña ese colchón con la pieza marcada
+      const [enN,enT,enP]=await Promise.all(['nucleo_id','tapa_id','platabanda_id'].map(c=>uno('pf_unidades',c,code).catch(()=>null)));
+      const pieza=await uno('unidades','id',code).catch(()=>null);
+      u=enN||enT||enP;
+      if(u) return this.colchon(u,code);
+      if(pieza) return this.pieza(pieza);
+      // 3) una orden de producto final
+      const o=await uno('pf_ordenes','pf',code.toUpperCase());
+      if(o){ const us=await selectWhere('pf_unidades','id,fase',q=>q.eq('pf',o.pf));
+        el.innerHTML=`<div class="card" style="padding:16px 18px"><div style="font-weight:800;font-size:16px">${esc(o.pf)} · ${esc(o.sku_pf)}</div><div style="color:var(--muted);font-size:12px;margin-bottom:10px">${esc(o.descripcion||o.nombre||'')} · ${o.cantidad} uds${o.parte_ref?' · parte '+esc(o.parte_ref):''}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">${us.sort((a,b)=>a.id.localeCompare(b.id)).map(x=>`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Traza.buscar('${jsq(x.id)}')">${esc(x.id)} <span style="color:var(--muted);font-weight:400">· ${esc(x.fase)}</span></button>`).join('')}</div></div>`;
+        return; }
+      el.innerHTML='<div class="vacio">No se encuentra "'+esc(code)+'". Escribe o escanea la etiqueta de un colchón (PF00001-0001), de un núcleo, tapa o platabanda, o el número de una PF.</div>';
+    }catch(e){ el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  async datos(ids){
+    let evs=[]; for(let i=0;i<ids.length;i+=150){ const ch=ids.slice(i,i+150); evs=evs.concat(await selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.in('unidad_id',ch))); }
+    let pars=[]; if(evs.length){ const ts=evs.map(e=>e.ts).sort(); pars=await selectWhere('paradas','puesto_id,inicio,fin',q=>q.lte('inicio',ts[ts.length-1]).gte('fin',ts[0])).catch(()=>[]); }
+    const [pts,usrs]=await Promise.all([selectAll('puestos_trabajo','id,nombre').catch(()=>[]),selectAll('usuarios','id,nombre,puesto_id,activo').catch(()=>[])]);
+    if(!Prod.costePuesto) await Prod.cargarCostesPuesto();
+    const pn={}; pts.forEach(p=>pn[p.id]=p.nombre);
+    const gente=id=>usrs.filter(x=>x.activo!==false&&String(x.puesto_id)===String(id)).map(x=>x.nombre);
+    return {evs,ds:Prod.duraciones(evs,pars),pn,gente};
+  },
+  f(d){ return d?new Date(d).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'—'; },
+  // pasos de fabricación (inicio → fin en un puesto) de una unidad, en orden
+  pasos(D,uid,sku){ return D.ds.filter(x=>x.unidad_id===uid&&(!sku||x.sku===sku)).sort((a,b)=>a.fin.localeCompare(b.fin)); },
+  lineaPaso(D,x,txt,col,extra){
+    const g=D.gente(x.puesto_id);
+    return `<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)">
+      <div style="width:10px;height:10px;border-radius:50%;background:${col};margin-top:5px;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700">${txt}</div>
+        <div style="font-size:12px;color:var(--muted)">${esc(D.pn[x.puesto_id]||'Puesto '+x.puesto_id)}${g.length?' · '+g.map(esc).join(', '):''} · terminado ${this.f(x.fin)} · ${fmtDur(x.seg)}${extra||''}</div></div></div>`;
+  },
+  async colchon(u,marcar){
+    const el=$('#trzBody');
+    const {data:od}=await sb.from('pf_ordenes').select('*').eq('pf',u.pf).limit(1); const o=(od&&od[0])||{sku_pf:u.sku_pf};
+    const piezas=[['nucleo','Núcleo',u.nucleo_id,o.sku_nucleo],['tapa','Tapa',u.tapa_id,skuTapa(u.sku_pf)],['platabanda','Platabanda',u.platabanda_id,skuPlat(u.sku_pf)]].filter(x=>x[3]);
+    const ids=[u.id,...piezas.map(x=>x[2]).filter(Boolean)];
+    const [D,inc,pu]=await Promise.all([this.datos(ids),
+      selectWhere('pf_incidencias','*',q=>q.eq('pf_unidad',u.id)).catch(()=>[]),
+      ids.length>1?selectWhere('unidades','id,ot,sku,estado,fabricada_at,lanzada_at',q=>q.in('id',ids.slice(1))).catch(()=>[]):[]]);
+    const adm=Auth.esAdmin(); let coste=null;
+    if(adm){ try{ await Prod.init(); coste=(await Prod.costeUnidades([u],o.sku_pf,o.sku_nucleo))[u.id]; if(coste&&!coste.lineas) coste=null; }catch(e){} }
+    const estado={pegado:['Espera 3 · Pegado','var(--terra)'],cosido:['Espera 2 · Cosido','var(--blue)'],embalaje:['Espera 1 · Embalado','#7A4B8C'],terminado:[u.expedido_at?'Expedido':'En almacén','var(--green)'],anulada:['Anulado','var(--red)'],baja:['Baja (defectuoso)','var(--red)']}[u.fase]||[u.fase,'var(--muted)'];
+    // piezas
+    const tarjPieza=([k,txt,id,sku])=>{ const un=pu.find(x=>x.id===id), ps=id?this.pasos(D,id,sku):[], x=ps[ps.length-1];
+      return `<div style="flex:1;min-width:200px;border:${marcar&&id===marcar?'2px solid var(--terra)':'1px solid var(--border)'};border-radius:12px;padding:12px 14px;background:var(--surf)">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${txt}</div>
+        ${id?`<a href="#" onclick="event.preventDefault();Traza.buscar('${jsq(id)}')" style="font-family:'JetBrains Mono';font-weight:800;color:var(--ink)">${esc(id)}</a>`:'<div style="font-weight:800;color:var(--red)">Sin escanear</div>'}
+        <div style="font-size:12px;color:var(--muted)">${esc(sku)}${un&&un.ot?' · '+esc(un.ot):''}</div>
+        ${x?`<div style="font-size:12px;margin-top:6px">Hecho en <b>${esc(D.pn[x.puesto_id]||'Puesto '+x.puesto_id)}</b>${D.gente(x.puesto_id).length?' ('+D.gente(x.puesto_id).map(esc).join(', ')+')':''}<br>${this.f(x.fin)} · ${fmtDur(x.seg)}${ps.length>1?' · <b style="color:var(--red)">hecho '+ps.length+' veces</b>':''}</div>`
+          :(id?`<div style="font-size:12px;margin-top:6px;color:var(--muted)">${un&&un.fabricada_at?'Fabricado '+this.f(un.fabricada_at):'Sin registro de fabricación'}</div>`:'<div style="font-size:12px;margin-top:6px;color:var(--muted)">No se escaneó su etiqueta en el pegado</div>')}</div>`; };
+    // línea de tiempo
+    const hitos=[];
+    if(o.lanzada_at) hitos.push({ts:o.lanzada_at,html:`<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)"><div style="width:10px;height:10px;border-radius:50%;background:var(--muted);margin-top:5px"></div><div><div style="font-weight:700">Lanzado en ${esc(u.pf)}</div><div style="font-size:12px;color:var(--muted)">${this.f(o.lanzada_at)}${o.parte_ref?' · parte '+esc(o.parte_ref):''}</div></div></div>`});
+    const fases=[['_PEG','3 · Pegado','var(--terra)'],['_COS','2 · Cosido','var(--blue)'],['_EMB','1 · Embalado','var(--green)']];
+    fases.forEach(([suf,txt,col])=>{ const ps=this.pasos(D,u.id,o.sku_pf+suf); ps.forEach((x,i)=>hitos.push({ts:x.fin,html:this.lineaPaso(D,x,txt+(ps.length>1?(i?' (rehecho)':' (1ª vez)'):''),col)})); });
+    const txtF={pegado:'pegado',cosido:'cosido',embalaje:'embalado',nucleo:'núcleo',tapa:'tapa',platabanda:'platabanda'};
+    inc.forEach(x=>hitos.push({ts:x.created_at,html:`<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)"><div style="width:10px;height:10px;border-radius:50%;background:var(--red);margin-top:5px"></div><div><div style="font-weight:700;color:var(--red)">⚠ Defecto en ${esc(txtF[x.fallo_en]||x.fallo_en||'—')} · ${x.accion==='baja'?'dado de baja':'vuelve a '+esc(txtF[x.fase_destino]||x.fase_destino||'')}</div>
+      <div style="font-size:12px;color:var(--muted)">${this.f(x.created_at)}${x.puesto_culpable!=null?' · se cuenta a '+esc(D.pn[x.puesto_culpable]||'puesto '+x.puesto_culpable):''}${x.motivo?' · '+esc(x.motivo):''}${x.piezas_recuperadas?' · piezas recuperadas: '+esc(x.piezas_recuperadas):''}</div></div></div>`}));
+    if(u.expedido_at) hitos.push({ts:u.expedido_at,html:`<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)"><div style="width:10px;height:10px;border-radius:50%;background:var(--ink);margin-top:5px"></div><div><div style="font-weight:700">🚚 Expedido</div><div style="font-size:12px;color:var(--muted)">${this.f(u.expedido_at)}${u.expedicion?' · '+esc(u.expedicion):''}</div></div></div>`});
+    if(u.baja_at) hitos.push({ts:u.baja_at,html:`<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)"><div style="width:10px;height:10px;border-radius:50%;background:var(--red);margin-top:5px"></div><div><div style="font-weight:700;color:var(--red)">Dado de baja</div><div style="font-size:12px;color:var(--muted)">${this.f(u.baja_at)}</div></div></div>`});
+    hitos.sort((a,b)=>String(a.ts).localeCompare(String(b.ts)));
+    const sinEscanear=piezas.filter(x=>!x[2]).length && ['cosido','embalaje','terminado'].includes(u.fase);
+    el.innerHTML=`<div class="card" style="padding:16px 18px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-family:'JetBrains Mono';font-weight:800;font-size:20px">${esc(u.id)}</div>
+          <span class="tag" style="background:var(--surf2);color:${estado[1]}">${esc(estado[0])}</span>
+          <div style="flex:1"></div>
+          ${coste?`<div style="text-align:right"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Coste real${u.fase==='terminado'?'':' (hasta ahora)'}</div><div style="font-family:'JetBrains Mono';font-weight:800;font-size:18px;color:var(--terra)">${coste.total.toFixed(2).replace('.',',')} €${coste.estimadas?'*':''}</div></div>`:''}
+        </div>
+        <div style="font-size:13px;margin-top:4px"><b>${esc(o.sku_pf||u.sku_pf)}</b> <span style="color:var(--muted)">${esc(o.descripcion||o.nombre||'')}</span></div>
+        <div style="font-size:12px;color:var(--muted)"><a href="#" onclick="event.preventDefault();Traza.buscar('${jsq(u.pf)}')" style="color:inherit">${esc(u.pf)}</a>${o.parte_ref?' · parte '+esc(o.parte_ref):''}${o.especial?' · Especial':''}</div>
+        ${marcar?`<div style="margin-top:8px;font-size:12px;background:#FBF3E4;border-radius:8px;padding:6px 10px">La pieza <b>${esc(marcar)}</b> está puesta en este colchón.</div>`:''}
+      </div>
+      <div class="card" style="margin-top:12px;padding:14px 16px"><div style="font-weight:800;margin-bottom:10px">Piezas</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">${piezas.map(tarjPieza).join('')}</div>
+        ${sinEscanear?'<div style="font-size:12px;color:#8a5a1e;margin-top:8px">⚠ Alguna pieza no se escaneó en el pegado: no se sabe cuál lleva y su coste se estima.</div>':''}</div>
+      <div class="card" style="margin-top:12px;padding:14px 16px"><div style="font-weight:800">Historia</div>
+        ${hitos.map(h=>h.html).join('')||'<div class="vacio">Sin movimientos todavía.</div>'}
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">Los tiempos son los de las tablets, sin pausas. Junto al puesto se muestran sus trabajadores asignados ahora.</div></div>`;
+  },
+  async pieza(un){
+    const el=$('#trzBody'); const D=await this.datos([un.id]); const ps=this.pasos(D,un.id,null);
+    el.innerHTML=`<div class="card" style="padding:16px 18px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${esc({nucleo:'Núcleo',tapa:'Tapa',platabanda:'Platabanda'}[tipoDe(un.sku)])}</div>
+        <div style="font-family:'JetBrains Mono';font-weight:800;font-size:20px">${esc(un.id)}</div>
+        <div style="font-size:13px"><b>${esc(un.sku)}</b> · ${esc(un.ot||'')} · <span style="color:var(--muted)">${esc(un.estado||'')}</span></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Lanzado ${this.f(un.lanzada_at)} · fabricado ${this.f(un.fabricada_at)}${un.consumida_at?' · consumido '+this.f(un.consumida_at):''}</div>
+        <div style="margin-top:8px;font-size:12px;background:var(--surf2);border-radius:8px;padding:6px 10px">${un.estado==='consumida'?'Consumida, pero no consta en ningún colchón (no se escaneó en el pegado).':'Todavía no está puesta en ningún colchón.'}</div></div>
+      <div class="card" style="margin-top:12px;padding:14px 16px"><div style="font-weight:800">Fabricación</div>
+        ${ps.map((x,i)=>this.lineaPaso(D,x,ps.length>1?(i?'Rehecho':'1ª vez'):'Fabricado','var(--terra)')).join('')||'<div class="vacio">Sin registro de fabricación en las tablets.</div>'}</div>`;
   }
 };
 
