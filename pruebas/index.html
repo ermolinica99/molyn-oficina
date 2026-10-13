@@ -2592,8 +2592,20 @@ const PFv = {
       const tb=$('#pfVista')&&$('#pfVista').querySelector('button:last-child'); if(tb) tb.innerHTML='Sin pieza'+(pend.length?' · <b style="color:var(--red)">'+pend.length+'</b>':'');
     }catch(e){ el.innerHTML='<div class="vacio">'+(/pf_sin_pieza|relation|schema cache/i.test(e.message||'')?'Falta preparar la base de datos: Actions → "Aplicar SQL a PRUEBAS".':'Error: '+esc(e.message||e))+'</div>'; }
   },
-  async resolverSinPieza(id,estado){
+  async elegirCategoriaSinNucleo(x){
+    await NucCat.load();
+    abrirModal('Modelo sin núcleo · '+x.sku_pf,'Se guarda como los demás colchones sin núcleo (Producto y Configuración → Colchones sin núcleo)');
+    $('#modalBody').innerHTML=`<div style="font-size:13px;margin-bottom:10px">El modelo <b>${esc(x.sku_pf)}</b> no lleva núcleo: la tablet ya no lo pedirá, no se reservará al lanzar y sus PF abiertas dejan de pedirlo.</div>
+      <label style="font-size:12px;color:var(--muted)">Categoría sin núcleo</label>
+      <select id="spCat" style="display:block;width:100%;margin:4px 0 14px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit">
+        <option value="">— Sin categoría —</option>${NucCat.cats.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select>
+      <div style="display:flex;gap:8px"><button class="chip" style="background:var(--blue)" onclick="PFv.resolverSinPieza(${x.id},'ok_modelo',Number($('#spCat').value)||null)">Guardar</button>
+        <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="cerrarModal()">Cancelar</button></div>`;
+  },
+  async resolverSinPieza(id,estado,cat){
     const x=(this._sp||[]).find(r=>r.id===id); if(!x) return;
+    // modelo sin núcleo: se guarda igual que en Producto (sin núcleo + su categoría de Configuración → Colchones sin núcleo)
+    if(estado==='ok_modelo' && x.pieza==='nucleo' && cat===undefined) return this.elegirCategoriaSinNucleo(x);
     const txtP={nucleo:'núcleo',tapa:'tapa',platabanda:'platabanda'}[x.pieza]||x.pieza;
     let pieza_id=null, nota=null;
     try{
@@ -2601,8 +2613,8 @@ const PFv = {
         // esa pieza ya no se va a gastar en este colchón: se libera su reserva
         await consumirReservaOf(x.sku,x.pf,x.sku_pf);
       }else if(estado==='ok_modelo'){
-        if(!confirm('¿El modelo '+x.sku_pf+' NUNCA lleva '+txtP+'?\n\nSe marca en el modelo: la tablet ya no la pedirá, no se reservará al lanzar y no contará en el coste.')) return;
-        const patch=x.pieza==='nucleo'?{sin_nucleo:true,sku_nucleo:null}:{[x.pieza==='tapa'?'sin_tapa':'sin_platabanda']:true};
+        if(x.pieza!=='nucleo' && !confirm('¿El modelo '+x.sku_pf+' NUNCA lleva '+txtP+'?\n\nSe marca en el modelo: la tablet ya no la pedirá, no se reservará al lanzar y no contará en el coste.')) return;
+        const patch=x.pieza==='nucleo'?{sin_nucleo:true,sku_nucleo:null,categoria_sin_nucleo_id:cat||null}:{[x.pieza==='tapa'?'sin_tapa':'sin_platabanda']:true};
         chk(await sb.from('modelos').update(patch).eq('sku_pf',x.sku_pf));
         if(x.pieza==='nucleo') chk(await sb.from('pf_ordenes').update({sku_nucleo:null}).eq('sku_pf',x.sku_pf).eq('estado','abierta'));
         // sus reservas pendientes de esa pieza ya no se van a gastar
@@ -2626,6 +2638,7 @@ const PFv = {
         }else nota='sin identificar la pieza';
       }
       chk(await sb.from('pf_sin_pieza').update({estado,pieza_id,nota,resuelto_at:new Date().toISOString()}).eq('id',id).eq('estado','pendiente'));
+      if(cat!==undefined) cerrarModal();
       toast('✓ '+x.pf_unidad+' clasificado','ok');
       this.paintSinPieza();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
