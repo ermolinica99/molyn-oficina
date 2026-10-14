@@ -1563,6 +1563,18 @@ const Prod = {
       const mod=('consumoManual' in l)?{nucleo_consumo:l.consumoManual}:this.modelosMap[l.sku_pf];
       const r=nucleoConsumo(l.nucleo_modelo,mod,tot[l.nucleo_modelo]||0);
       l.sku_nucleo=r.sku; l.corte=r.corte||null; l.corteInfo=r; });
+    // el umbral solo manda si no hay stock libre del núcleo de origen: si los de 200 libres (en stock o
+    // madurando, sin reservar) cubren toda la medida del parte, se gastan esos (y el 200 se repone como
+    // cualquier núcleo de stock). Si no llegan para todo, esa medida se fabrica a medida (todo o nada).
+    const usa={}; this.lineas.forEach(l=>{ if(l.cant>0 && l.sku_nucleo && !(l.corteInfo||{}).umbral) usa[l.sku_nucleo]=(usa[l.sku_nucleo]||0)+l.cant; });
+    const libreDe=k=>{ const b=MET[k]; return b?(b.disp+b.madurando-b.pend):0; };
+    const grupos={}; this.lineas.forEach(l=>{ const r=l.corteInfo||{}; if(r.umbral && l.cant>0){ const g=grupos[l.nucleo_modelo]||(grupos[l.nucleo_modelo]={origen:r.origen,tot:0,ls:[]}); g.tot+=l.cant; g.ls.push(l); } });
+    Object.values(grupos).sort((a,b)=>a.tot-b.tot).forEach(g=>{
+      const libre=libreDe(g.origen)-(usa[g.origen]||0);
+      if(libre>=g.tot){ usa[g.origen]=(usa[g.origen]||0)+g.tot;
+        g.ls.forEach(l=>{ const p=partesNuc(l.nucleo_modelo)||{}; l.sku_nucleo=g.origen; l.corte=p.largo||null; l.corteInfo={sku:g.origen,auto:true,corte:p.largo,porStock:true,libre}; }); }
+      else g.ls.forEach(l=>{ l.corteInfo=Object.assign({},l.corteInfo,{libre:Math.max(0,libre)}); });
+    });
   },
   cambiarConsumoLinea(i){
     const l=this.lineas[i]; if(!l||!l.nucleo_modelo||l.sin_nucleo) return;
@@ -1615,8 +1627,8 @@ const Prod = {
       const cambia=`<a href="#" onclick="event.preventDefault();event.stopPropagation();Prod.cambiarConsumoLinea(${i})" title="Cambiar el núcleo que gasta (solo este parte o para siempre)" style="color:inherit;text-decoration:none">`;
       const vez=('consumoManual' in l)?' <span style="color:var(--blue)">(solo este parte)</span>':'';
       const nucCell=l.sku_nucleo?(l.nucleo_modelo&&l.nucleo_modelo!==l.sku_nucleo
-          ? `${esc(l.nucleo_modelo)}<div style="color:var(--terra);font-weight:700">${cambia}✂ gasta ${esc(l.sku_nucleo)}${l.corte?' · cortar a '+l.corte:''}${vez} ✎</a></div>`
-          : esc(l.sku_nucleo)+`<div>${cambia}<span style="color:${ci.umbral?'var(--blue)':(ci.falta?'var(--red)':'var(--muted)')}">${ci.umbral?`≥ ${corteCfg().umbral} en el parte: se fabrica a medida`:(ci.falta?`falta ${esc(ci.falta)}`:'gasta el suyo')}${vez} ✎</span></a></div>`)
+          ? `${esc(l.nucleo_modelo)}<div style="color:var(--terra);font-weight:700">${cambia}✂ gasta ${esc(l.sku_nucleo)}${l.corte?' · cortar a '+l.corte:''}${ci.porStock?' <span style="color:var(--green)">(hay stock de '+(partesNuc(l.sku_nucleo)||{}).largo+')</span>':''}${vez} ✎</a></div>`
+          : esc(l.sku_nucleo)+`<div>${cambia}<span style="color:${ci.umbral?'var(--blue)':(ci.falta?'var(--red)':'var(--muted)')}">${ci.umbral?`≥ ${corteCfg().umbral} en el parte y no hay bastantes de ${(partesNuc(ci.origen)||{}).largo||''} libres (${ci.libre||0}): se fabrica a medida`:(ci.falta?`falta ${esc(ci.falta)}`:'gasta el suyo')}${vez} ✎</span></a></div>`)
         :(l.sin_nucleo?('🚫 '+esc(NucCat.nombreDe(l.categoria_sin_nucleo_id)||'Sin núcleo')):'— sin núcleo');
       return `<div ondblclick="Prod.editarNucleoLinea(${i})" title="Doble clic para vincular/editar el núcleo de este modelo" style="display:flex;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer;${faltaNuc?'background:#FDF6EF':(l.sin_nucleo?'background:var(--surf2)':'')}">
         <input type="checkbox" class="mchk" data-i="${i}" onclick="event.stopPropagation()" style="width:16px;height:16px;accent-color:var(--terra)">
@@ -3127,7 +3139,7 @@ const Conf = {
         +f('cc_base','Largo de fabricación',R.base,'1','cm')
         +f('cc_cort','Largos que se sacan cortando (separados por comas)',L(R.cortables),'','')
         +(R.cortables||[]).map(lg=>f('cc_fab_'+lg,'Anchos que SÍ se fabrican a '+lg+' (no se cortan)',L(fab[lg]),'','')).join('')
-        +f('cc_umbral','Umbral por parte: con estos o más de una medida que se corta, se fabrica a medida (0 = nunca)',R.umbral,'1','uds'); }
+        +f('cc_umbral','Umbral por parte: con estos o más de una medida que se corta, y sin stock libre del largo de fabricación para todos, se fabrica a medida (0 = nunca)',R.umbral,'1','uds'); }
     // lotes: uno por fila, con lote y puesto que lo fabrica
     const progs=Object.keys(PROG_DESC).sort();
     const puestos=this.puestos||[];
