@@ -327,6 +327,10 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="h1sub">Umbral, histórico y maduración que deciden si un núcleo va a stock o es a medida</div>
       <div class="card" style="margin-top:14px;padding:8px 4px"><div id="confFields"></div></div>
       <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveDiario()">Guardar</button>
+      <div class="h1" style="margin-top:28px;font-size:20px">Núcleos que se cortan</div>
+      <div class="h1sub">Los núcleos se fabrican al largo de fabricación. Un colchón de un largo que se puede cortar, y cuyo ancho no se fabrica a ese largo, gasta el núcleo del largo de fabricación (mismo programa, ancho y firmeza) y se corta en el pegado. En Producto se ve el núcleo que gasta cada modelo y se puede cambiar.</div>
+      <div class="card" style="margin-top:14px;padding:8px 4px"><div id="confCorte"></div></div>
+      <button class="chip" style="padding:13px 28px;font-size:15px;margin-top:16px" onclick="Conf.saveCorte()">Guardar regla</button>
       <div style="height:20px"></div>
     </div>
 
@@ -446,6 +450,7 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
           <button data-tab="conNucleo" onclick="Catalogo.setTab('conNucleo')">Con núcleo</button>
           <button data-tab="sinAsignar" onclick="Catalogo.setTab('sinAsignar')">Sin asignar</button>
           <button data-tab="sinNucleo" onclick="Catalogo.setTab('sinNucleo')">Sin núcleo</button>
+          <button data-tab="corte" onclick="Catalogo.setTab('corte')">✂ Se cortan</button>
         </div>
         <div style="flex:1"></div>
         <div class="mono" id="catCount" style="color:var(--muted);font-weight:600"></div>
@@ -585,7 +590,7 @@ let PROG=null;
 // ---- carga de datos ----
 async function cargarConfig(){
   try{const {data}=await sb.from('config').select('*').eq('id',1).single();
-    if(data){CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;CFG.dias_fabricacion=data.dias_fabricacion??0;LOTE_DFLT=data.lote??10;CFG.coste_hora_operario=parseFloat(data.coste_hora_operario||0)||0;}}catch(e){}
+    if(data){CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;CFG.dias_fabricacion=data.dias_fabricacion??0;LOTE_DFLT=data.lote??10;CFG.corte=data.corte||null;CFG.coste_hora_operario=parseFloat(data.coste_hora_operario||0)||0;}}catch(e){}
   try{const {data:lt}=await sb.from('lotes_programa').select('programa,lote');(lt||[]).forEach(r=>LOTES[r.programa]=r.lote);}catch(e){}
 }
 // orden estable para paginar: sin ORDER BY, Postgres puede devolver las filas en distinto orden en
@@ -846,6 +851,7 @@ function render(){
           <div class="mono" style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.sku)}</div>
           <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(etiquetaNuc(b))}</div>
         </div>
+        ${nucleoSeCorta(b.sku)?`<button class="chip" style="padding:5px 9px;font-size:11px;background:#FBE9DD;color:var(--terra)" title="Se corta de ${esc(nucleoSeCorta(b.sku))}: pasar sus reservas" onclick="event.stopPropagation();pasarReservasCorte('${jsq(b.sku)}')">✂ al ${esc((partesNuc(nucleoSeCorta(b.sku))||{}).largo||'')}</button>`:''}
         <div class="mono" style="font-size:15px;font-weight:700;color:var(--pur)">${Math.abs(b.saldo)}</div>
       </div>`).join(''):'<div class="vacio" style="padding:14px 16px">Ningún núcleo en negativo. Todo cubierto.</div>'}
     </div>
@@ -925,13 +931,104 @@ function render(){
     });
   }
 }
+// texto seguro dentro de un onclick='...'
+function jsq(x){ return String(x??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+// NÚCLEOS QUE SE CORTAN: los núcleos se fabrican a `base` (200) de largo; un 190 o 195 que no se fabrica a esa
+// medida gasta el de 200 del mismo programa, ancho y firmeza y se corta en el pegado (de 200 solo se puede
+// recortar hasta 190; los de 180 se fabrican enteros). `fab` dice qué anchos sí se fabrican a cada largo.
+// umbral: si en un parte salen al menos tantos de una medida que se corta, ese parte la fabrica a medida.
+const CORTE_DFLT={activo:true,base:200,cortables:[190,195],fab:{190:[90,105,135,150],195:[]},umbral:10};
+function corteCfg(){ const c=Object.assign({},CORTE_DFLT,CFG.corte||{}); c.fab=Object.assign({},CORTE_DFLT.fab,(CFG.corte||{}).fab||{}); return c; }
+function partesNuc(s){ const m=/^(N\d{3})(\d{2,3})X(\d{2,3})(.*)$/.exec(String(s||'').toUpperCase()); return m?{prog:m[1],anchoTxt:m[2],ancho:+m[2],largo:+m[3],resto:m[4]}:null; }
+function existeNucleo(sku){ return !!(sku && ((typeof Prod!=='undefined'&&Prod.prodMap&&Prod.prodMap[sku])||MET[sku])); }
+// núcleo que gasta de verdad un modelo cuyo núcleo es `nuc`. modelo.nucleo_consumo: null = la regla,
+// 'PROPIO' = su propio núcleo, otro código = ese. udsParte: colchones de esa medida en el parte (umbral).
+function nucleoConsumo(nuc,modelo,udsParte){
+  if(!nuc) return {sku:null};
+  const man=modelo&&modelo.nucleo_consumo;
+  if(man==='PROPIO') return {sku:nuc,manual:true};
+  if(man) return {sku:man,manual:true,corte:man!==nuc?(partesNuc(nuc)||{}).largo||null:null};
+  const R=corteCfg(); if(!R.activo) return {sku:nuc};
+  const p=partesNuc(nuc); if(!p) return {sku:nuc};
+  if(p.largo===Number(R.base) || !(R.cortables||[]).map(Number).includes(p.largo) || ((R.fab||{})[p.largo]||[]).map(Number).includes(p.ancho)) return {sku:nuc};
+  const o=p.prog+p.anchoTxt+'X'+R.base+p.resto;
+  if(!existeNucleo(o)) return {sku:nuc,falta:o};
+  if(udsParte!=null && Number(R.umbral)>0 && udsParte>=Number(R.umbral)) return {sku:nuc,umbral:true,origen:o};
+  return {sku:o,auto:true,corte:p.largo};
+}
+// guarda en el modelo el núcleo que gasta (null = la regla, 'PROPIO', u otro código)
+async function guardarConsumoModelo(sku_pf,v){
+  const {error}=await sb.from('modelos').update({nucleo_consumo:v}).eq('sku_pf',sku_pf);
+  if(error) throw new Error((error.message||error)+(/nucleo_consumo/.test(error.message||'')?' (falta "Aplicar SQL a PRUEBAS": 06_corte_nucleos.sql)':''));
+  if(typeof Prod!=='undefined'&&Prod.modelosMap&&Prod.modelosMap[sku_pf]) Prod.modelosMap[sku_pf].nucleo_consumo=v;
+  if(typeof Catalogo!=='undefined'&&Catalogo.map&&Catalogo.map[sku_pf]) Catalogo.map[sku_pf].nucleo_consumo=v;
+}
+// ventana para elegir el núcleo que gasta un modelo. alcance: además pregunta "solo en este parte" o "para siempre"
+function abrirConsumoModal(o){
+  const auto=nucleoConsumo(o.nuc,null,null), p=partesNuc(o.nuc), cur=o.cur||'';
+  const sug=Object.keys((typeof Prod!=='undefined'&&Prod.prodMap)||{}).filter(k=>{ const q=partesNuc(k); return q&&p&&q.prog===p.prog&&q.ancho===p.ancho&&q.resto===p.resto&&q.largo>=p.largo; }).sort();
+  const sel=v=>(v==='auto'&&!cur)||(v==='PROPIO'&&cur==='PROPIO')||(v==='otro'&&cur&&cur!=='PROPIO');
+  const radio=(name,v,t,sub,chk)=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer">
+    <input type="radio" name="${name}" value="${v}" ${chk?'checked':''} style="margin-top:3px"><div style="flex:1"><b>${t}</b><div style="font-size:12px;color:var(--muted)">${sub}</div></div></label>`;
+  abrirModal('Núcleo que gasta · '+o.sku_pf,(o.titulo?o.titulo+' · ':'')+'núcleo del modelo '+o.nuc);
+  window._ncOpts=o;
+  $('#modalBody').innerHTML=radio('ncMode','auto','Automático (regla de corte)',auto.sku!==o.nuc?'Gasta '+esc(auto.sku)+' y se corta a '+auto.corte+' en el pegado':(auto.falta?'Se cortaría de '+esc(auto.falta)+', pero no existe: gasta el suyo':'Gasta el suyo (esta medida se fabrica)'),sel('auto'))
+    +radio('ncMode','PROPIO','Su propio núcleo',esc(o.nuc)+': se fabrica a medida, sin cortar',sel('PROPIO'))
+    +radio('ncMode','otro','Otro núcleo',`<input id="ncOtro" list="dlNcSug" value="${esc(cur&&cur!=='PROPIO'?cur:(sug.find(k=>k!==o.nuc)||''))}" onclick="event.stopPropagation();document.querySelector('input[name=ncMode][value=otro]').checked=true" style="margin-top:6px;width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:'JetBrains Mono'"><datalist id="dlNcSug">${sug.map(k=>`<option value="${esc(k)}">`).join('')}</datalist>`,sel('otro'))
+    +(o.alcance?`<div style="font-weight:700;font-size:13px;margin:12px 0 6px">¿Hasta cuándo?</div>`
+      +radio('ncAlc','vez','Solo en este parte','No cambia el modelo: el próximo parte vuelve a lo que tenga guardado',true)
+      +radio('ncAlc','siempre','Para siempre','Se guarda en el modelo (también se ve y se cambia en Producto)',false):'')
+    +`<div style="display:flex;gap:8px;margin-top:6px"><button class="chip" onclick="guardarConsumoModal()">Guardar</button><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="cerrarModal()">Cancelar</button></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:10px">La regla está en Configuración → Diario / Personalizado → Núcleos que se cortan.</div>`;
+}
+async function guardarConsumoModal(){
+  const o=window._ncOpts; if(!o) return;
+  const mode=(document.querySelector('input[name=ncMode]:checked')||{}).value;
+  let v=null;
+  if(mode==='PROPIO') v='PROPIO';
+  if(mode==='otro'){ v=($('#ncOtro').value||'').trim().toUpperCase(); if(!v){ toast('Escribe el núcleo','err'); return; }
+    if(!existeNucleo(v)){ toast(v+' no es un núcleo del catálogo','err'); return; }
+    if(v===o.nuc) v='PROPIO'; }
+  const siempre=!o.alcance||((document.querySelector('input[name=ncAlc]:checked')||{}).value==='siempre');
+  try{ await o.onGuardar(v,siempre); cerrarModal(); toast('✓ '+o.sku_pf+(o.alcance&&!siempre?' · solo en este parte':' · guardado en el modelo'),'ok'); }
+  catch(e){ toast('Error: '+(e.message||e),'err'); }
+}
+// reservas pendientes de una medida que se corta → al núcleo del que se corta (). Solo las de modelos que gastan ese núcleo según la regla o su excepción.
+async function pasarReservasCorte(sku){
+  const origen=nucleoSeCorta(sku); if(!origen){ toast(sku+' no se corta de otro núcleo','err'); return; }
+  abrirModal('Pasar reservas a '+origen,sku+' se corta de '+origen);
+  try{
+    await Prod.init();
+    const rs=await selectWhere('reservas','*',q=>q.eq('sku',sku).eq('estado','pendiente'));
+    if(!rs.length){ $('#modalBody').innerHTML='<div class="vacio">No hay reservas pendientes de '+esc(sku)+'.</div>'; return; }
+    window._prc={sku,origen,rs};
+    const gasta=r=>{ const m=Prod.modelosMap[r.sku_pf]; return !r.sku_pf||nucleoConsumo(sku,m,null).sku===origen; };
+    $('#modalBody').innerHTML=`<div style="font-size:13px;margin-bottom:10px">Estas reservas esperan un <b>${esc(sku)}</b>, que no se fabrica: se corta de <b>${esc(origen)}</b>. Al pasarlas, se reservan del ${esc(origen)} y el núcleo de 200 se corta al consumirlo.</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--surf2);text-align:left"><th style="padding:6px 8px"></th><th style="padding:6px 8px">Parte</th><th style="padding:6px 8px">Modelo</th><th style="padding:6px 8px">OT</th><th style="padding:6px 8px;text-align:right">Uds</th></tr></thead><tbody>
+      ${rs.map((r,i)=>`<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px"><input type="checkbox" class="prcChk" data-i="${i}" ${gasta(r)?'checked':''}></td>
+        <td style="padding:6px 8px">${esc(r.parte_ref||'—')}</td><td style="padding:6px 8px">${esc(r.sku_pf||'—')}${gasta(r)?'':' <span style="color:var(--muted)">(gasta su propio núcleo)</span>'}</td><td style="padding:6px 8px">${esc(r.ot||'—')}</td><td style="padding:6px 8px;text-align:right;font-weight:700">${r.cantidad}</td></tr>`).join('')}</tbody></table>
+      <div style="display:flex;gap:8px;margin-top:14px"><button class="chip" onclick="confirmarPasarReservas()">✂ Pasar las marcadas a ${esc(origen)}</button><button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="cerrarModal()">Cancelar</button></div>`;
+  }catch(e){ $('#modalBody').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+}
+async function confirmarPasarReservas(){
+  const d=window._prc; if(!d) return;
+  const sel=[...document.querySelectorAll('.prcChk:checked')].map(x=>d.rs[+x.dataset.i]);
+  if(!sel.length){ toast('Marca alguna reserva','err'); return; }
+  try{
+    for(const r of sel) chk(await sb.from('reservas').update({sku:d.origen,ot:null}).eq('id',r.id).eq('estado','pendiente'));
+    cerrarModal(); toast('✓ '+sel.reduce((a,r)=>a+(r.cantidad||0),0)+' uds pasadas a '+d.origen,'ok');
+    await refrescarMet(true); render();
+  }catch(e){ toast('Error: '+(e.message||e),'err'); }
+}
+// un núcleo que (por la regla) nunca se fabrica: se corta de otro
+function nucleoSeCorta(sku){ const r=nucleoConsumo(sku,null,null); return r.auto?r.sku:null; }
 function cardN(b){
   const forz=b.forzado;
   const cls=forz?'forz':(b.personalizado?'':'diario');
   const tag=forz?'<span class="tag forz">Diario (forzado)</span>':(b.personalizado?'<span class="tag pers">Personalizado</span>':'<span class="tag diario">Diario</span>');
-  const med=etiquetaNuc(b);
+  const med=etiquetaNuc(b), deCorte=nucleoSeCorta(b.sku);
   return `<div class="nc ${cls} nc-click" data-sku="${esc(b.sku)}" style="cursor:pointer">
-    <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(med)}</div></div>${tag}</div>
+    <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(med)}</div>${deCorte?`<div style="font-size:11px;color:var(--terra);font-weight:700;margin-top:2px">✂ se corta de ${esc(deCorte)}: no se fabrica para stock</div>`:''}</div>${tag}</div>
     <div class="nb">
       <div class="saldo"><span class="big ${b.saldo<=0?'zero':''}">${b.saldo}</span><span class="sl">SALDO<br>uds en total</span></div>
       <div class="cells">
@@ -945,7 +1042,8 @@ function cardN(b){
         <div><div class="pv">${b.personalizado?'—':b.ROP}</div><div class="pk">P. pedido</div></div>
       </div>
       <div class="forzrow"><label><input type="checkbox" ${forz?'checked':''} onchange="toggleForzado('${b.sku.replace(/'/g,"\\'")}',this.checked)">Forzar a diario</label></div>
-      ${b.saldo<0?`<button class="lanzar" onclick="event.stopPropagation();Prod.init().then(()=>{Prod.cant['${b.sku.replace(/'/g,"\'")}']=(Prod.cant['${b.sku.replace(/'/g,"\'")}']||0)+${Math.abs(b.saldo)};Prod.tipo['${b.sku.replace(/'/g,"\'")}']='${b.personalizado?'personalizado':'stock'}';Prod.manual['${b.sku.replace(/'/g,"\'")}']=(Prod.manual['${b.sku.replace(/'/g,"\'")}']||0)+${Math.abs(b.saldo)};Prod.render();toast('✓ Añadido a Producción','ok');});">⟳ Lanzar ${Math.abs(b.saldo)} uds</button>`:''}
+      ${b.saldo<0&&deCorte?`<button class="lanzar" onclick="event.stopPropagation();pasarReservasCorte('${jsq(b.sku)}')">✂ Pasar ${Math.abs(b.saldo)} uds a ${esc(deCorte)}</button>`:''}
+      ${b.saldo<0&&!deCorte?`<button class="lanzar" onclick="event.stopPropagation();Prod.init().then(()=>{Prod.cant['${b.sku.replace(/'/g,"\'")}']=(Prod.cant['${b.sku.replace(/'/g,"\'")}']||0)+${Math.abs(b.saldo)};Prod.tipo['${b.sku.replace(/'/g,"\'")}']='${b.personalizado?'personalizado':'stock'}';Prod.manual['${b.sku.replace(/'/g,"\'")}']=(Prod.manual['${b.sku.replace(/'/g,"\'")}']||0)+${Math.abs(b.saldo)};Prod.render();toast('✓ Añadido a Producción','ok');});">⟳ Lanzar ${Math.abs(b.saldo)} uds</button>`:''}
     </div></div>`;
 }
 
@@ -1063,6 +1161,7 @@ const Prod = {
       try{ modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id,especial'); this.hayEspecial=true; }
       catch(e){ modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id'); this.hayEspecial=false; }
       this.modelosMap = {}; modelos.forEach(m=>this.modelosMap[m.sku_pf]=m);
+      try{ (await selectAll('modelos','sku_pf,nucleo_consumo')).forEach(r=>{ const m=this.modelosMap[r.sku_pf]; if(m) m.nucleo_consumo=r.nucleo_consumo||null; }); }catch(e){} // sin corte_nucleos.sql: solo la regla
       const prods = await selectAll('productos','sku,nombre,coste_material');
       this.prodMap = {}; this.costeMat={}; prods.forEach(p=>{ this.prodMap[p.sku]=p.nombre||p.sku; this.costeMat[p.sku]=Number(p.coste_material||0)||0; });
       const tsku = await selectWhere('tiempos_sku','sku,mediana_seg,n_unidades',q=>q.eq('vigente',true));
@@ -1156,7 +1255,49 @@ const Prod = {
   loteDe(nuc){ const b=MET[nuc]; const prog=b?b.prog:nuc.slice(0,4); return Math.max(1, LOTES[prog]||LOTE_DFLT); },
   redondearLote(x,l){ return x>0? Math.ceil(x/l)*l : 0; },
 
+  // núcleo que gasta cada línea: l.nucleo_modelo es el del modelo; l.sku_nucleo el que se gasta (y se
+  // reserva/fabrica). El umbral se mira con el total del parte de cada núcleo del modelo.
+  aplicarCortes(){
+    const tot={};
+    this.lineas.forEach(l=>{ if(l.nucleo_modelo===undefined) l.nucleo_modelo=l.sku_nucleo||null;
+      if(l.nucleo_modelo && !l.sin_nucleo && l.cant>0) tot[l.nucleo_modelo]=(tot[l.nucleo_modelo]||0)+l.cant; });
+    this.lineas.forEach(l=>{ if(l.sin_nucleo){ l.corte=null; return; }
+      const mod=('consumoManual' in l)?{nucleo_consumo:l.consumoManual}:this.modelosMap[l.sku_pf];
+      const r=nucleoConsumo(l.nucleo_modelo,mod,tot[l.nucleo_modelo]||0);
+      l.sku_nucleo=r.sku; l.corte=r.corte||null; l.corteInfo=r; });
+    // el umbral solo manda si no hay stock libre del núcleo de origen: si los de 200 libres (en stock o
+    // madurando, sin reservar) cubren toda la medida del parte, se gastan esos (y el 200 se repone como
+    // cualquier núcleo de stock). Si no llegan para todo, esa medida se fabrica a medida (todo o nada).
+    const usa={}; this.lineas.forEach(l=>{ if(l.cant>0 && l.sku_nucleo && !(l.corteInfo||{}).umbral) usa[l.sku_nucleo]=(usa[l.sku_nucleo]||0)+l.cant; });
+    const libreDe=k=>{ const b=MET[k]; return b?(b.disp+b.madurando-b.pend):0; };
+    const grupos={}; this.lineas.forEach(l=>{ const r=l.corteInfo||{}; if(r.umbral && l.cant>0){ const g=grupos[l.nucleo_modelo]||(grupos[l.nucleo_modelo]={origen:r.origen,tot:0,ls:[]}); g.tot+=l.cant; g.ls.push(l); } });
+    Object.values(grupos).sort((a,b)=>a.tot-b.tot).forEach(g=>{
+      const libre=libreDe(g.origen)-(usa[g.origen]||0);
+      if(libre>=g.tot){ usa[g.origen]=(usa[g.origen]||0)+g.tot;
+        g.ls.forEach(l=>{ const p=partesNuc(l.nucleo_modelo)||{}; l.sku_nucleo=g.origen; l.corte=p.largo||null; l.corteInfo={sku:g.origen,auto:true,corte:p.largo,porStock:true,libre}; }); }
+      else g.ls.forEach(l=>{ l.corteInfo=Object.assign({},l.corteInfo,{libre:Math.max(0,libre)}); });
+    });
+  },
+  cambiarConsumoLinea(i){
+    const l=this.lineas[i]; if(!l||!l.nucleo_modelo||l.sin_nucleo) return;
+    const m=this.modelosMap[l.sku_pf]||{};
+    abrirConsumoModal({sku_pf:l.sku_pf,titulo:l.nombre||'',nuc:l.nucleo_modelo,cur:('consumoManual' in l)?l.consumoManual:(m.nucleo_consumo||null),alcance:true,
+      onGuardar:async(v,siempre)=>{
+        if(siempre){ await guardarConsumoModelo(l.sku_pf,v); this.lineas.forEach(x=>{ if(x.sku_pf===l.sku_pf) delete x.consumoManual; }); }
+        else this.lineas.forEach(x=>{ if(x.sku_pf===l.sku_pf) x.consumoManual=v; });
+        this.recompute(); }});
+  },
+  cambiarConsumoLinea(i){
+    const l=this.lineas[i]; if(!l||!l.nucleo_modelo||l.sin_nucleo) return;
+    const m=this.modelosMap[l.sku_pf]||{};
+    abrirConsumoModal({sku_pf:l.sku_pf,titulo:l.nombre||'',nuc:l.nucleo_modelo,cur:('consumoManual' in l)?l.consumoManual:(m.nucleo_consumo||null),alcance:true,
+      onGuardar:async(v,siempre)=>{
+        if(siempre){ await guardarConsumoModelo(l.sku_pf,v); this.lineas.forEach(x=>{ if(x.sku_pf===l.sku_pf) delete x.consumoManual; }); }
+        else this.lineas.forEach(x=>{ if(x.sku_pf===l.sku_pf) x.consumoManual=v; });
+        this.recompute(); }});
+  },
   async recompute(){
+    this.aplicarCortes();
     const demanda={};
     this.lineas.forEach(l=>{ if(l.sku_nucleo && l.cant>0) demanda[l.sku_nucleo]=(demanda[l.sku_nucleo]||0)+l.cant; });
     const cant={}, tipo={};
@@ -1174,7 +1315,7 @@ const Prod = {
     // núcleos que SÍ corresponden a demanda real del parte (para no etiquetarles el nº de parte a los demás)
     this.demandaSkus=new Set(Object.keys(demanda));
     // núcleos bajo mínimo no incluidos (reposición automática, no pedida por este parte)
-    Object.values(MET).forEach(b=>{ if(b.bajoMin && b.enUso!==false && !(b.sku in cant) && !(b.sku in demanda)){
+    Object.values(MET).forEach(b=>{ if(b.bajoMin && b.enUso!==false && !(b.sku in cant) && !(b.sku in demanda) && !nucleoSeCorta(b.sku)){
       const lz=this.redondearLote(b.reponer,this.loteDe(b.sku)); if(lz>0){ cant[b.sku]=lz; tipo[b.sku]='stock'; } }});
     // sumar manual (tampoco es demanda del parte: se añadió a mano)
     for(const s in this.manual){ if(this.manual[s]>0){ cant[s]=(cant[s]||0)+this.manual[s]; if(!tipo[s])tipo[s]=this.manualTipo[s]||'stock'; } }
@@ -1189,12 +1330,18 @@ const Prod = {
       // descripción con las configuraciones aplicadas
       const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
       const desc=(l.descBase||l.descParte||l.nombre||'')+cfgTxt;
-      const nucCell=l.sku_nucleo?esc(l.sku_nucleo):(l.sin_nucleo?('🚫 '+esc(NucCat.nombreDe(l.categoria_sin_nucleo_id)||'Sin núcleo')):'— sin núcleo');
+      const ci=l.corteInfo||{};
+      const cambia=`<a href="#" onclick="event.preventDefault();event.stopPropagation();Prod.cambiarConsumoLinea(${i})" title="Cambiar el núcleo que gasta (solo este parte o para siempre)" style="color:inherit;text-decoration:none">`;
+      const vez=('consumoManual' in l)?' <span style="color:var(--blue)">(solo este parte)</span>':'';
+      const nucCell=l.sku_nucleo?(l.nucleo_modelo&&l.nucleo_modelo!==l.sku_nucleo
+          ? `${esc(l.nucleo_modelo)}<div style="color:var(--terra);font-weight:700">${cambia}✂ gasta ${esc(l.sku_nucleo)}${l.corte?' · cortar a '+l.corte:''}${ci.porStock?' <span style="color:var(--green)">(hay stock de '+(partesNuc(l.sku_nucleo)||{}).largo+')</span>':''}${vez} ✎</a></div>`
+          : esc(l.sku_nucleo)+`<div>${cambia}<span style="color:${ci.umbral?'var(--blue)':(ci.falta?'var(--red)':'var(--muted)')}">${ci.umbral?`≥ ${corteCfg().umbral} en el parte y no hay bastantes de ${(partesNuc(ci.origen)||{}).largo||''} libres (${ci.libre||0}): se fabrica a medida`:(ci.falta?`falta ${esc(ci.falta)}`:'gasta el suyo')}${vez} ✎</span></a></div>`)
+        :(l.sin_nucleo?('🚫 '+esc(NucCat.nombreDe(l.categoria_sin_nucleo_id)||'Sin núcleo')):'— sin núcleo');
       return `<div ondblclick="Prod.editarNucleoLinea(${i})" title="Doble clic para vincular/editar el núcleo de este modelo" style="display:flex;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer;${faltaNuc?'background:#FDF6EF':(l.sin_nucleo?'background:var(--surf2)':'')}">
         <input type="checkbox" class="mchk" data-i="${i}" onclick="event.stopPropagation()" style="width:16px;height:16px;accent-color:var(--terra)">
         <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-size:12px;font-weight:700${faltaNuc?';color:var(--red)':''}">${esc(l.sku_pf)}</div>
           <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(desc)}">${esc(desc)}</div></div>
-        <div style="font-size:11px;color:${l.sin_nucleo?'var(--pur)':'var(--muted)'};font-family:'JetBrains Mono'">${nucCell}</div>
+        <div style="font-size:11px;color:${l.sin_nucleo?'var(--pur)':'var(--muted)'};font-family:'JetBrains Mono';text-align:right">${nucCell}</div>
         <div style="text-align:center"><div style="font-size:8px;color:var(--muted);text-transform:uppercase;font-family:'Archivo Narrow'">Cant.</div>
           <input type="number" min="0" value="${l.cant}" data-i="${i}" class="mcant" onclick="event.stopPropagation()" style="width:56px;padding:6px;border:1px solid var(--border);border-radius:7px;text-align:center;font-family:inherit"></div>
         <button class="chip" style="padding:8px 10px;${l.especial?'background:#1B4F72;color:#fff':'background:var(--surf2);color:var(--muted)'}" title="Especial (externo): sale en un parte aparte. Se recuerda para este modelo." onclick="event.stopPropagation();Prod.toggleEspecial(${i})">${l.especial?'★ Especial':'☆ Especial'}</button>
@@ -1298,7 +1445,7 @@ const Prod = {
     const l=this.lineas[i]; if(!l)return;
     abrirEditorNucleoModal(l.sku_pf,(m)=>{
       // por si la misma línea se dividió en varias (por configuración), actualiza todas las que compartan sku_pf
-      this.lineas.forEach(x=>{ if(x.sku_pf===m.sku_pf){ x.sku_nucleo=m.sku_nucleo; x.sin_nucleo=m.sin_nucleo; x.categoria_sin_nucleo_id=m.categoria_sin_nucleo_id; }});
+      this.lineas.forEach(x=>{ if(x.sku_pf===m.sku_pf){ x.sku_nucleo=m.sku_nucleo; x.nucleo_modelo=m.sku_nucleo||null; x.sin_nucleo=m.sin_nucleo; x.categoria_sin_nucleo_id=m.categoria_sin_nucleo_id; }});
       this.recompute();
     });
   },
@@ -1502,7 +1649,7 @@ const Prod = {
     this.lineas.forEach(l=>{ if(l.cant<=0)return;
       let rest=l.cant;
       const cfgTxt=(l.configs&&l.configs.length)?l.configs.map(c=>' // '+c.opcion.toUpperCase()).join(''):'';
-      const base={sku_pf:l.sku_pf,desc:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,nucleo:l.sku_nucleo,especial:!!l.especial};
+      const base={sku_pf:l.sku_pf,desc:(l.descBase||l.descParte||l.nombre||'')+cfgTxt,nucleo:l.sku_nucleo,corte:l.corte||null,especial:!!l.especial};
       // marcado explícitamente "sin núcleo": va aparte, no pasa por el reparto FIFO de núcleos
       if(l.sin_nucleo){ bD.push({...base,cant:rest}); return; }
       const p=(l.sku_nucleo&&pools[l.sku_nucleo])?pools[l.sku_nucleo]:{disp:[],madur:[],fabri:[]};
@@ -1566,7 +1713,7 @@ const Prod = {
       const head=`<th>Código</th><th>Descripción</th><th>Núcleo</th><th>OT</th>${conFecha?'<th>Disponible</th>':''}<th class="n">Cant.</th>`;
       const rows=arr.map(x=>{
         const dd=conFecha?(x.dispDate?new Date(x.dispDate).toLocaleDateString('es-ES'):'—'):'';
-        return `<tr class="${x.nucleo?'':'falta'}"><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td></tr>`;
+        return `<tr class="${x.nucleo?'':'falta'}"><td>${esc(x.sku_pf)}</td><td>${esc(x.desc||'')}</td><td>${x.nucleo?esc(x.nucleo)+(x.corte?` <b>✂ cortar a ${x.corte}</b>`:''):'— sin núcleo'}</td><td><b>${esc(x.ot||'—')}</b></td>${conFecha?`<td>${dd}</td>`:''}<td class="n">${x.cant}</td></tr>`;
       }).join('');
       const colspan=conFecha?5:4;
       return `<div class="pb"></div><h1>${titulo}</h1><div class="meta">${sub} &nbsp; Parte: <b>${esc(ref)}</b> &nbsp; Fecha: <b>${fecha}</b> &nbsp; Unidades: <b>${t}</b></div>
@@ -2052,7 +2199,7 @@ const Conf = {
     const f=(id,lab,val,step,suf)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--border)">
       <label style="font-size:14px">${lab}</label>
       <div style="display:flex;align-items:center;gap:6px">
-        <input id="${id}" type="${step?'number':'text'}" ${step?`step="${step}"`:''} value="${esc(val)}" style="width:120px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;text-align:right;font-family:inherit">
+        <input id="${id}" type="${step?'number':'text'}" ${step?`step="${step}"`:''} value="${esc(val)}" style="width:${step?120:200}px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;text-align:right;font-family:inherit">
         ${suf?`<span style="font-size:12px;color:var(--muted);width:34px">${suf}</span>`:'<span style="width:34px"></span>'}
       </div></div>`;
     const fieldsEl=$('#confFields');
@@ -2062,6 +2209,13 @@ const Conf = {
       f('cf_madur','Maduración (días)',c.maduracion??2,'1','')+
       f('cf_fab','Días de fabricación (de lanzar a fabricado)',c.dias_fabricacion??0,'1','');
     const costeInp=$('#cf_coste'); if(costeInp) costeInp.value=c.coste_hora_operario??0;
+    const corteEl=$('#confCorte');
+    if(corteEl){ const R=Object.assign({},CORTE_DFLT,c.corte||{}), fab=Object.assign({},CORTE_DFLT.fab,(c.corte||{}).fab||{}), L=a=>(a||[]).join(', ');
+      corteEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--border)"><label style="font-size:14px">Aplicar la regla</label><input id="cc_activo" type="checkbox" ${R.activo?'checked':''} style="width:20px;height:20px;accent-color:var(--terra)"></div>`
+        +f('cc_base','Largo de fabricación',R.base,'1','cm')
+        +f('cc_cort','Largos que se sacan cortando (separados por comas)',L(R.cortables),'','')
+        +(R.cortables||[]).map(lg=>f('cc_fab_'+lg,'Anchos que SÍ se fabrican a '+lg+' (no se cortan)',L(fab[lg]),'','')).join('')
+        +f('cc_umbral','Umbral por parte: con estos o más de una medida que se corta, y sin stock libre del largo de fabricación para todos, se fabrica a medida (0 = nunca)',R.umbral,'1','uds'); }
     // lotes: uno por fila, con lote y puesto que lo fabrica
     const progs=Object.keys(PROG_DESC).sort();
     const puestos=this.puestos||[];
@@ -2090,6 +2244,18 @@ const Conf = {
       CFG.coste_hora_operario=coste; this.raw.coste_hora_operario=coste;
       toast('✓ Coste por defecto guardado','ok');
     }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
+  },
+  async saveCorte(){
+    const nums=t=>String(t||'').split(/[^0-9]+/).filter(Boolean).map(Number);
+    const cort=nums($('#cc_cort').value), fab={};
+    cort.forEach(lg=>{ const el=document.getElementById('cc_fab_'+lg); fab[lg]=el?nums(el.value):[]; });
+    const corte={activo:$('#cc_activo').checked,base:parseInt($('#cc_base').value)||200,cortables:cort,fab,umbral:Math.max(0,parseInt($('#cc_umbral').value)||0)};
+    try{
+      chk(await sb.from('config').update({corte}).eq('id',1));
+      this.raw.corte=corte; CFG.corte=corte; this.render();
+      if(typeof Prod!=='undefined'&&Prod.lineas&&Prod.lineas.length) Prod.recompute();
+      toast('✓ Regla de corte guardada','ok');
+    }catch(e){ toast('Error al guardar: '+(e.message||e)+(/corte/.test(e.message||'')?' (falta ejecutar corte_nucleos.sql en Supabase)':''),'err'); }
   },
   async saveDiario(){
     try{
@@ -3838,7 +4004,8 @@ const Catalogo = {
   async load(){
     const el=$('#catLista'); if(el && !this.loaded) el.innerHTML='<div class="loading">Cargando…</div>';
     try{
-      const [modelos]=await Promise.all([ selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id') ]);
+      const [modelos]=await Promise.all([ selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id'), Prod.init() ]);
+      try{ const nc={}; (await selectAll('modelos','sku_pf,nucleo_consumo')).forEach(r=>nc[r.sku_pf]=r.nucleo_consumo||null); modelos.forEach(m=>m.nucleo_consumo=nc[m.sku_pf]||null); this.hayConsumo=true; }catch(e){ this.hayConsumo=false; }
       await NucCat.load();
       this.rows=modelos;
       this.map={}; modelos.forEach(m=>this.map[m.sku_pf]=m);
@@ -3870,19 +4037,23 @@ const Catalogo = {
       if(this.tab==='conNucleo' && !m.sku_nucleo) return false;
       if(this.tab==='sinAsignar' && (m.sku_nucleo||m.sin_nucleo)) return false;
       if(this.tab==='sinNucleo' && !m.sin_nucleo) return false;
+      if(this.tab==='corte'){ const r=m.sku_nucleo&&!m.sin_nucleo?nucleoConsumo(m.sku_nucleo,m,null):{}; if(!(r.sku&&r.sku!==m.sku_nucleo) && !r.falta && !m.nucleo_consumo) return false; }
       return true;
     }).sort((a,b)=>a.sku_pf.localeCompare(b.sku_pf));
     if($('#catCount')) $('#catCount').textContent=rs.length+' modelo(s)';
     if(!rs.length){ el.innerHTML='<div class="vacio">Sin resultados.</div>'; return; }
     el.innerHTML=`<div style="max-height:64vh;overflow:auto">`
-      +`<div style="display:flex;gap:10px;padding:8px 16px;background:var(--surf2);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0"><span style="flex:1">Modelo</span><span style="width:170px">Núcleo</span><span style="width:110px"></span></div>`
+      +`<div style="display:flex;gap:10px;padding:8px 16px;background:var(--surf2);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0"><span style="flex:1">Modelo</span><span style="width:240px">Núcleo · el que gasta</span><span style="width:110px"></span></div>`
       +rs.map(m=>{
-        const estado = m.sku_nucleo ? `<span style="color:var(--muted)">${esc(m.sku_nucleo)}</span>`
+        const rc=m.sku_nucleo&&!m.sin_nucleo?nucleoConsumo(m.sku_nucleo,m,null):null;
+        const gasta=rc?`<div><a href="#" onclick="event.preventDefault();event.stopPropagation();Catalogo.cambiarConsumo('${jsq(m.sku_pf)}')" title="Cambiar el núcleo que gasta" style="text-decoration:none;font-size:11px;font-weight:700;color:${rc.sku!==m.sku_nucleo?'var(--terra)':(rc.falta?'var(--red)':'var(--muted)')}">${
+            rc.sku!==m.sku_nucleo?`✂ gasta ${esc(rc.sku)}${rc.manual?' (a mano)':''}`:(rc.falta?`⚠ falta ${esc(rc.falta)}`:(rc.manual?'gasta el suyo (a mano)':'gasta el suyo'))} ✎</a></div>`:'';
+        const estado = m.sku_nucleo ? `<span style="color:var(--muted)">${esc(m.sku_nucleo)}</span>${gasta}`
           : (m.sin_nucleo ? `<span style="color:var(--pur)">🚫 ${esc(NucCat.nombreDe(m.categoria_sin_nucleo_id)||'Sin núcleo')}</span>` : `<span style="color:var(--red)">— sin asignar</span>`);
         return `<div ondblclick="Catalogo.editarNucleo('${esc(m.sku_pf)}')" title="Doble clic para vincular/editar núcleo" style="display:flex;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer">
           <div style="flex:1;min-width:0"><div style="font-family:'JetBrains Mono';font-size:12px;font-weight:700">${esc(m.sku_pf)}</div>
             <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.nombre||'')}${m.medida?' · '+esc(m.medida):''}</div></div>
-          <div style="width:170px;font-family:'JetBrains Mono';font-size:12px">${estado}</div>
+          <div style="width:240px;font-family:'JetBrains Mono';font-size:12px">${estado}</div>
           <div style="width:110px;text-align:right"><button class="chip" style="background:var(--surf2);color:var(--ink);padding:7px 10px;font-size:12px" onclick="event.stopPropagation();Catalogo.addAProduccion('${esc(m.sku_pf)}')">+ Producción</button></div>
         </div>`;
       }).join('')+`</div>`;
@@ -3895,6 +4066,12 @@ const Catalogo = {
     toast('✓ Añadido a Producción: '+sku_pf,'ok');
   },
 
+  // cambio rápido del núcleo que gasta un modelo: la regla, su propio núcleo u otro (se guarda en el modelo)
+  cambiarConsumo(sku_pf){
+    const m=this.map[sku_pf]; if(!m||!m.sku_nucleo) return;
+    abrirConsumoModal({sku_pf,titulo:(m.nombre||'')+(m.medida?' · '+m.medida:''),nuc:m.sku_nucleo,cur:m.nucleo_consumo||null,alcance:false,
+      onGuardar:async v=>{ await guardarConsumoModelo(sku_pf,v); this.render(); }});
+  },
   editarNucleo(sku_pf){
     const m=this.map[sku_pf]; if(!m)return;
     abrirEditorNucleoModal(sku_pf,(merged)=>{ Object.assign(this.map[sku_pf],merged); this.render(); });
