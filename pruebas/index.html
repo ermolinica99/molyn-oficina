@@ -240,11 +240,14 @@ body{font-family:'Archivo',sans-serif;background:var(--bg);color:var(--ink);-web
       <div class="user"><div class="av">OF</div><span style="font-size:13px;color:var(--muted)">Oficina</span><button onclick="Auth.logout()" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;margin-left:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button></div>
     </div>
     <div class="content" id="view-dash">
-      <div class="h1">Dashboard</div>
-      <div class="h1sub">Estado de stock y reposición por programa</div>
+      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <div><div class="h1">Dashboard</div><div class="h1sub">Estado de stock y reposición por programa</div></div>
+        <div style="flex:1"></div><div class="seg" id="dashVista" style="margin-bottom:14px"></div>
+      </div>
       <div id="kpis" class="kpis"></div>
       <div id="progs"></div>
-      <div class="gridhead">
+      <div id="mapa"></div>
+      <div class="gridhead" id="gridHead">
         <div class="h2" id="gridTitle">Núcleos</div>
         <div class="mono" id="gridCount" style="color:var(--muted);font-weight:600"></div>
         <div id="gridFilter"></div>
@@ -616,6 +619,9 @@ let FILTRO='todos';
 let MEDIDA='';
 let KPI=null;      // 'stock'|'bajo'|'neg'
 let PROG=null;
+// vista del Dashboard: 'medidas' (tablas de medidas por programa; al pulsar una casilla salen sus tarjetas) o 'detalle' (la de siempre)
+let DVISTA=(()=>{ try{ return localStorage.getItem('dashVista')||'medidas'; }catch(e){ return 'medidas'; } })();
+let CELDA=null;    // {prog,med} casilla elegida en la vista de medidas
 
 // ---- carga de datos ----
 async function cargarConfig(){
@@ -719,7 +725,10 @@ async function toggleForzado(sku,val){
 }
 
 // ---- filtros ----
-function setKpi(k){KPI=(KPI===k)?null:k;PROG=null;render()}
+function setKpi(k){KPI=(KPI===k)?null:k;PROG=null;if(KPI&&DVISTA==='medidas')setVista('detalle',true);render()}
+function setVista(v,sinRender){ DVISTA=v; try{ localStorage.setItem('dashVista',v); }catch(e){} if(!sinRender) render(); }
+function setCelda(prog,med){ CELDA=(CELDA&&CELDA.prog===prog&&CELDA.med===med)?null:{prog,med}; render();
+  if(CELDA){ const g=$('#gridHead'); if(g) g.scrollIntoView({behavior:'smooth',block:'start'}); } }
 function setProg(p){PROG=(PROG===p)?null:p;KPI=null;render()}
 function clearF(){KPI=null;PROG=null;FILTRO='todos';MEDIDA='';const ms=$('#medidaSel');if(ms)ms.value='';render()}
 function setFiltro(f){FILTRO=f;render()}
@@ -960,6 +969,56 @@ function render(){
       if(card && card.dataset.sku) open_detalle(card.dataset.sku);
     });
   }
+  pintarVistaDash();
+}
+// ---- vista de medidas: una tabla por programa (ancho × largo) con lo libre (saldo) de cada medida ----
+function pintarVistaDash(){
+  $('#dashVista').innerHTML=[['medidas','▦ Medidas'],['detalle','▢ Detallado']].map(([k,t])=>`<button class="${DVISTA===k?'on':''}" onclick="setVista('${k}')">${t}</button>`).join('');
+  const med=DVISTA==='medidas';
+  $('#progs').style.display=med?'none':'';
+  $('#mapa').style.display=med?'':'none';
+  if(!med) return;
+  const arr=metEnUso(), pg={};
+  arr.forEach(b=>{ const md=medidaDe(b.sku), g=pg[b.prog]||(pg[b.prog]={prog:b.prog,c:{},anchos:new Set(),largos:new Set(),sin:[]});
+    if(!md){ g.sin.push(b); return; }
+    const [w,l]=md.split('x').map(Number); g.anchos.add(w); g.largos.add(l); (g.c[w+'x'+l]=g.c[w+'x'+l]||[]).push(b); });
+  // estado de una casilla (puede haber varios núcleos de la misma medida): falta > se corta > bajo mínimo > bien
+  const est=bs=>{ const s=bs.reduce((a,b)=>a+b.saldo,0);
+    if(bs.some(b=>b.saldo<0)) return {k:'r',s,t:'faltan '+(-bs.filter(b=>b.saldo<0).reduce((a,b)=>a+b.saldo,0))};
+    if(bs.every(b=>nucleoSeCorta(b.sku))) return {k:'x',s,t:'se corta del '+corteCfg().base};
+    if(bs.some(b=>b.bajoMin)) return {k:'a',s,t:'bajo mínimo'};
+    return {k:'g',s,t:'libres'}; };
+  const COL={g:'background:#E4EDE6;color:#2F6E3E',a:'background:#FAEBD3;color:#9A5F12',r:'background:#F7DCD5;color:#A3321C',x:'background:var(--bg);color:#9E978A;border:1px dashed #D5CFC3'};
+  const progs=Object.values(pg).sort((a,b)=>a.prog.localeCompare(b.prog));
+  const tabla=g=>{
+    const an=[...g.anchos].sort((a,b)=>a-b), la=[...g.largos].sort((a,b)=>a-b);
+    const rojos=Object.values(g.c).filter(bs=>bs.some(b=>b.saldo<0)).length;
+    const libres=[...Object.values(g.c).flat(),...g.sin].reduce((a,b)=>a+Math.max(0,b.saldo),0);
+    return `<div class="card" style="margin:0;padding:12px 14px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px"><b style="font-size:15px">${esc(g.prog)}</b><span style="font-size:12px;color:var(--muted)">${esc(PROG_DESC[g.prog]||'')}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">${libres} libres${rojos?` · <b style="color:var(--red)">${rojos} con falta</b>`:''}</span></div>
+      <table style="border-collapse:separate;border-spacing:3px;width:100%;font-size:12px">
+        <tr><td></td>${la.map(l=>`<td style="color:var(--muted);text-align:center">${l}</td>`).join('')}</tr>
+        ${an.map(w=>`<tr><td style="color:var(--muted);padding-right:6px;width:1%">${w}</td>${la.map(l=>{ const k=w+'x'+l, bs=g.c[k];
+          if(!bs) return '<td style="text-align:center;color:#D0CABE">·</td>';
+          const e=est(bs), on=CELDA&&CELDA.prog===g.prog&&CELDA.med===k;
+          return `<td><div onclick="setCelda('${jsq(g.prog)}','${k}')" title="${esc(g.prog+' · '+w+'×'+l+' · '+e.t+(bs.length>1?' · '+bs.length+' núcleos':''))}" style="${COL[e.k]};border-radius:7px;text-align:center;padding:7px 0;cursor:pointer;font-family:'JetBrains Mono';font-weight:800;font-size:14px;${on?'outline:2px solid var(--ink);outline-offset:1px':''}">${e.k==='x'&&e.s===0?'✂':e.s}${bs.length>1?'<sup style="font-size:9px;font-weight:600"> '+bs.length+'</sup>':''}</div></td>`; }).join('')}</tr>`).join('')}
+      </table>
+      ${g.sin.length?`<div onclick="setCelda('${jsq(g.prog)}','')" style="font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer;text-decoration:underline">+${g.sin.length} sin medida en el código</div>`:''}
+    </div>`; };
+  $('#mapa').innerHTML=`<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:2px 2px 10px">
+      ${[['g','Bien'],['a','Bajo mínimo'],['r','Faltan (más reservado que stock)'],['x','Se corta del '+corteCfg().base]].map(([k,t])=>`<span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px;${COL[k]}"></i>${t}</span>`).join('')}
+      <span>· El número es el saldo libre: stock + fabricando − reservado. Pulsa una casilla para ver sus núcleos.</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:18px">${progs.map(tabla).join('')||'<div class="vacio">No hay núcleos.</div>'}</div>`;
+  // tarjetas: las de la casilla elegida (o lo que se busque arriba)
+  const q=$('#search').value.trim();
+  let rs=[];
+  if(q) rs=filtrar();
+  else if(CELDA) rs=arr.filter(b=>b.prog===CELDA.prog&&(CELDA.med?medidaDe(b.sku)===CELDA.med:!medidaDe(b.sku))).sort((a,b)=>a.sku.localeCompare(b.sku));
+  $('#gridTitle').textContent=q?'Búsqueda':CELDA?(CELDA.prog+' · '+(CELDA.med?CELDA.med.replace('x',' × '):'sin medida')):'Núcleos';
+  $('#gridCount').textContent=rs.length||'';
+  $('#gridFilter').innerHTML=CELDA&&!q?`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="CELDA=null;render()">✕ Cerrar</button>`:'';
+  $('#grid').innerHTML=rs.length?rs.map(cardN).join(''):`<div class="vacio">${q?'No hay núcleos que cumplan la búsqueda.':'Pulsa una casilla de las tablas para ver aquí las tarjetas de ese núcleo.'}</div>`;
 }
 // texto seguro dentro de un onclick='...'
 function jsq(x){ return String(x??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
