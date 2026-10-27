@@ -650,6 +650,9 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
       <div class="h1sub">Tiempo normal de fabricación de cada núcleo, sin tiempos raros (el que usan el OEE, la eficiencia y Planta)</div>
       <div style="display:flex;gap:10px;margin:12px 0">
         <input id="tskuSearch" placeholder="Buscar núcleo…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:var(--muted)">Mínimo de tiradas</span>
+          <input id="tskuMin" type="number" min="1" max="50" value="7" style="width:70px;padding:9px 10px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+          <button class="chip" style="background:var(--ink)" onclick="Tsku.guardarMin()">Guardar</button></div>
       </div>
       <div class="card"><div id="tskuTabla"></div></div>
     </div>
@@ -764,7 +767,7 @@ function setOcultarVacias(v){ OCULTAR_VACIAS=v; try{ localStorage.setItem('dashV
 // ---- carga de datos ----
 async function cargarConfig(){
   try{const {data}=await sb.from('config').select('*').eq('id',1).single();
-    if(data){CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;CFG.dias_fabricacion=data.dias_fabricacion??0;LOTE_DFLT=data.lote??10;CFG.corte=data.corte||null;CFG.coste_hora_operario=parseFloat(data.coste_hora_operario||0)||0;}}catch(e){}
+    if(data){if(Number(data.min_tiradas)>0)Prod.TIEMPO_MIN_UDS=Number(data.min_tiradas);CFG.dias_historico=data.dias_historico??5;CFG.umbral_semanal=parseFloat(data.umbral_semanal??2);CFG.maduracion=data.maduracion??2;CFG.dias_fabricacion=data.dias_fabricacion??0;LOTE_DFLT=data.lote??10;CFG.corte=data.corte||null;CFG.coste_hora_operario=parseFloat(data.coste_hora_operario||0)||0;}}catch(e){}
   try{const {data:lt}=await sb.from('lotes_programa').select('programa,lote');(lt||[]).forEach(r=>LOTES[r.programa]=r.lote);}catch(e){}
 }
 // orden estable para paginar: sin ORDER BY, Postgres puede devolver las filas en distinto orden en
@@ -1606,7 +1609,7 @@ const Prod = {
     }catch(e){} // si falta la migración de puestos, se sigue usando el coste/tiempo por defecto
   },
 
-  TIEMPO_MIN_UDS:7, TIEMPO_DEFAULT_SEG:270, // 4min 30s por defecto (si el programa no tiene tiempo teórico propio) hasta tener al menos 7 uds fabricadas
+  TIEMPO_MIN_UDS:7, TIEMPO_DEFAULT_SEG:270, // 4min 30s por defecto (si el programa no tiene tiempo teórico propio) hasta tener al menos TIEMPO_MIN_UDS tiradas (config.min_tiradas, se cambia en Tiempo por núcleo)
   // tiempo teórico por defecto para un sku: el de su programa (N001-N012) si está configurado, si no el general
   tiempoDefaultDe(sku){ const prog=progDe({sku}); return (this.tiempoTeoricoPrograma&&this.tiempoTeoricoPrograma[prog])||this.TIEMPO_DEFAULT_SEG; },
 
@@ -4396,7 +4399,7 @@ const Inf = {
 // ============================================================
 const Tsku = {
   data:[], raros:[], verRaros:false,
-  // tiempos de referencia limpios (Prod.cargarRefs): solo salen los núcleos con TIEMPO_MIN_UDS uds normales o más;
+  // tiempos de referencia limpios (Prod.cargarRefs): solo salen los núcleos con TIEMPO_MIN_UDS tiradas o más;
   // el resto usa el estándar del programa. Abajo, las unidades con tiempo raro para revisar cómo se escanea.
   async reload(){
     $('#tskuTabla').innerHTML='<div class="loading">Calculando tiempos…</div>';
@@ -4407,8 +4410,37 @@ const Tsku = {
       this.puestos={}; pts.forEach(p=>this.puestos[p.id]=p.nombre);
       this.data=Object.entries(refs).map(([sku,r])=>({sku,...r})).sort((x,y)=>x.sku.localeCompare(y.sku));
       this.raros=Prod.refsDs.filter(x=>Prod.esRaro(x)).sort((x,y)=>String(y.fin).localeCompare(String(x.fin)));
+      const mi=$('#tskuMin'); if(mi) mi.value=Prod.TIEMPO_MIN_UDS;
       this.paint();
     }catch(e){ $('#tskuTabla').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  // cambia el mínimo de tiradas (config.min_tiradas) y deja guardados los tiempos con la nueva regla para que
+  // Planta y la planificación los usen ya (si no, se actualizarían al fabricar cada núcleo)
+  async guardarMin(){
+    const v=parseInt($('#tskuMin').value);
+    if(!(v>=1&&v<=50)){ toast('Pon un número de tiradas entre 1 y 50','err'); return; }
+    const {error}=await sb.from('config').update({min_tiradas:v}).eq('id',1);
+    if(error){ toast(/min_tiradas/.test(error.message||'')?'Falta la columna min_tiradas: lanza «Aplicar SQL a PRUEBAS» en GitHub':'Error: '+error.message,'err'); return; }
+    Prod.TIEMPO_MIN_UDS=v; Prod.refs=Prod.calcRefs(Prod.refsDs);
+    this.data=Object.entries(Prod.refs).map(([sku,r])=>({sku,...r})).sort((x,y)=>x.sku.localeCompare(y.sku));
+    this.paint();
+    try{ await this.sincronizar(); toast('Mínimo: '+v+' tiradas. Tiempos actualizados','ok'); }
+    catch(e){ toast('Mínimo guardado, pero no se han podido actualizar los tiempos: '+(e.message||e),'err'); }
+  },
+  async sincronizar(){
+    const d=new Date(), t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())), dow=(t.getUTCDay()+6)%7;
+    const lun=new Date(t); lun.setUTCDate(t.getUTCDate()-dow); const jue=new Date(lun); jue.setUTCDate(lun.getUTCDate()+3);
+    const sem=jue.getUTCFullYear()+'-W'+String(Math.ceil(((jue-Date.UTC(jue.getUTCFullYear(),0,1))/86400000+1)/7)).padStart(2,'0');
+    const vig=await selectWhere('tiempos_sku','sku,mediana_seg,n_unidades',q=>q.eq('vigente',true));
+    const act={}; vig.forEach(r=>act[r.sku]=r);
+    for(const [sku,r] of Object.entries(Prod.refs)){
+      const a=act[sku];
+      if(r.seg>0){
+        if(a && Number(a.mediana_seg)===r.seg && Number(a.n_unidades)===r.tiradas) continue;
+        chk(await sb.from('tiempos_sku').update({vigente:false}).eq('sku',sku).eq('vigente',true));
+        chk(await sb.from('tiempos_sku').upsert({sku,semana:sem,ini_semana:lun.toISOString().slice(0,10),mediana_seg:r.seg,n_unidades:r.tiradas,vigente:true},{onConflict:'sku,semana'}));
+      }else if(a) chk(await sb.from('tiempos_sku').update({vigente:false}).eq('sku',sku).eq('vigente',true));
+    }
   },
   paint(){
     const q=($('#tskuSearch').value||'').toLowerCase().trim(), min=Prod.TIEMPO_MIN_UDS;
