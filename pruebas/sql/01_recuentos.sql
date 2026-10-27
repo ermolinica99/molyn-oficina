@@ -52,3 +52,7 @@ begin
 end $$;
 drop policy if exists "anon_delete" on public.recuento_lineas;
 create policy "anon_delete" on public.recuento_lineas for delete to anon using (true);
+
+-- lo contado separado en maduros (disponibles) y en maduración
+alter table recuento_lineas add column if not exists contado_disp int;
+alter table recuento_lineas add column if not exists contado_madur int;

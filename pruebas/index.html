@@ -3178,7 +3178,7 @@ const Rec = {
     const filas=lin.map(l=>{ const p=partesNuc(l.sku), m=medidaDe(l.sku), b=MET[l.sku]||{};
       const [an,la]=m?m.split('x').map(Number):[null,null];
       return {...l,prog:b.prog||progDe({sku:l.sku}),desc:PROG_DESC[b.prog||progDe({sku:l.sku})]||'',ancho:an,largo:la,medida:m?an+' × '+la:'—',dif:l.contado-l.app_total,
-        ahora:(b.disp||0)+(b.madurando||0),pista:(this._pis&&this._pis.porSku[l.sku])||null,quien:us[l.contado_por]||''}; });
+        reclas:l.contado_disp!=null&&l.contado_disp!==l.app_disp,ahora:(b.disp||0)+(b.madurando||0),pista:(this._pis&&this._pis.porSku[l.sku])||null,quien:us[l.contado_por]||''}; });
     filas.sort((a,b)=>String(a.prog).localeCompare(String(b.prog))||(a.ancho??9999)-(b.ancho??9999)||(a.largo??9999)-(b.largo??9999)||a.sku.localeCompare(b.sku));
     const grupos=[]; filas.forEach(f=>{ let g=grupos[grupos.length-1]; if(!g||g.prog!==f.prog){ g={prog:f.prog,desc:f.desc,filas:[]}; grupos.push(g); } g.filas.push(f); });
     return {r,filas,grupos,quien:us[r.creado_por]||''};
@@ -3186,11 +3186,11 @@ const Rec = {
   pistaTxt(p){ if(!p) return ''; return [p.etq?p.etq+' etiquetas sin cerrar':'',p.res?p.res+' reservas viejas sin consumir':''].filter(Boolean).join(' · '); },
   async pintarCuadre(){
     const D=await this.datosCuadre(); this._cuadre=D;
-    const {r,filas,grupos}=D, pend=filas.filter(f=>f.estado==='pendiente'), difP=pend.filter(f=>f.dif!==0);
+    const {r,filas,grupos}=D, pend=filas.filter(f=>f.estado==='pendiente'), difP=pend.filter(f=>f.dif!==0||f.reclas);
     const sum=k=>filas.reduce((a,f)=>a+f[k],0), editable=r.estado==='terminado'||r.estado==='abierto';
     const th='padding:9px 10px;text-align:right;white-space:nowrap', td="padding:8px 10px;text-align:right;font-family:'JetBrains Mono',monospace";
     const estLin=f=>f.estado==='aplicado'?'<span style="color:var(--green);font-weight:700">✓ aplicado</span>':f.estado==='descartado'?'<span style="color:var(--muted)">descartado</span>'
-      :(editable?`<button class="chip" style="padding:6px 10px;font-size:12px;${f.dif===0?'background:var(--surf2);color:var(--ink)':''}" onclick="Rec.aplicar([${f.id}])">${f.dif===0?'OK':'Aplicar'}</button> <button class="chip" style="padding:6px 10px;font-size:12px;background:#fff;color:var(--muted);border:1px solid var(--border)" onclick="Rec.descartar(${f.id})">✕</button>`:'<span style="color:var(--muted)">pendiente</span>');
+      :(editable?`<button class="chip" style="padding:6px 10px;font-size:12px;${f.dif===0&&!f.reclas?'background:var(--surf2);color:var(--ink)':''}" onclick="Rec.aplicar([${f.id}])">${f.dif===0&&!f.reclas?'OK':'Aplicar'}</button> <button class="chip" style="padding:6px 10px;font-size:12px;background:#fff;color:var(--muted);border:1px solid var(--border)" onclick="Rec.descartar(${f.id})">✕</button>`:'<span style="color:var(--muted)">pendiente</span>');
     $('#recBody').innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
         <button class="chip" style="background:#fff;color:var(--marca-dd);border:1px solid var(--border)" onclick="Rec.sel=null;Rec.reload()">← Recuentos</button>
         <div><div style="font-weight:700;font-size:16px">Recuento ${r.tipo==='ciclico'?'cíclico':'completo'} · ${this.fecha(r.creado_at)}</div><div style="font-size:12px;color:var(--muted)">${esc(D.quien||'Planta')} · ${r.estado==='abierto'?'aún contando':r.estado==='terminado'?'terminado '+this.fecha(r.terminado_at)+' · pendiente de revisar':r.estado}</div></div>
@@ -3205,8 +3205,8 @@ const Rec = {
         <th style="padding:9px 10px">Medida · núcleo</th><th style="${th}">App al contar</th><th style="${th}">Contado</th><th style="${th}">Dif.</th><th style="${th}">App ahora</th><th style="padding:9px 10px">Pistas</th><th style="padding:9px 10px">Quién · cuándo</th><th style="${th}"></th></tr></thead><tbody>
         ${grupos.map(g=>`<tr><td colspan="8" style="background:var(--hueco);padding:7px 10px;font-weight:700">${esc(g.prog)} <span style="font-weight:400;color:var(--muted)">${esc(g.desc)}</span></td></tr>`+g.filas.map(f=>`<tr style="border-top:1px solid var(--border)">
           <td style="padding:8px 10px"><b>${esc(f.medida)}</b><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${esc(f.sku)}</div></td>
-          <td style="${td}">${f.app_total}<div style="font-size:10px;color:var(--muted)">${f.app_disp} disp · ${f.app_madur} mad</div></td><td style="${td};font-weight:800">${f.contado}</td>
-          <td style="${td};font-weight:800;color:${f.dif===0?'var(--green)':f.dif>0?'var(--blue)':'var(--red)'}">${f.dif===0?'✓':(f.dif>0?'+':'')+f.dif}</td>
+          <td style="${td}">${f.app_total}<div style="font-size:10px;color:var(--muted)">${f.app_disp} disp · ${f.app_madur} mad</div></td><td style="${td};font-weight:800">${f.contado}${f.contado_disp!=null?`<div style="font-size:10px;color:var(--muted);font-weight:400">${f.contado_disp} disp · ${f.contado_madur} mad</div>`:''}</td>
+          <td style="${td};font-weight:800;color:${f.dif===0&&!f.reclas?'var(--green)':f.dif>0||f.reclas?'var(--blue)':'var(--red)'}">${f.dif===0?(f.reclas?'±0<div style="font-size:10px;font-weight:400">maduración</div>':'✓'):(f.dif>0?'+':'')+f.dif}</td>
           <td style="${td};color:var(--muted)">${f.ahora}</td>
           <td style="padding:8px 10px;font-size:12px;color:var(--terra)">${esc(this.pistaTxt(f.pista))}</td>
           <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(f.quien)}<br>${this.fecha(f.contado_at)}</td>
@@ -3217,16 +3217,13 @@ const Rec = {
   async aplicar(ids){
     const D=this._cuadre; if(!D) return;
     const ls=D.filas.filter(f=>ids.includes(f.id)&&f.estado==='pendiente'); if(!ls.length) return;
-    const dif=ls.filter(f=>f.dif!==0);
-    if(!confirm(dif.length?`¿Aplicar ${dif.length} ajuste${dif.length===1?'':'s'}?\n\n${dif.slice(0,12).map(f=>`${f.sku}: ${f.dif>0?'+':''}${f.dif}`).join('\n')}${dif.length>12?'\n…':''}`:`¿Dar por buenas ${ls.length} líneas que cuadran?`)) return;
+    const dif=ls.filter(f=>f.dif!==0||f.reclas);
+    if(!confirm(dif.length?`¿Aplicar ${dif.length} ajuste${dif.length===1?'':'s'}?\n\n${dif.slice(0,12).map(f=>`${f.sku}: ${f.dif>0?'+':''}${f.dif}${f.reclas?' (maduros '+f.app_disp+' → '+f.contado_disp+')':''}`).join('\n')}${dif.length>12?'\n…':''}`:`¿Dar por buenas ${ls.length} líneas que cuadran?`)) return;
     let ok=0; const errs=[], nuevas=[]; const now=new Date().toISOString();
     for(const f of ls){
       try{
-        if(f.dif>0){ const fab=new Date(Date.now()-(CFG.maduracion||0)*86400000-60000).toISOString(); nuevas.push(...await crearUnidadesAjuste(f.sku,f.dif,'AJUSTE INVENTARIO (recuento '+this.fecha(D.r.creado_at)+')',fab)); }
-        else if(f.dif<0){ const n=-f.dif;
-          const {data,error}=await sb.from('unidades').select('id').eq('sku',f.sku).eq('estado','stock').order('fabricada_at').limit(n); if(error) throw error;
-          const idsU=(data||[]).map(u=>u.id); if(idsU.length<n) throw new Error('solo hay '+idsU.length+' en stock'); await borrarUnidades(idsU); }
-        if(f.dif!==0){ const reg={sku:f.sku,tipo:f.dif>0?'alta':'baja',cantidad:Math.abs(f.dif),estado:'aprobado',fecha:now,motivo:'Recuento',nota:'Recuento '+this.fecha(D.r.creado_at)+': contados '+f.contado+', app '+f.app_total};
+        nuevas.push(...await this.aplicarLinea(f,'AJUSTE INVENTARIO (recuento '+this.fecha(D.r.creado_at)+')'));
+        if(f.dif!==0){ const reg={sku:f.sku,tipo:f.dif>0?'alta':'baja',cantidad:Math.abs(f.dif),estado:'aprobado',fecha:now,motivo:'Recuento',nota:'Recuento '+this.fecha(D.r.creado_at)+': contados '+f.contado+(f.contado_disp!=null?' ('+f.contado_disp+' maduros + '+f.contado_madur+' madurando)':'')+', app '+f.app_total+' ('+f.app_disp+' + '+f.app_madur+')'};
           let r=await sb.from('ajustes_inventario').insert(reg); if(r.error){ delete reg.motivo; delete reg.fecha; r=await sb.from('ajustes_inventario').insert(reg); } }
         chk(await sb.from('recuento_lineas').update({estado:'aplicado',aplicado_at:now}).eq('id',f.id)); ok++;
       }catch(e){ errs.push(f.sku+': '+(e.message||e)); }
@@ -3238,6 +3235,33 @@ const Rec = {
     if(nuevas.length){ const por={}; nuevas.forEach(u=>por[u.sku]=(por[u.sku]||0)+1);
       if(confirm(`Se han dado de alta ${nuevas.length} unidades nuevas:\n\n${Object.entries(por).map(([s,n])=>s+': '+n).join('\n')}\n\n¿Imprimir ahora sus etiquetas para pegarlas a los núcleos que sobraban?`)) imprimirEtiquetasNuevas(nuevas);
       else toast('Puedes reimprimirlas desde la ficha del núcleo (Etiquetas QR de la OT de inventario)'); }
+  },
+  // aplica una línea. Si se contó por separado (maduros / madurando), cada parte se ajusta por su lado: primero se
+  // corrige la fecha de las que solo están mal clasificadas (la app las cree madurando y ya están maduras, o al
+  // revés) y después se dan de alta o de baja las que sobran o faltan de cada clase. Devuelve las unidades nuevas.
+  async aplicarLinea(f,nombreOT){
+    const mad=(CFG.maduracion||0)*86400000, yaMadura=()=>new Date(Date.now()-mad-60000).toISOString(), recien=()=>new Date().toISOString();
+    const porClase=f.contado_disp!=null&&f.contado_madur!=null;
+    let dD=porClase?f.contado_disp-f.app_disp:(f.dif>0?f.dif:0), dM=porClase?f.contado_madur-f.app_madur:0, nuevas=[];
+    if(!porClase&&f.dif<0) dD=f.dif;   // sin separar: las bajas se quitan de las más antiguas (como siempre)
+    const stock=async madura=>{ const lim=new Date(Date.now()-mad).toISOString();
+      let q=sb.from('unidades').select('id,fabricada_at').eq('sku',f.sku).eq('estado','stock');
+      q=madura?q.lte('fabricada_at',lim).order('fabricada_at'):q.gt('fabricada_at',lim).order('fabricada_at',{ascending:false});
+      const {data,error}=await q.limit(1000); if(error) throw error; return (data||[]).map(u=>u.id); };
+    const mover=async(ids,fab)=>{ for(let i=0;i<ids.length;i+=150) chk(await sb.from('unidades').update({fabricada_at:fab}).in('id',ids.slice(i,i+150))); };
+    // mal clasificadas: madurando → maduras, o maduras → madurando
+    const aMad=Math.min(Math.max(dD,0),Math.max(-dM,0)); if(aMad){ await mover((await stock(false)).slice(0,aMad),yaMadura()); dD-=aMad; dM+=aMad; }
+    const aRec=Math.min(Math.max(-dD,0),Math.max(dM,0)); if(aRec){ await mover((await stock(true)).slice(0,aRec),recien()); dD+=aRec; dM-=aRec; }
+    // altas de cada clase
+    if(dD>0) nuevas=nuevas.concat(await crearUnidadesAjuste(f.sku,dD,nombreOT,yaMadura()));
+    if(dM>0) nuevas=nuevas.concat(await crearUnidadesAjuste(f.sku,dM,nombreOT,recien()));
+    // bajas de cada clase (si de una clase no hay bastantes, se quitan de la otra)
+    let falta=0;
+    for(const [d,madura] of [[dD,true],[dM,false]]){ if(d>=0) continue;
+      const ids=(await stock(madura)).slice(0,-d); if(ids.length) await borrarUnidades(ids); falta+=(-d)-ids.length; }
+    if(falta>0){ const resto=[...(await stock(true)),...(await stock(false))].slice(0,falta);
+      if(resto.length<falta) throw new Error('solo había '+resto.length+' en stock para dar de baja'); await borrarUnidades(resto); }
+    return nuevas;
   },
   async descartar(id){ if(!confirm('¿Descartar esta línea? No se cambia el stock.')) return;
     try{ chk(await sb.from('recuento_lineas').update({estado:'descartado'}).eq('id',id)); await this.cerrarSiHecho(); this.reload(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
