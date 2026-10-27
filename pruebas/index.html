@@ -577,9 +577,14 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
     <div class="content" id="view-inv" style="display:none">
       <div class="h1">Inventario físico</div>
       <div class="h1sub">Da de alta o baja unidades del almacén (rotura, recuento, ajustes)</div>
-      <div style="display:flex;gap:10px;margin:12px 0">
-        <input id="invSearch" placeholder="Buscar núcleo por SKU o nombre…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
+      <div style="display:flex;gap:10px;margin:12px 0;flex-wrap:wrap;align-items:center">
+        <input id="invSearch" placeholder="Buscar núcleo por SKU o nombre…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:6px;font-family:inherit">
+        <div style="flex:1"></div>
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer" title="La hoja sale sin las cantidades de la app: quien cuenta apunta lo que ve"><input type="checkbox" id="invCiegas" style="accent-color:var(--marca);width:16px;height:16px">A ciegas</label>
+        <button class="chip" style="background:#fff;color:var(--marca-dd);border:1px solid var(--border)" onclick="Inv.excelRecuento()">⬇ Excel</button>
+        <button class="chip" style="background:var(--marca)" onclick="Inv.hojaRecuento()">🖨 Hoja de recuento (PDF)</button>
       </div>
+      <div style="font-size:12px;color:var(--muted);margin:-4px 0 12px">La hoja lleva los núcleos con alguna unidad en el almacén (disponibles + madurando), por programa y medida, con un QR por núcleo: el encargado lo escanea en Planta → Inventario y ve lo que hay en ese momento.</div>
       <div id="invLista" class="ngrid"></div>
     </div>
 
@@ -3095,6 +3100,81 @@ function otInventario(){
 //  INVENTARIO FÍSICO
 // ============================================================
 const Inv = {
+  // ---------- HOJA DE RECUENTO: núcleos con alguna unidad (disponibles + madurando), por programa y medida ----------
+  async gruposRecuento(){
+    await refrescarMet(true);
+    const rs=Object.values(MET).filter(b=>(b.disp+b.madurando)>0).map(b=>{ const p=partesNuc(b.sku), m=medidaDe(b.sku);
+      const [an,la]=m?m.split('x').map(Number):[null,null];
+      return {prog:b.prog,desc:PROG_DESC[b.prog]||'',sku:b.sku,nombre:(b.nombre&&b.nombre!==b.sku)?b.nombre:'',ancho:an,largo:la,medida:m?an+' × '+la:'—',disp:b.disp,madur:b.madurando,total:b.disp+b.madurando}; });
+    rs.sort((a,b)=>String(a.prog).localeCompare(String(b.prog))||(a.ancho??9999)-(b.ancho??9999)||(a.largo??9999)-(b.largo??9999)||a.sku.localeCompare(b.sku));
+    const g=[]; rs.forEach(r=>{ let x=g[g.length-1]; if(!x||x.prog!==r.prog){ x={prog:r.prog,desc:r.desc,filas:[]}; g.push(x); } x.filas.push(r); });
+    return g;
+  },
+  // QR de la hoja: MOLYN-INV:<núcleo>|<total al imprimir>|<fecha> (Planta → Inventario lo lee y enseña lo que hay ahora)
+  qrRecuento(r,ts){ return 'MOLYN-INV:'+r.sku+'|'+r.total+'|'+ts; },
+  async hojaRecuento(){
+    let grupos; try{ grupos=await this.gruposRecuento(); }catch(e){ toast('Error: '+(e.message||e),'err'); return; }
+    if(!grupos.length){ toast('No hay ningún núcleo en el almacén','err'); return; }
+    const ciegas=$('#invCiegas')&&$('#invCiegas').checked, ahora=new Date(), ts=ahora.toISOString().slice(0,16);
+    const fecha=ahora.toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
+    const tot=grupos.reduce((a,g)=>a+g.filas.reduce((s,r)=>s+r.total,0),0), nNuc=grupos.reduce((a,g)=>a+g.filas.length,0);
+    // los QR se dibujan aquí (la librería ya está cargada) y van como imagen: la hoja no depende de internet
+    if(typeof QRCode==='undefined'){ toast('No se ha podido cargar la librería de QR','err'); return; }
+    const qrImg=t=>{ const d=document.createElement('div'); new QRCode(d,{text:t,width:160,height:160,correctLevel:QRCode.CorrectLevel.M}); const c=d.querySelector('canvas'); return c?c.toDataURL('image/png'):((d.querySelector('img')||{}).src||''); };
+    const filas=grupos.map(g=>{ const t=g.filas.reduce((a,r)=>({d:a.d+r.disp,m:a.m+r.madur,t:a.t+r.total}),{d:0,m:0,t:0}), cols=ciegas?5:8;
+      return `<tr class="g"><td class="l" colspan="${cols}">${esc(g.prog)}<span>${esc(g.desc)} · ${g.filas.length} núcleos</span></td></tr>`+
+        g.filas.map(r=>{
+          return `<tr><td class="qr"><img src="${qrImg(this.qrRecuento(r,ts))}" alt=""></td><td class="l"><b>${esc(r.medida)}</b><div class="cod">${esc(r.sku)}</div></td>${ciegas?'':`<td class="n">${r.disp}</td><td class="n">${r.madur||'—'}</td><td class="t">${r.total}</td>`}<td class="box"><div></div></td>${ciegas?'':'<td class="box"><div style="width:40px"></div></td>'}<td class="nota"><div></div></td></tr>`; }).join('')+
+        (ciegas?'':`<tr class="st"><td></td><td class="l">Total ${esc(g.prog)}</td><td class="n">${t.d}</td><td class="n">${t.m}</td><td class="t">${t.t}</td><td class="box"><div></div></td><td></td><td></td></tr>`); }).join('');
+    ventanaImpresion(`<!doctype html><html><head><meta charset="utf-8"><title>Recuento de núcleos ${esc(fecha)}</title>
+      <style>@page{size:A4;margin:11mm 10mm 12mm}*{box-sizing:border-box}body{font-family:'Work Sans',Arial,sans-serif;color:#2F3433;margin:0;font-size:10pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .cab{display:flex;align-items:flex-end;gap:16px;border-bottom:2px solid #4D5352;padding-bottom:8px;margin-bottom:10px}.cab img{height:40px}
+      .cab h1{font-size:16pt;margin:0;letter-spacing:.04em;text-transform:uppercase;color:#2E3231}.cab .s{font-size:9pt;color:#7C8281;margin-top:2px}
+      .cab .d{margin-left:auto;text-align:right;font-size:9pt;color:#7C8281;line-height:1.5}
+      .firma{display:flex;gap:18px;font-size:9.5pt;margin:6px 0 10px}.firma span{flex:1;border-bottom:1px solid #9aa0a0;padding-bottom:3px;color:#7C8281}
+      .aviso{font-size:8.5pt;color:#4D5352;background:#F5F4F1;border-radius:4px;padding:6px 9px;margin-bottom:10px}
+      table{width:100%;border-collapse:collapse}thead{display:table-header-group}tr{page-break-inside:avoid}
+      th{background:#4D5352;color:#fff;font-size:7.5pt;letter-spacing:.06em;text-transform:uppercase;padding:5px 6px;text-align:right;font-weight:600}
+      th.l,td.l{text-align:left}td{border-bottom:1px solid #E6E4DF;padding:3px 6px;text-align:right;font-size:9.5pt;vertical-align:middle}
+      td.qr{width:21mm;padding:2px 4px}td.qr img{width:18mm;height:18mm;display:block}
+      .cod{font-family:'JetBrains Mono',monospace;font-size:8pt;color:#4D5352;margin-top:1px}
+      td.n{font-family:'JetBrains Mono',monospace}td.t{font-family:'JetBrains Mono',monospace;font-weight:700}
+      td.box div{border:1.3px solid #4D5352;height:18px;width:52px;margin-left:auto;border-radius:3px}td.nota div{border-bottom:1px dotted #9aa0a0;height:16px}
+      tr.g td{background:#EFEDE9;font-weight:700;font-size:10.5pt;color:#2E3231;border-bottom:1px solid #C9C7C0;padding:6px}
+      tr.g td span{font-weight:400;color:#7C8281;font-size:9pt;margin-left:6px}tr.st td{font-weight:700;background:#F7F6F3;border-bottom:2px solid #4D5352;padding:5px 6px}</style></head><body>
+      <div class="cab"><img src="data:image/png;base64,${LOGO_VF_GRIS}"><div><h1>Hoja de recuento de núcleos</h1><div class="s">MOLYN · Núcleos en almacén (disponibles + madurando) · solo los que tienen alguna unidad</div></div>
+        <div class="d">Impresa el <b>${esc(fecha)}</b><br>${nNuc} núcleos${ciegas?' · cantidades ocultas':' · '+tot+' uds según la app'}</div></div>
+      <div class="firma"><span>Contado por:</span><span>Fecha y hora del recuento:</span><span>Revisado por:</span></div>
+      <div class="aviso">Con el móvil: <b>Planta → Inventario → escanea el QR</b> de cada fila y verás lo que hay en la app en ese momento (puede haber cambiado desde que se imprimió esta hoja si se sigue fabricando o consumiendo). Pon lo contado y la app te propone dejarlo igual, pedir un alta o pedir una baja.</div>
+      <table><thead><tr><th class="l">QR</th><th class="l">Medida · código</th>${ciegas?'':'<th>Disp.</th><th>Madur.</th><th>Total app</th>'}<th>Contado</th>${ciegas?'':'<th>Dif.</th>'}<th class="l" style="width:20%">Notas</th></tr></thead><tbody>${filas}</tbody></table>
+      <script>window.onload=function(){setTimeout(function(){window.print();},500);}<\/script>
+      </body></html>`,'Hoja de recuento');
+  },
+  async excelRecuento(){
+    if(typeof XLSX==='undefined'||!XLSX.utils){ toast('No se ha podido cargar la librería de Excel','err'); return; }
+    let grupos; try{ grupos=await this.gruposRecuento(); }catch(e){ toast('Error: '+(e.message||e),'err'); return; }
+    if(!grupos.length){ toast('No hay ningún núcleo en el almacén','err'); return; }
+    const ciegas=$('#invCiegas')&&$('#invCiegas').checked, fecha=new Date().toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
+    const A=[['HOJA DE RECUENTO DE NÚCLEOS · vickFlex · MOLYN'],['Generada el '+fecha+' · disponibles + madurando · solo núcleos con alguna unidad'+(ciegas?' · a ciegas':'')],['Contado por:','','','Fecha del recuento:'],[],
+      ciegas?['Programa','Descripción','Medida','Ancho','Largo','Código','Contado','Notas']:['Programa','Descripción','Medida','Ancho','Largo','Código','Disponibles','Madurando','Total app','Contado','Diferencia','Notas']];
+    const subt=[];
+    grupos.forEach(g=>{ const ini=A.length+1;
+      g.filas.forEach(r=>{ const n=A.length+1;
+        A.push(ciegas?[r.prog,r.desc,r.medida,r.ancho,r.largo,r.sku,'','']:[r.prog,r.desc,r.medida,r.ancho,r.largo,r.sku,r.disp,r.madur,{f:'G'+n+'+H'+n,v:r.total},'',{f:'IF(J'+n+'="","",J'+n+'-I'+n+')',v:''},'']); });
+      if(!ciegas){ const fin=A.length, n=A.length+1; subt.push(n);
+        A.push(['Total '+g.prog,g.desc,'','','','',{f:'SUM(G'+ini+':G'+fin+')'},{f:'SUM(H'+ini+':H'+fin+')'},{f:'SUM(I'+ini+':I'+fin+')'},{f:'IF(COUNT(J'+ini+':J'+fin+')=0,"",SUM(J'+ini+':J'+fin+'))'},{f:'IF(J'+n+'="","",J'+n+'-I'+n+')'},'']); }
+      A.push([]); });
+    if(!ciegas){ const n=A.length+1; A.push(['TOTAL','','','','','',...['G','H','I'].map(c=>({f:subt.map(r=>c+r).join('+')})),{f:subt.map(r=>'N(J'+r+')').join('+')},{f:'J'+n+'-I'+n},'']); }
+    const ws=XLSX.utils.aoa_to_sheet(A);
+    ws['!cols']=(ciegas?[8,14,11,7,7,26,10,30]:[8,14,11,7,7,26,11,11,10,10,11,30]).map(w=>({wch:w}));
+    ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:ciegas?7:11}},{s:{r:1,c:0},e:{r:1,c:ciegas?7:11}}];
+    ws['!autofilter']={ref:'A5:'+(ciegas?'H':'L')+(A.length)};
+    const res=[['Programa','Descripción','Núcleos','Disponibles','Madurando','Total app']];
+    grupos.forEach(g=>{ const t=g.filas.reduce((a,r)=>({d:a.d+r.disp,m:a.m+r.madur}),{d:0,m:0}); res.push([g.prog,g.desc,g.filas.length,ciegas?'':t.d,ciegas?'':t.m,ciegas?'':t.d+t.m]); });
+    const ws2=XLSX.utils.aoa_to_sheet(res); ws2['!cols']=[10,16,9,12,12,10].map(w=>({wch:w}));
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Recuento'); XLSX.utils.book_append_sheet(wb,ws2,'Resumen por programa');
+    XLSX.writeFile(wb,'recuento_nucleos_'+ymdLocal(new Date())+'.xlsx');
+  },
   paint(){
     const q=($('#invSearch').value||'').toLowerCase().trim();
     let rs=Object.values(MET);
