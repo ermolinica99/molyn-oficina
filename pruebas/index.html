@@ -4648,9 +4648,12 @@ async function ajustarOT(ot,ids){
   await borrarUnidades(ids);
   const uds=await selectWhere('unidades','id,estado',q=>q.eq('ot',ot));
   const pend=uds.filter(u=>u.estado==='pendiente').length;
-  const cambios={cantidad:Math.max(0,(Number(ord&&ord.cantidad)||0)-ids.length)};
+  // la base de datos no admite una OT con cantidad 0: si se queda sin ninguna unidad, se anula y conserva
+  // su cantidad original (antes daba el error "ordenes_cantidad_check" con las unidades ya borradas)
+  const restante=Math.max(0,(Number(ord&&ord.cantidad)||0)-ids.length), cambios={};
+  if(restante>0) cambios.cantidad=restante; else if(uds.length) cambios.cantidad=uds.length;
   if(!pend){ cambios.estado=uds.length?'cerrada':'anulada'; cambios.cerrada_at=new Date().toISOString(); }
-  chk(await sb.from('ordenes').update(cambios).eq('ot',ot));
+  if(Object.keys(cambios).length) chk(await sb.from('ordenes').update(cambios).eq('ot',ot));
   await soltarReservasSobrantes(ot);
   return ids.length;
 }
