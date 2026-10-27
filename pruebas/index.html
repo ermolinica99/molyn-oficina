@@ -3701,7 +3701,7 @@ const Prodv = {
         selectAll('usuarios','id,puesto_id,activo,turno_id').catch(()=>[])]);
       this._plSeg=jornadaPuestos(turnoIds,plantillas);
       this._rangoMs=[new Date(ini).getTime(),new Date(fin).getTime()+1];
-      // "vs histórico": el tiempo de referencia limpio de cada núcleo (solo los que tienen 7 uds normales o más)
+      // "vs histórico": el tiempo propio limpio del núcleo (con el mínimo de tiradas); si aún no lo tiene, el estándar
       const hist={}; Object.entries(Prod.refs).forEach(([k,r])=>{ if(r.seg>0) hist[k]=r.seg; });
       const now=new Date();
       this.alerts=[];
@@ -3734,7 +3734,7 @@ const Prodv = {
     (this._ds||[]).filter(x=>String(x.puesto_id)===oid).forEach(x=>{
       const d=x.seg, f=new Date(x.fin); if(x.ret)retrabajos++; efectivo+=d; hechas++;
       const _hb=this.hourly&&this.hourly[this.bucketIdx(f)]; if(_hb){_hb.uds++;_hb.efectivo+=d;}
-      const s=porSku[x.sku]=porSku[x.sku]||{sku:x.sku,n:0,durs:[],total:0,hist:hist[x.sku]||0};
+      const s=porSku[x.sku]=porSku[x.sku]||{sku:x.sku,n:0,durs:[],total:0,hist:hist[x.sku]||Prod.tiempoRefDe(x.sku),std:!hist[x.sku]};
       s.n++; if(!x.raro) s.durs.push(d); s.total+=d;
       // días sin fichar: jornada estimada de la primera a la última unidad (como Informes)
       const fm=f.getTime(), i0=fm-d*1000, k=ymdLocal(f); estim[k]=estim[k]?[Math.min(estim[k][0],i0),Math.max(estim[k][1],fm)]:[i0,fm];
@@ -3775,7 +3775,7 @@ const Prodv = {
     const ocup=turno>0?disp/turno:0, rend=disp>0?efectivo/disp:0, media=hechas?efectivo/hechas:0;
     const refs=Object.values(porSku).sort((a,b)=>b.total-a.total);
     let eficiencia=null;
-    const ponder=refs.filter(s=>s.hist>0&&s.n>0).reduce((acc,s)=>{ acc.real+=s.mediana*s.n; acc.hist+=s.hist*s.n; return acc; },{real:0,hist:0});
+    const ponder=refs.filter(s=>s.hist>0&&s.mediana>0).reduce((acc,s)=>{ const k=s.durs.length; acc.real+=s.mediana*k; acc.hist+=s.hist*k; return acc; },{real:0,hist:0});
     if(ponder.real>0&&ponder.hist>0) eficiencia=ponder.hist/ponder.real;
     const calidad=hechas>0?Math.max(0,(hechas-retrabajos)/hechas):1;
 
@@ -3893,7 +3893,7 @@ const Prodv = {
         chart:this.spark(serieRitmo,160,34,'var(--blue)','#E4EDF0')}),
       this.kpiCard({tit:'Vs histórico',val:efH?Math.round(efH*100)+'%':'--',unit:'',
         delta:efH?(efH>=1?'+':'')+Math.round((efH-1)*100)+'%':'',deltaCol:efH>=1?'var(--green)':'var(--red)',
-        sub:'tiempo histórico / real por SKU',
+        sub:'tiempo del núcleo (o estándar) / real',
         chart:`<div style="display:flex;align-items:flex-end;gap:3px;height:34px">${rows.map(r=>{
           const v=r.eficiencia||0, h=Math.max(3,Math.min(34,v*24));
           return `<div title="${esc(r.nombre)}" style="flex:1;height:${h}px;background:${v>=1?'var(--green)':v>=0.9?'var(--terra)':'var(--red)'};opacity:${v?1:.25}"></div>`;
@@ -3941,12 +3941,12 @@ const Prodv = {
     </div>`;
 
     const agg={};
-    rows.forEach(r=>(r.porSku||[]).forEach(s=>{ const m=agg[s.sku]=agg[s.sku]||{sku:s.sku,n:0,real:0,hist:0};
-      m.n+=s.n; m.real+=(s.mediana||0)*s.n; m.hist+=(s.hist||0)*s.n; }));
+    rows.forEach(r=>(r.porSku||[]).forEach(s=>{ const m=agg[s.sku]=agg[s.sku]||{sku:s.sku,n:0,k:0,real:0,hist:0,std:s.std};
+      const k=s.mediana>0?s.durs.length:0; m.n+=s.n; m.k+=k; m.real+=(s.mediana||0)*k; m.hist+=(s.hist||0)*k; }));
     const mix=Object.values(agg).sort((a,b)=>b.n-a.n).slice(0,6);
     const maxN=Math.max(1,...mix.map(m=>m.n));
     const mixCard=`<div class="card" style="margin-bottom:0">
-      <div class="ch"><div class="t">Mix de referencias</div><div class="s">Unidades y desvío sobre tiempo histórico</div></div>
+      <div class="ch"><div class="t">Mix de referencias</div><div class="s">Unidades y desvío sobre su tiempo (propio con el mínimo de tiradas; si no, el estándar)</div></div>
       <div style="padding:14px 20px;display:flex;flex-direction:column;gap:14px">
         ${mix.length?mix.map(m=>{
           const d=m.hist&&m.real?(m.hist/m.real-1)*100:null;
@@ -3959,7 +3959,7 @@ const Prodv = {
               <span class="mono" style="font-size:11px;font-weight:700;color:${col};min-width:46px;text-align:right">${d==null?'--':(d>=0?'+':'')+d.toFixed(0)+'%'}</span>
             </div>
             <div style="height:8px;background:var(--surf2);overflow:hidden"><div style="width:${Math.round(m.n/maxN*100)}%;height:100%;background:var(--ink)"></div></div>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">${this.fmtUd(m.real/m.n)}/ud real${m.hist?' · '+this.fmtUd(m.hist/m.n)+' histórico':''}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">${m.k?this.fmtUd(m.real/m.k)+'/ud real · '+this.fmtUd(m.hist/m.k)+(m.std?' estándar':' histórico'):'sin tiempos válidos (todos raros)'}</div>
           </div>`;
         }).join(''):'<div class="vacio" style="padding:20px">Sin referencias cerradas hoy</div>'}
       </div></div>`;
@@ -4034,7 +4034,7 @@ const Prodv = {
         <span style="color:var(--muted);font-size:11px">${s.n} uds · ${this.fmtUd(s.mediana)}/ud</span>
         <span class="mono" style="margin-left:auto;font-weight:700;color:${col}">${d==null?'--':(d>=0?'+':'')+d.toFixed(0)+'%'}</span></div>
         <div style="height:6px;background:var(--surf2);margin-top:5px;overflow:hidden"><div style="width:${s.hist?Math.min(100,(s.hist/s.mediana)*72).toFixed(0):0}%;height:100%;background:${col}"></div></div>
-        <div class="mono" style="font-size:10px;color:#BDB8AE;margin-top:3px">${s.hist?'histórico '+this.fmtUd(s.hist)+'/ud':'sin tiempo histórico'}</div></div>`;
+        <div class="mono" style="font-size:10px;color:#BDB8AE;margin-top:3px">${s.hist?(s.std?'estándar ':'histórico ')+this.fmtUd(s.hist)+'/ud':'sin tiempo histórico'}</div></div>`;
     }).join('');
     const panel=`<div class="card" style="margin-bottom:0;align-self:start">
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;background:${sel.tint}">
