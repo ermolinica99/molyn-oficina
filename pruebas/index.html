@@ -1118,6 +1118,10 @@ function render(){
 //  lateral al pulsar una medida. "Detallado" es la vista de siempre (cobertura, reposición, programas y tarjetas).
 //  Los KPI de arriba son los de siempre (render()).
 // ============================================================
+// las medidas que se cortan del 200 (y no les falta nada) no salen salvo que se pidan
+let D_CORTE=(()=>{ try{ return localStorage.getItem('dashCorte')==='si'; }catch(e){ return false; } })();
+function dSetCorte(v){ D_CORTE=v; try{ localStorage.setItem('dashCorte',v?'si':'no'); }catch(e){} render(); }
+function dVerCorte(){ return D_CORTE||DFILTRO==='corte'; }
 let DPROG=null, DFILTRO=null, DPEST='falta', DSEL=new Set(), DPANEL=null, DORDEN={k:'urg',dir:1};
 const D_COL={falta:'var(--falta)',pronto:'#E2A64A',bien:'#7DBB98',corte:'#C9C7C0'};
 const D_NOM={falta:'Faltan',pronto:'Se acaban',bien:'Bien',corte:'Se cortan del 200'};
@@ -1172,7 +1176,7 @@ function dPintarMapa(){
     g.libres+=Math.max(0,b.saldo); g.cnt[dEstado(b).k]++;
     if(!md){ g.sin.push(b); return; }
     const [w,l]=md.split('x').map(Number); g.an.add(w); g.la.add(l); (g.c[w+'x'+l]=g.c[w+'x'+l]||[]).push(b); });
-  const ver=bs=>bs&&!(OCULTAR_VACIAS&&bs.every(dVacio)&&!bs.every(b=>nucleoSeCorta(b.sku)));
+  const ver=bs=>bs&&(dEstadoCasilla(bs).k!=='corte'||dVerCorte())&&!(OCULTAR_VACIAS&&bs.every(dVacio)&&!bs.every(b=>nucleoSeCorta(b.sku)));
   const todos=Object.values(pg).sort((a,b)=>a.prog.localeCompare(b.prog));
   let progs=todos.filter(g=>!OCULTAR_VACIAS||Object.values(g.c).some(ver)||g.sin.some(b=>!dVacio(b)))
     .sort((a,b)=>(b.cnt.falta*1000+b.cnt.pronto)-(a.cnt.falta*1000+a.cnt.pronto)||a.prog.localeCompare(b.prog));
@@ -1180,7 +1184,8 @@ function dPintarMapa(){
   const chips=`<div class="sx-chips"><button class="sx-chip ${!DPROG?'on':''}" onclick="dSetProg(null)">Todos los programas</button>${todos.map(g=>
       `<button class="sx-chip ${DPROG===g.prog?'on':''}" onclick="dSetProg('${jsq(g.prog)}')"><b>${esc(g.prog)}</b>${PROG_DESC[g.prog]?' '+esc(PROG_DESC[g.prog]):''}${g.cnt.falta?'<i style="background:var(--falta)"></i>':g.cnt.pronto?'<i style="background:#E2A64A"></i>':''}</button>`).join('')}</div>
     <div class="sx-chips">${['falta','pronto','bien','corte'].map(k=>`<button class="sx-chip ${DFILTRO===k?'on':''}" onclick="dSetFiltro('${k}')"><i style="background:${D_COL[k]}"></i>${D_NOM[k]}</button>`).join('')}
-      <label class="sx-chk"><input type="checkbox" ${OCULTAR_VACIAS?'checked':''} onchange="setOcultarVacias(this.checked)">Ocultar medidas vacías</label></div>`;
+      <label class="sx-chk"><input type="checkbox" ${D_CORTE?'checked':''} onchange="dSetCorte(this.checked)">Ver los que se cortan del ${corteCfg().base}</label>
+      <label class="sx-chk" style="margin-left:14px"><input type="checkbox" ${OCULTAR_VACIAS?'checked':''} onchange="setOcultarVacias(this.checked)">Ocultar medidas vacías</label></div>`;
   const tarjeta=g=>{
     const an=[...g.an].filter(w=>[...g.la].some(l=>ver(g.c[w+'x'+l]))).sort((a,b)=>a-b),
           la=[...g.la].filter(l=>an.some(w=>ver(g.c[w+'x'+l]))).sort((a,b)=>a-b);
@@ -1201,13 +1206,14 @@ function dPintarMapa(){
 function dPintarLista(){
   const o=DORDEN, urg=b=>{ const e=dEstado(b); return ({falta:0,pronto:1,bien:2,corte:3})[e.k]*1e6+(e.k==='falta'?b.saldo:(b.D>0?b.saldo/b.D:9999)); };
   const key={urg,sku:b=>b.sku,libre:b=>b.saldo,disp:b=>b.disp,res:b=>b.pend,cons:b=>b.D,cob:b=>b.D>0?b.saldo/b.D:1e9};
-  const rs=metEnUso().filter(dBusca).filter(b=>!DFILTRO||dEstado(b).k===DFILTRO).filter(b=>!DPROG||b.prog===DPROG).filter(b=>!OCULTAR_VACIAS||!dVacio(b))
+  const rs=metEnUso().filter(dBusca).filter(b=>!DFILTRO||dEstado(b).k===DFILTRO).filter(b=>!DPROG||b.prog===DPROG).filter(b=>dEstado(b).k!=='corte'||dVerCorte()).filter(b=>!OCULTAR_VACIAS||!dVacio(b))
     .sort((a,b)=>{ const x=key[o.k](a), y=key[o.k](b); return (x<y?-1:x>y?1:0)*o.dir; });
   const th=(k,t,l)=>`<th class="${l?'l ':''}${o.k===k?'on':''}" onclick="dOrdenar('${k}')">${t}${o.k===k?(o.dir>0?' ▲':' ▼'):''}</th>`;
   const pill=e=>{ const c={falta:['var(--falta-f)','var(--falta)'],pronto:['var(--pronto-f)','var(--pronto)'],bien:['var(--bien-f)','var(--bien)'],corte:['var(--corte-f)','var(--corte)']}[e.k]; return `<span class="sx-pill" style="background:${c[0]};color:${c[1]}">${esc(e.txt)}</span>`; };
   return `<div class="sx-t"><h2>Todos los núcleos</h2><span class="ay">${rs.length} núcleos · pulsa una columna para ordenar</span></div>
     <div class="sx-chips">${['falta','pronto','bien','corte'].map(k=>`<button class="sx-chip ${DFILTRO===k?'on':''}" onclick="dSetFiltro('${k}')"><i style="background:${D_COL[k]}"></i>${D_NOM[k]}</button>`).join('')}
-      <label class="sx-chk"><input type="checkbox" ${OCULTAR_VACIAS?'checked':''} onchange="setOcultarVacias(this.checked)">Ocultar vacíos</label></div>
+      <label class="sx-chk"><input type="checkbox" ${D_CORTE?'checked':''} onchange="dSetCorte(this.checked)">Ver los que se cortan</label>
+      <label class="sx-chk" style="margin-left:14px"><input type="checkbox" ${OCULTAR_VACIAS?'checked':''} onchange="setOcultarVacias(this.checked)">Ocultar vacíos</label></div>
     <div class="sx-lt"><table><thead><tr>${th('sku','Núcleo',1)}${th('disp','Listos')}<th title="madurando + fabricando">En camino</th>${th('res','Reserv.')}${th('libre','Libre')}${th('cons','Gasto/día')}${th('cob','Aguanta')}${th('urg','Estado',1)}</tr></thead><tbody>
     ${rs.map(b=>{ const e=dEstado(b), d=b.D>0?b.saldo/b.D:null, md=medidaDe(b.sku)||'';
       return `<tr onclick="dAbrir('${jsq(b.prog)}','${md}','${jsq(b.sku)}')"><td class="l"><div class="mono" style="font-weight:700;font-size:12.5px">${esc(b.prog)} · ${dMedida(b.sku)}</div><div style="font-size:11px;color:var(--muted)">${esc(b.sku)}</div></td>
