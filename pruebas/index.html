@@ -3621,7 +3621,7 @@ const Prodv = {
       // terminada dentro cuenta, y se le restan sus paradas
       const ini1=new Date(new Date(ini).getTime()-86400000).toISOString();
       const [ops,evsAll,parsAll,turs,tsku,roster]=await Promise.all([
-        safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
+        safe(sb.from('puestos_trabajo').select('id,nombre,activo').order('nombre'),[]),
         selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini1).lte('ts',fin)).catch(()=>[]),
         safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini1).lte('inicio',fin),[]),
         safe(sb.from('turnos').select('puesto_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
@@ -3646,7 +3646,9 @@ const Prodv = {
       const evs=evsAll.filter(e=>enR(e.ts)), pars=parsAll.filter(p=>enR(p.inicio));
       this._ds=Prod.duraciones(evsAll,parsAll).filter(x=>enR(x.fin));
       // cada fila YA es un puesto (los datos se registran por puesto, no por persona)
-      this.rows=ops.map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
+      // puestos activos y, como en Informes, también los desactivados que tengan actividad en el periodo
+      const conAct=new Set([...this._ds.map(x=>String(x.puesto_id)),...pars.map(x=>String(x.puesto_id)),...turs.map(x=>String(x.puesto_id))]);
+      this.rows=ops.filter(o=>o.activo!==false||conAct.has(String(o.id))).map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
       this.rows.forEach(r=>{ r.miembros=roster.filter(u=>u.puesto_id===r.id); });
       this.rows.sort((a,b)=>a.sort-b.sort||a.nombre.localeCompare(b.nombre));
       this.puestoRows=this.rows;
