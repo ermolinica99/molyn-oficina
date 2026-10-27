@@ -1622,7 +1622,8 @@ const Prod = {
   // tirada. Cada tirada da una muestra = su tiempo medio por unidad. Con TIEMPO_MIN_UDS
   // tiradas o más, la mediana de las tiradas; con menos, el estándar (teórico del programa o 4min 30s).
   // Planta aprende los tiempos con la misma regla (tiempos_sku; n_unidades guarda el nº de tiradas).
-  REF_DIAS:90, RARO_MIN:0.5, RARO_MAX:2, refs:{}, refsDs:[], _refsKey:'', _refsAt:0,
+  REF_DIAS:90, RARO_MIN:0.5, RARO_MAX:2, MIN_SEG:60, // menos de 1 min por unidad nunca es un tiempo real
+  refs:{}, refsDs:[], _refsKey:'', _refsAt:0,
   // agrupa en tiradas unidades de la misma OT y puesto encadenadas (inicio = fin de la anterior, ±1 s)
   tiradas(ds){
     const g={}; ds.forEach(x=>{ const k=(x.ot||'')+'|'+x.puesto_id+'|'+x.sku; (g[k]=g[k]||[]).push(x); });
@@ -1633,8 +1634,10 @@ const Prod = {
   calcRefs(ds){
     const g={}; ds.forEach(x=>(g[x.sku]=g[x.sku]||[]).push(x));
     const out={}; Object.entries(g).forEach(([sku,arr])=>{
-      const segs=arr.map(x=>x.seg), base=segs.length>=3?medianaJs(segs):0;
-      const val=base?arr.filter(x=>x.seg>=base*this.RARO_MIN&&x.seg<=base*this.RARO_MAX):arr;
+      // primero fuera lo de menos de MIN_SEG (si casi todo es de 1 s, la mediana no puede ser 1 s); con lo que
+      // queda, la mediana del núcleo y fuera lo de menos de la mitad o más del doble
+      const ok1=arr.filter(x=>x.seg>=this.MIN_SEG), segs=ok1.map(x=>x.seg), base=segs.length>=3?medianaJs(segs):0;
+      const val=base?ok1.filter(x=>x.seg>=base*this.RARO_MIN&&x.seg<=base*this.RARO_MAX):ok1;
       // tiradas con todas sus unidades (para no partir un lote si quitamos una rara) y muestra con las válidas
       const okU=new Set(val), mues=[]; this.tiradas(arr).forEach(t=>{ const v=t.filter(x=>okU.has(x)); if(v.length) mues.push(v.reduce((a,x)=>a+x.seg,0)/v.length); });
       out[sku]={n:arr.length,val:val.length,raros:arr.length-val.length,base,tiradas:mues.length,
@@ -1643,8 +1646,8 @@ const Prod = {
     });
     return out;
   },
-  // ¿tiempo raro? (solo se puede saber con 3 unidades o más de ese núcleo)
-  esRaro(x){ const r=this.refs[x.sku]; return !!(r&&r.base)&&(x.seg<r.base*this.RARO_MIN||x.seg>r.base*this.RARO_MAX); },
+  // ¿tiempo raro? menos de 1 min siempre; mitad/doble solo con 3 unidades o más de ese núcleo
+  esRaro(x){ if(x.seg<this.MIN_SEG) return true; const r=this.refs[x.sku]; return !!(r&&r.base)&&(x.seg<r.base*this.RARO_MIN||x.seg>r.base*this.RARO_MAX); },
   tiempoRefDe(sku){ const r=this.refs[sku]; return r&&r.seg>0?r.seg:this.tiempoDefaultDe(sku); },
   // carga las unidades de los REF_DIAS días anteriores a finMs (se guarda 10 min: Productividad recarga cada 5 s)
   async cargarRefs(finMs,forzar){
@@ -4325,7 +4328,7 @@ const Inf = {
           <td style="${tdn}">${f.ret||'—'}</td><td style="${tdn};color:${f.calidad<0.97?'var(--red)':'var(--ink)'}">${pc(f.calidad)}</td>
           <td style="${tdn}">${e(f.eur)}</td><td style="${tdn}">${e(f.n?f.eur/f.n:0)}</td></tr>`).join('')}
         </tbody></table></div>
-        <div style="font-size:11px;color:var(--muted);padding:8px 14px">${c.tot.raros?`<b style="color:var(--terra)">${n0(c.tot.raros)} uds con tiempo raro</b> (menos de la mitad o más del doble de lo normal en su núcleo): cuentan como fabricadas pero no entran en el tiempo medio ni en la eficiencia; se ven en Tiempo por núcleo. `:''}Eficiencia: tiempo de referencia del núcleo (mediana de sus tiradas, con 7 tiradas o más; si no, el estándar del programa) ÷ tiempo real. Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
+        <div style="font-size:11px;color:var(--muted);padding:8px 14px">${c.tot.raros?`<b style="color:var(--terra)">${n0(c.tot.raros)} uds con tiempo raro</b> (menos de 1 minuto, o menos de la mitad o más del doble de lo normal en su núcleo): cuentan como fabricadas pero no entran en el tiempo medio ni en la eficiencia; se ven en Tiempo por núcleo. `:''}Eficiencia: tiempo de referencia del núcleo (mediana de sus tiradas, con 7 tiradas o más; si no, el estándar del programa) ÷ tiempo real. Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
       :'<div class="vacio">No hay unidades terminadas en este periodo.</div>');
 
     // 3) puestos más productivos
@@ -4448,7 +4451,7 @@ const Tsku = {
     const ok=this.data.filter(t=>t.seg>0&&fil(t)), pocos=this.data.filter(t=>!(t.seg>0)).length;
     const raros=this.raros.filter(fil);
     const td="padding:9px 14px;text-align:right;font-family:'JetBrains Mono',monospace";
-    let h=`<div style="padding:12px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">Tiempo de cada unidad de los últimos ${Prod.REF_DIAS} días (inicio → fin, sin las paradas). Se quitan los tiempos raros: menos de la mitad o más del doble de la mediana del núcleo. Las unidades de una misma tirada (cada lote cerrado en la tablet; una unidad suelta es su propia tirada) cuentan como una sola muestra: su tiempo medio por unidad. Con ${min} tiradas o más, el tiempo del núcleo es la mediana de sus tiradas; con menos usa el estándar de su programa (o ${fmtDur(Prod.TIEMPO_DEFAULT_SEG)}) y no sale en esta lista${pocos?` (<b>${pocos}</b> núcleos aún con el estándar)`:''}.</div>`;
+    let h=`<div style="padding:12px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">Tiempo de cada unidad de los últimos ${Prod.REF_DIAS} días (inicio → fin, sin las paradas). Se quitan los tiempos raros: menos de 1 minuto, y menos de la mitad o más del doble de la mediana del núcleo. Las unidades de una misma tirada (cada lote cerrado en la tablet; una unidad suelta es su propia tirada) cuentan como una sola muestra: su tiempo medio por unidad. Con ${min} tiradas o más, el tiempo del núcleo es la mediana de sus tiradas; con menos usa el estándar de su programa (o ${fmtDur(Prod.TIEMPO_DEFAULT_SEG)}) y no sale en esta lista${pocos?` (<b>${pocos}</b> núcleos aún con el estándar)`:''}.</div>`;
     h+=ok.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo/ud</th><th style="padding:11px 14px;text-align:right">Estándar</th><th style="padding:11px 14px;text-align:right">Tirada más rápida</th><th style="padding:11px 14px;text-align:right">Tirada más lenta</th><th style="padding:11px 14px;text-align:right">Tiradas</th><th style="padding:11px 14px;text-align:right">Uds válidas</th><th style="padding:11px 14px;text-align:right">Uds raras</th></tr></thead><tbody>
       ${ok.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono',monospace;font-weight:700">${esc(t.sku)}</td>
