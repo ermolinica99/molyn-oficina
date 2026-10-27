@@ -3219,10 +3219,10 @@ const Rec = {
     const ls=D.filas.filter(f=>ids.includes(f.id)&&f.estado==='pendiente'); if(!ls.length) return;
     const dif=ls.filter(f=>f.dif!==0);
     if(!confirm(dif.length?`¿Aplicar ${dif.length} ajuste${dif.length===1?'':'s'}?\n\n${dif.slice(0,12).map(f=>`${f.sku}: ${f.dif>0?'+':''}${f.dif}`).join('\n')}${dif.length>12?'\n…':''}`:`¿Dar por buenas ${ls.length} líneas que cuadran?`)) return;
-    let ok=0; const errs=[]; const now=new Date().toISOString();
+    let ok=0; const errs=[], nuevas=[]; const now=new Date().toISOString();
     for(const f of ls){
       try{
-        if(f.dif>0){ const fab=new Date(Date.now()-(CFG.maduracion||0)*86400000-60000).toISOString(); await crearUnidadesAjuste(f.sku,f.dif,'AJUSTE INVENTARIO (recuento '+this.fecha(D.r.creado_at)+')',fab); }
+        if(f.dif>0){ const fab=new Date(Date.now()-(CFG.maduracion||0)*86400000-60000).toISOString(); nuevas.push(...await crearUnidadesAjuste(f.sku,f.dif,'AJUSTE INVENTARIO (recuento '+this.fecha(D.r.creado_at)+')',fab)); }
         else if(f.dif<0){ const n=-f.dif;
           const {data,error}=await sb.from('unidades').select('id').eq('sku',f.sku).eq('estado','stock').order('fabricada_at').limit(n); if(error) throw error;
           const idsU=(data||[]).map(u=>u.id); if(idsU.length<n) throw new Error('solo hay '+idsU.length+' en stock'); await borrarUnidades(idsU); }
@@ -3234,6 +3234,10 @@ const Rec = {
     await this.cerrarSiHecho();
     toast(errs.length?`${ok} aplicadas · ${errs.length} con error: ${errs[0]}`:`✓ ${ok} línea${ok===1?'':'s'} aplicada${ok===1?'':'s'}`,errs.length?'err':'ok');
     await refrescarMet(true); this.reload();
+    // las altas crean unidades nuevas: sus etiquetas, para pegarlas a los núcleos que sobraban
+    if(nuevas.length){ const por={}; nuevas.forEach(u=>por[u.sku]=(por[u.sku]||0)+1);
+      if(confirm(`Se han dado de alta ${nuevas.length} unidades nuevas:\n\n${Object.entries(por).map(([s,n])=>s+': '+n).join('\n')}\n\n¿Imprimir ahora sus etiquetas para pegarlas a los núcleos que sobraban?`)) imprimirEtiquetasNuevas(nuevas);
+      else toast('Puedes reimprimirlas desde la ficha del núcleo (Etiquetas QR de la OT de inventario)'); }
   },
   async descartar(id){ if(!confirm('¿Descartar esta línea? No se cambia el stock.')) return;
     try{ chk(await sb.from('recuento_lineas').update({estado:'descartado'}).eq('id',id)); await this.cerrarSiHecho(); this.reload(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
