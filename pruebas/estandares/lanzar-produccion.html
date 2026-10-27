@@ -230,8 +230,8 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
     <div class="calc">
       <div><h3>Núcleo diario</h3>
         <span>Deja el stock por encima del <b>punto de pedido</b> después de servir el parte, redondeando al <b>lote</b> del programa.</span>
-        <div class="f">punto de pedido = consumo/día × días de maduración<br>falta = punto de pedido − (saldo − pedido del parte)<br>se lanza = falta redondeado hacia arriba al lote</div>
-        <span>Ejemplo: consumo 4/día, maduración 2 → punto de pedido 8. Saldo 10, el parte pide 6 → quedan 4, faltan 4. Lote 10 → <span class="r">se lanzan 10</span>.</span></div>
+        <div class="f">punto de pedido = consumo/día × (días de fabricación + días de maduración)<br>falta = punto de pedido − (saldo − pedido del parte)<br>se lanza = falta redondeado hacia arriba al lote</div>
+        <span>Ejemplo: consumo 4/día, fabricación 0 y maduración 2 → punto de pedido 8. Saldo 10, el parte pide 6 → quedan 4, faltan 4. Lote 10 → <span class="r">se lanzan 10</span>.</span></div>
       <div><h3>Núcleo personalizado</h3>
         <span>Solo lo que falta para este parte, sin redondear al lote.</span>
         <div class="f">se lanza = pedido del parte − saldo libre</div>
@@ -239,7 +239,7 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
       <div><h3>Además</h3>
         <span><b>Reposición:</b> los núcleos diarios que están bajo mínimo aunque el parte no los pida se añaden solos, redondeados al lote.</span>
         <span><b>Núcleo nuevo</b> sin historial: se lanza justo lo que pide el parte.</span>
-        <span><b>Consumo/día</b> = media de los últimos días con consumo (días de histórico).</span>
+        <span><b>Consumo/día</b> = lo consumido en los últimos días laborables (días de histórico, de lunes a viernes, sin contar hoy) ÷ esos días.</span>
         <span><b>Saldo</b> = disponible + madurando + en fabricación − ya reservado para otros partes.</span></div>
     </div>
   </div>
@@ -248,9 +248,9 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
     <h2>Variables y dónde se cambian</h2>
     <div class="tw"><table class="tb">
       <tr><th>Variable</th><th>Qué hace</th><th>Dónde</th><th>Por defecto</th></tr>
-      <tr><td>Días de histórico</td><td>Cuántos días con consumo se promedian para el consumo/día.</td><td>Configuración › Diario / Personalizado</td><td>5</td></tr>
+      <tr><td>Días de histórico</td><td>Cuántos días laborables (lunes a viernes, sin hoy) se promedian para el consumo/día.</td><td>Configuración › Diario / Personalizado</td><td>5</td></tr>
       <tr><td>Umbral personalizado</td><td>Consumo/día por debajo del cual un núcleo es personalizado.</td><td>Configuración › Diario / Personalizado</td><td>2</td></tr>
-      <tr><td>Maduración</td><td>Días que reposa un núcleo antes de poder usarse. Sube el punto de pedido.</td><td>Configuración › Diario / Personalizado</td><td>2 días</td></tr>
+      <tr><td>Maduración</td><td>Días que reposa un núcleo antes de poder usarse. Sube el punto de pedido (junto con los días de fabricación).</td><td>Configuración › Diario / Personalizado</td><td>2 días</td></tr>
       <tr><td>Días de fabricación</td><td>Días entre lanzar y fabricar. Mueve la fecha prevista de las hojas del parte.</td><td>Configuración › Diario / Personalizado</td><td>0</td></tr>
       <tr><td>Lote por programa</td><td>Múltiplo al que se redondea lo que se lanza de cada programa (N001…N014) y qué puesto lo fabrica.</td><td>Configuración › Lotes de fabricación (o Planta › Lotes)</td><td>10</td></tr>
       <tr><td>Forzar a diario</td><td>Trata un núcleo como diario aunque se consuma poco.</td><td>Dashboard › tarjeta del núcleo</td><td>No</td></tr>
