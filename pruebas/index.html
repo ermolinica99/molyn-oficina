@@ -3617,10 +3617,13 @@ const Prodv = {
       const finDia=new Date(rango.fin.getFullYear(),rango.fin.getMonth(),rango.fin.getDate(),23,59,59,999);
       const ini=rango.ini.toISOString(), fin=finDia.toISOString();
       const safe=(p,fallback)=>p.then(r=>r.data||fallback).catch(()=>fallback);
-      const [ops,evs,pars,turs,tsku,roster]=await Promise.all([
+      // eventos y paradas desde el día anterior (como Informes): una unidad empezada antes del periodo y
+      // terminada dentro cuenta, y se le restan sus paradas
+      const ini1=new Date(new Date(ini).getTime()-86400000).toISOString();
+      const [ops,evsAll,parsAll,turs,tsku,roster]=await Promise.all([
         safe(sb.from('puestos_trabajo').select('id,nombre').eq('activo',true).order('nombre'),[]),
-        selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lte('ts',fin)).catch(()=>[]),
-        safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
+        selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini1).lte('ts',fin)).catch(()=>[]),
+        safe(sb.from('paradas').select('puesto_id,motivo,inicio,fin').gte('inicio',ini1).lte('inicio',fin),[]),
         safe(sb.from('turnos').select('puesto_id,inicio,fin').gte('inicio',ini).lte('inicio',fin),[]),
         safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[]),
         safe(sb.from('usuarios').select('id,nombre,rol,puesto_id').eq('activo',true).order('nombre'),[])
@@ -3637,6 +3640,11 @@ const Prodv = {
       const now=new Date();
       this.alerts=[];
       this.hourly=Array.from({length:Math.max(1,nBuckets)},()=>({uds:0,efectivo:0,pausas:0}));
+      // unidades y tiempos con el MISMO cálculo que Informes (Prod.duraciones): se restan todas las paradas del
+      // puesto, se descartan las unidades de más de 8 h y se cuentan por la hora de fin dentro del periodo
+      const enR=ts=>{ const t=new Date(ts).getTime(); return t>=this._rangoMs[0]&&t<this._rangoMs[1]; };
+      const evs=evsAll.filter(e=>enR(e.ts)), pars=parsAll.filter(p=>enR(p.inicio));
+      this._ds=Prod.duraciones(evsAll,parsAll).filter(x=>enR(x.fin));
       // cada fila YA es un puesto (los datos se registran por puesto, no por persona)
       this.rows=ops.map(o=>this.buildOperario(o,evs,pars,turs,hist,now));
       this.rows.forEach(r=>{ r.miembros=roster.filter(u=>u.puesto_id===r.id); });
@@ -3653,21 +3661,19 @@ const Prodv = {
     const parO=pars.filter(p=>String(p.puesto_id)===oid).sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
     const turO=turs.filter(t=>String(t.puesto_id)===oid).sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
     const byU={}; evO.forEach(e=>{ if(e.unidad_id)(byU[e.unidad_id]=byU[e.unidad_id]||[]).push(e); });
-    const retraIntervalos=parO.filter(p=>p.motivo==='Retrabajo'&&p.fin).map(p=>[new Date(p.inicio).getTime(),new Date(p.fin).getTime()]);
 
-    let efectivo=0, hechas=0, retrabajos=0; const porSku={}; let abierta=null;
+    let efectivo=0, hechas=0, retrabajos=0; const porSku={}; let abierta=null; const estim={};
+    (this._ds||[]).filter(x=>String(x.puesto_id)===oid).forEach(x=>{
+      const d=x.seg, f=new Date(x.fin); if(x.ret)retrabajos++; efectivo+=d; hechas++;
+      const _hb=this.hourly&&this.hourly[this.bucketIdx(f)]; if(_hb){_hb.uds++;_hb.efectivo+=d;}
+      const s=porSku[x.sku]=porSku[x.sku]||{sku:x.sku,n:0,durs:[],total:0,hist:hist[x.sku]||0};
+      s.n++; s.durs.push(d); s.total+=d;
+      // días sin fichar: jornada estimada de la primera a la última unidad (como Informes)
+      const fm=f.getTime(), i0=fm-d*1000, k=ymdLocal(f); estim[k]=estim[k]?[Math.min(estim[k][0],i0),Math.max(estim[k][1],fm)]:[i0,fm];
+    });
     Object.values(byU).forEach(arr=>{
       arr.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
       const inis=arr.filter(x=>x.tipo==='inicio'), fins=arr.filter(x=>x.tipo==='fin');
-      fins.forEach((f,i)=>{ if(i<inis.length){
-        const iniMs=new Date(inis[i].ts).getTime(), finMs=new Date(f.ts).getTime();
-        const solape=solaparSeg(iniMs,finMs,retraIntervalos);
-        const d=(finMs-iniMs)/1000-solape;
-        if(d>0&&d<86400){ if(solape>0)retrabajos++; efectivo+=d; hechas++; const _hb=this.hourly&&this.hourly[this.bucketIdx(new Date(f.ts))]; if(_hb){_hb.uds++;_hb.efectivo+=d;} const sk=f.sku||inis[i].sku||'';
-          const s=porSku[sk]=porSku[sk]||{sku:sk,n:0,durs:[],total:0,hist:hist[sk]||0};
-          s.n++; s.durs.push(d); s.total+=d;
-        }
-      }});
       const last=arr[arr.length-1];
       if(last && last.tipo==='inicio' && inis.length>fins.length){
         const cand={unidad_id:last.unidad_id,ot:last.ot,sku:last.sku,ts:last.ts};
@@ -3680,7 +3686,7 @@ const Prodv = {
     turO.forEach(t=>{ const i=new Date(t.inicio), f=t.fin?new Date(t.fin):now; turno+=Math.max(0,(f-i)/1000); if(!t.fin)inTurno=true; });
     // jornada para el OEE (como Informes): lo fichado con el turno de plantilla como mínimo cada día cerrado
     const rg=this._rangoMs||[-Infinity,Infinity];
-    const jor=jornadaBase(turO,(this._plSeg||{})[o.id]||0,rg[0],rg[1],now.getTime(),null);
+    const jor=jornadaBase(turO,(this._plSeg||{})[o.id]||0,rg[0],rg[1],now.getTime(),estim);
     // tiempo teórico de lo hecho (el del programa de cada referencia)
     const teo=Object.values(porSku).reduce((a,s)=>a+s.n*Prod.tiempoDefaultDe(s.sku),0);
     let paradas=0,npar=0,pausa=null; const porMotivo={};
