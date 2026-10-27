@@ -647,7 +647,7 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
 
     <div class="content" id="view-tsku" style="display:none">
       <div class="h1">Tiempo por núcleo</div>
-      <div class="h1sub">Tiempo medio de fabricación aprendido por núcleo</div>
+      <div class="h1sub">Tiempo normal de fabricación de cada núcleo, sin tiempos raros (el que usan el OEE, la eficiencia y Planta)</div>
       <div style="display:flex;gap:10px;margin:12px 0">
         <input id="tskuSearch" placeholder="Buscar núcleo…" style="flex:1;max-width:420px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:inherit">
       </div>
@@ -1609,6 +1609,38 @@ const Prod = {
   TIEMPO_MIN_UDS:7, TIEMPO_DEFAULT_SEG:270, // 4min 30s por defecto (si el programa no tiene tiempo teórico propio) hasta tener al menos 7 uds fabricadas
   // tiempo teórico por defecto para un sku: el de su programa (N001-N012) si está configurado, si no el general
   tiempoDefaultDe(sku){ const prog=progDe({sku}); return (this.tiempoTeoricoPrograma&&this.tiempoTeoricoPrograma[prog])||this.TIEMPO_DEFAULT_SEG; },
+
+  // TIEMPO DE REFERENCIA de cada núcleo (rendimiento del OEE, eficiencia de Informes, "vs histórico"):
+  // sus unidades de los últimos REF_DIAS días (tiempo inicio→fin sin las paradas del puesto, ver duraciones),
+  // quitando los tiempos raros (menos de la mitad o más del doble de su mediana). Con TIEMPO_MIN_UDS unidades
+  // válidas o más, la mediana de las válidas; con menos, el estándar (teórico del programa o 4min 30s).
+  // Planta aprende los tiempos con la misma regla (tiempos_sku).
+  REF_DIAS:90, RARO_MIN:0.5, RARO_MAX:2, refs:{}, refsDs:[], _refsKey:'', _refsAt:0,
+  calcRefs(ds){
+    const g={}; ds.forEach(x=>(g[x.sku]=g[x.sku]||[]).push(x.seg));
+    const out={}; Object.entries(g).forEach(([sku,arr])=>{
+      const base=arr.length>=3?medianaJs(arr):0;
+      const val=base?arr.filter(v=>v>=base*this.RARO_MIN&&v<=base*this.RARO_MAX):arr;
+      out[sku]={n:arr.length,val:val.length,raros:arr.length-val.length,base,
+        seg:val.length>=this.TIEMPO_MIN_UDS?Math.round(medianaJs(val)):0,
+        min:val.length?Math.min(...val):0,max:val.length?Math.max(...val):0};
+    });
+    return out;
+  },
+  // ¿tiempo raro? (solo se puede saber con 3 unidades o más de ese núcleo)
+  esRaro(x){ const r=this.refs[x.sku]; return !!(r&&r.base)&&(x.seg<r.base*this.RARO_MIN||x.seg>r.base*this.RARO_MAX); },
+  tiempoRefDe(sku){ const r=this.refs[sku]; return r&&r.seg>0?r.seg:this.tiempoDefaultDe(sku); },
+  // carga las unidades de los REF_DIAS días anteriores a finMs (se guarda 10 min: Productividad recarga cada 5 s)
+  async cargarRefs(finMs,forzar){
+    const key=ymdLocal(new Date(finMs-1));
+    if(!forzar && this._refsKey===key && Date.now()-this._refsAt<10*60000) return this.refs;
+    const ini=new Date(finMs-this.REF_DIAS*86400000).toISOString(), fin=new Date(finMs).toISOString();
+    const [evs,pars]=await Promise.all([
+      selectWhere('fabricacion_eventos','unidad_id,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lt('ts',fin)),
+      selectWhere('paradas','puesto_id,motivo,inicio,fin',q=>q.gte('inicio',ini).lt('inicio',fin)).catch(()=>[])]);
+    this.refsDs=this.duraciones(evs,pars); this.refs=this.calcRefs(this.refsDs);
+    this._refsKey=key; this._refsAt=Date.now(); return this.refs;
+  },
 
   // segundos por unidad para un núcleo: el aprendido si ya hay suficientes uds, si no el valor por defecto
   segPorUdDe(sku){ const t=this.tiempos[sku]; return (t && t.n>=this.TIEMPO_MIN_UDS && t.seg>0)?t.seg:this.tiempoDefaultDe(sku); },
@@ -3644,12 +3676,14 @@ const Prodv = {
       // para el OEE (igual que en Informes): tiempo teórico de cada programa y jornada con el turno de plantilla
       // efectivas (sin el descanso) como mínimo cada día
       await Prod.cargarCostesPuesto();
+      await Prod.cargarRefs(new Date(fin).getTime()+1);
       const [plantillas,turnoIds]=await Promise.all([
         selectAll('turnos_plantilla','*').catch(()=>[]),
         selectAll('usuarios','id,puesto_id,activo,turno_id').catch(()=>[])]);
       this._plSeg=jornadaPuestos(turnoIds,plantillas);
       this._rangoMs=[new Date(ini).getTime(),new Date(fin).getTime()+1];
-      const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.mediana_seg||t.segundos||t.mediana||0)||0; });
+      // "vs histórico": el tiempo de referencia limpio de cada núcleo (solo los que tienen 7 uds normales o más)
+      const hist={}; Object.entries(Prod.refs).forEach(([k,r])=>{ if(r.seg>0) hist[k]=r.seg; });
       const now=new Date();
       this.alerts=[];
       this.hourly=Array.from({length:Math.max(1,nBuckets)},()=>({uds:0,efectivo:0,pausas:0}));
@@ -3657,7 +3691,7 @@ const Prodv = {
       // puesto, se descartan las unidades de más de 8 h y se cuentan por la hora de fin dentro del periodo
       const enR=ts=>{ const t=new Date(ts).getTime(); return t>=this._rangoMs[0]&&t<this._rangoMs[1]; };
       const evs=evsAll.filter(e=>enR(e.ts)), pars=parsAll.filter(p=>enR(p.inicio));
-      this._ds=Prod.duraciones(evsAll,parsAll).filter(x=>enR(x.fin));
+      this._ds=Prod.duraciones(evsAll,parsAll).filter(x=>enR(x.fin)); this._ds.forEach(x=>{ x.raro=Prod.esRaro(x); });
       // cada fila YA es un puesto (los datos se registran por puesto, no por persona)
       // puestos activos y, como en Informes, también los desactivados que tengan actividad en el periodo
       const conAct=new Set([...this._ds.map(x=>String(x.puesto_id)),...pars.map(x=>String(x.puesto_id)),...turs.map(x=>String(x.puesto_id))]);
@@ -3682,7 +3716,7 @@ const Prodv = {
       const d=x.seg, f=new Date(x.fin); if(x.ret)retrabajos++; efectivo+=d; hechas++;
       const _hb=this.hourly&&this.hourly[this.bucketIdx(f)]; if(_hb){_hb.uds++;_hb.efectivo+=d;}
       const s=porSku[x.sku]=porSku[x.sku]||{sku:x.sku,n:0,durs:[],total:0,hist:hist[x.sku]||0};
-      s.n++; s.durs.push(d); s.total+=d;
+      s.n++; if(!x.raro) s.durs.push(d); s.total+=d;
       // días sin fichar: jornada estimada de la primera a la última unidad (como Informes)
       const fm=f.getTime(), i0=fm-d*1000, k=ymdLocal(f); estim[k]=estim[k]?[Math.min(estim[k][0],i0),Math.max(estim[k][1],fm)]:[i0,fm];
     });
@@ -3703,7 +3737,7 @@ const Prodv = {
     const rg=this._rangoMs||[-Infinity,Infinity];
     const jor=jornadaBase(turO,(this._plSeg||{})[o.id],rg[0],rg[1],now.getTime(),estim,parO);
     // tiempo teórico de lo hecho (el del programa de cada referencia)
-    const teo=Object.values(porSku).reduce((a,s)=>a+s.n*Prod.tiempoDefaultDe(s.sku),0);
+    const teo=Object.values(porSku).reduce((a,s)=>a+s.n*Prod.tiempoRefDe(s.sku),0);
     let paradas=0,npar=0,pausa=null; const porMotivo={};
     parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000); paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[this.bucketIdx(i)]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p;
       const mo=porMotivo[p.motivo||'Otro']=porMotivo[p.motivo||'Otro']||{motivo:p.motivo||'Otro',seg:0,n:0}; mo.seg+=_d; mo.n++; });
@@ -4152,7 +4186,8 @@ const Inf = {
         selectAll('puestos_trabajo','*').catch(()=>[]),
         selectAll('usuarios','id,nombre,puesto_id,activo,turno_id').catch(()=>selectAll('usuarios','id,nombre,puesto_id,activo')).catch(()=>[])]);
       const ims=r.ini.getTime(), en=(ts,a,b)=>{ const t=new Date(ts).getTime(); return t>=a && t<b; };
-      const ds=Prod.duraciones(evs,pars);
+      await Prod.cargarRefs(r.fin.getTime());
+      const ds=Prod.duraciones(evs,pars); ds.forEach(x=>{ x.raro=Prod.esRaro(x); x.teo=Prod.tiempoRefDe(x.sku); });
       const cur=ds.filter(x=>en(x.fin,ims,r.fin.getTime())), prev=ds.filter(x=>en(x.fin,r.pini.getTime(),ims));
       this.d={r,cur,prev,pars,turs,pts,usrs,plantillas};
       this.pintar();
@@ -4163,8 +4198,11 @@ const Inf = {
   // unidades, tiempo, coste y retrabajos agrupados (por programa o por puesto)
   agrupar(ds,clave){
     const g={};
-    ds.forEach(x=>{ const k=clave(x); const y=g[k]||(g[k]={k,n:0,seg:0,teo:0,eur:0,ret:0});
-      y.n++; y.seg+=x.seg; y.teo+=Prod.tiempoDefaultDe(x.sku); y.eur+=x.eur; if(x.ret) y.ret++; });
+    // teo: tiempo de referencia de lo hecho (para el OEE cuentan todas las unidades); tiempo medio y eficiencia
+    // solo con las unidades de tiempo normal (V), sin los tiempos raros
+    ds.forEach(x=>{ const k=clave(x); const y=g[k]||(g[k]={k,n:0,seg:0,teo:0,eur:0,ret:0,raros:0,nV:0,segV:0,teoV:0});
+      y.n++; y.seg+=x.seg; y.teo+=x.teo; y.eur+=x.eur; if(x.ret) y.ret++;
+      if(x.raro) y.raros++; else { y.nV++; y.segV+=x.seg; y.teoV+=x.teo; } });
     return g;
   },
   // segundos de cada intervalo [ini,fin) dentro del periodo, por puesto
@@ -4187,10 +4225,10 @@ const Inf = {
       jor[p]=jornadaBase(d.turs.filter(t=>String(t.puesto_id)===p),jp[p],a,b,now,estim[p],d.pars.filter(x=>String(x.puesto_id)===p)); });
     const turno={}, estimado=new Set(); Object.entries(jor).forEach(([p,x])=>{ turno[p]=x.base; if(x.est) estimado.add(p); });
     const filas=Object.values(gC).map(y=>{
-      const p=gP[y.k]||{n:0,seg:0,teo:0};
+      const p=gP[y.k]||{n:0,segV:0,teoV:0};
       const f={...y, txt:this.por==='programa'?y.k:this.nombrePuesto(y.k),
-        udh:y.seg>=300?y.n/(y.seg/3600):null, med:y.n?y.seg/y.n:0, ef:y.seg?y.teo/y.seg:0,
-        nP:p.n, efP:p.seg?p.teo/p.seg:0};
+        udh:y.seg>=300?y.n/(y.seg/3600):null, med:y.nV?y.segV/y.nV:0, ef:y.segV?y.teoV/y.segV:0,
+        nP:p.n, efP:p.segV?p.teoV/p.segV:0};
       f.calidad=f.n?Math.max(0,(f.n-f.ret)/f.n):1;
       if(this.por==='puesto'){ f.turno=turno[y.k]||0; f.turnoEst=estimado.has(y.k); f.fichado=(jor[y.k]||{}).fichado||0; f.extra=(jor[y.k]||{}).extra||0; f.ocup=f.fichado>0?Math.min(1,y.seg/f.fichado):null; f.gente=this.trabajadores(y.k);
         f.oee=f.turno>0?(f.teo/f.turno)*f.calidad:null; }
@@ -4208,10 +4246,10 @@ const Inf = {
       return {k:y.k,txt:this.nombrePuesto(y.k),gente:this.trabajadores(y.k),n:y.n,disp,rend,cal,oee:disp*rend*cal,est:estimado.has(y.k),extra:(jor[y.k]||{}).extra||0,udh:y.n/(y.seg/3600)}; })
       .sort((x,y)=>y.oee-x.oee);
     // tiempos por referencia: mediana de este periodo frente a la del anterior
-    const durs=(ds)=>{ const o={}; ds.forEach(x=>(o[x.sku]=o[x.sku]||[]).push(x.seg)); return o; };
+    const durs=(ds)=>{ const o={}; ds.forEach(x=>{ if(!x.raro)(o[x.sku]=o[x.sku]||[]).push(x.seg); }); return o; };
     const dC=durs(d.cur), dP=durs(d.prev);
     const refs=Object.keys(dC).filter(k=>dC[k].length>=3 && dP[k] && dP[k].length>=3).map(k=>{ const m=medianaJs(dC[k]), mp=medianaJs(dP[k]);
-      return {sku:k,prog:progDe({sku:k}),n:dC[k].length,nP:dP[k].length,med:m,medP:mp,teo:Prod.tiempoDefaultDe(k),pct:mp?(m-mp)/mp*100:0}; });
+      return {sku:k,prog:progDe({sku:k}),n:dC[k].length,nP:dP[k].length,med:m,medP:mp,teo:Prod.tiempoRefDe(k),pct:mp?(m-mp)/mp*100:0}; });
     // paradas por motivo (tiempo dentro del periodo)
     // y lo que cuestan: segundos parados × €/hora del puesto (o el coste/hora general si el puesto no tiene coste)
     const ehP=id=>{ const cp=Prod.costePuesto&&Prod.costePuesto[id]; return cp>0?cp:(CFG.coste_hora_operario||0); };
@@ -4228,8 +4266,8 @@ const Inf = {
     // unidades terminadas por día
     const dias=[]; for(let t=new Date(d.r.ini);t<d.r.fin;t.setDate(t.getDate()+1)) dias.push({k:ymdLocal(t),d:new Date(t),n:0});
     d.cur.forEach(x=>{ const z=dias.find(z=>z.k===ymdLocal(new Date(x.fin))); if(z) z.n++; });
-    const tot=d.cur.reduce((o,x)=>{ o.seg+=x.seg; o.teo+=Prod.tiempoDefaultDe(x.sku); o.eur+=x.eur; if(x.ret) o.ret++; return o; },{seg:0,teo:0,eur:0,ret:0});
-    const totP=d.prev.reduce((o,x)=>{ o.seg+=x.seg; o.teo+=Prod.tiempoDefaultDe(x.sku); return o; },{seg:0,teo:0});
+    const tot=d.cur.reduce((o,x)=>{ o.seg+=x.seg; o.teo+=x.teo; o.eur+=x.eur; if(x.ret) o.ret++; if(x.raro) o.raros++; return o; },{seg:0,teo:0,eur:0,ret:0,raros:0});
+    const totP=d.prev.reduce((o,x)=>{ o.seg+=x.seg; o.teo+=x.teo; return o; },{seg:0,teo:0});
     return {filas,rank,refs,motivos:Object.values(mot).sort((x,y)=>y.seg-x.seg),dias,tot,totP,diasT:diasT.size};
   },
 
@@ -4271,11 +4309,11 @@ const Inf = {
           <td style="${tdn}">${f.ret||'—'}</td><td style="${tdn};color:${f.calidad<0.97?'var(--red)':'var(--ink)'}">${pc(f.calidad)}</td>
           <td style="${tdn}">${e(f.eur)}</td><td style="${tdn}">${e(f.n?f.eur/f.n:0)}</td></tr>`).join('')}
         </tbody></table></div>
-        <div style="font-size:11px;color:var(--muted);padding:8px 14px">Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
+        <div style="font-size:11px;color:var(--muted);padding:8px 14px">${c.tot.raros?`<b style="color:var(--terra)">${n0(c.tot.raros)} uds con tiempo raro</b> (menos de la mitad o más del doble de lo normal en su núcleo): cuentan como fabricadas pero no entran en el tiempo medio ni en la eficiencia; se ven en Tiempo por núcleo. `:''}Eficiencia: tiempo de referencia del núcleo (mediana de sus tiempos normales con 7 uds o más; si no, el estándar del programa) ÷ tiempo real. Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
       :'<div class="vacio">No hay unidades terminadas en este periodo.</div>');
 
     // 3) puestos más productivos
-    h+=card((this.tipo==='semana'?'Trabajador de la semana':'Trabajador del mes')+' · OEE','OEE = <b>disponibilidad</b> (tiempo de turno sin paradas) × <b>rendimiento</b> (tiempo teórico de lo que ha hecho ÷ tiempo de turno sin paradas) × <b>calidad</b> (unidades sin retrabajo). Dicho de otra forma: qué parte de su turno se ha convertido en unidades buenas a ritmo teórico. Cada día cuenta como mínimo las horas efectivas de su turno, sin el descanso (de 6 a 15 con 30 min de descanso son 8h30), y las horas extra suman. El desayuno o descanso marcado como parada no resta hasta los minutos de descanso del turno; lo que se pase, sí. Entran los puestos con 5 unidades o más. Los datos se registran por puesto: si un puesto tiene varios trabajadores, el resultado es de todos.',
+    h+=card((this.tipo==='semana'?'Trabajador de la semana':'Trabajador del mes')+' · OEE','OEE = <b>disponibilidad</b> (tiempo de turno sin paradas) × <b>rendimiento</b> (tiempo de referencia de lo que ha hecho ÷ tiempo de turno sin paradas; referencia = mediana del núcleo con 7 uds normales o más, si no el estándar del programa) × <b>calidad</b> (unidades sin retrabajo). Dicho de otra forma: qué parte de su turno se ha convertido en unidades buenas a ritmo teórico. Cada día cuenta como mínimo las horas efectivas de su turno, sin el descanso (de 6 a 15 con 30 min de descanso son 8h30), y las horas extra suman. El desayuno o descanso marcado como parada no resta hasta los minutos de descanso del turno; lo que se pase, sí. Entran los puestos con 5 unidades o más. Los datos se registran por puesto: si un puesto tiene varios trabajadores, el resultado es de todos.',
       c.rank.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;padding:12px 14px">
         ${c.rank.slice(0,3).map((x,i)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:${i===0?'#FBF3E4':'var(--surf)'}">
           <div style="font-size:22px">${['🥇','🥈','🥉'][i]}</div><div style="font-weight:800;font-size:15px">${esc(x.gente.length?x.gente.join(', '):x.txt)}</div>
@@ -4344,24 +4382,46 @@ const Inf = {
 //  TIEMPO POR NÚCLEO
 // ============================================================
 const Tsku = {
-  data:[],
+  data:[], raros:[], verRaros:false,
+  // tiempos de referencia limpios (Prod.cargarRefs): solo salen los núcleos con TIEMPO_MIN_UDS uds normales o más;
+  // el resto usa el estándar del programa. Abajo, las unidades con tiempo raro para revisar cómo se escanea.
   async reload(){
-    $('#tskuTabla').innerHTML='<div class="loading">Cargando…</div>';
-    try{ const {data}=await sb.from('tiempos_sku').select('*').eq('vigente',true).order('sku');
-      this.data=data||[]; this.paint();
-    }catch(e){ $('#tskuTabla').innerHTML='<div class="vacio">Aún no hay tiempos registrados (se aprenden con el uso).</div>'; }
+    $('#tskuTabla').innerHTML='<div class="loading">Calculando tiempos…</div>';
+    try{
+      await Prod.cargarCostesPuesto();
+      const man=new Date(); man.setHours(0,0,0,0); man.setDate(man.getDate()+1);
+      const [refs,pts]=await Promise.all([Prod.cargarRefs(man.getTime(),true),selectAll('puestos_trabajo','id,nombre').catch(()=>[])]);
+      this.puestos={}; pts.forEach(p=>this.puestos[p.id]=p.nombre);
+      this.data=Object.entries(refs).map(([sku,r])=>({sku,...r})).sort((x,y)=>x.sku.localeCompare(y.sku));
+      this.raros=Prod.refsDs.filter(x=>Prod.esRaro(x)).sort((x,y)=>String(y.fin).localeCompare(String(x.fin)));
+      this.paint();
+    }catch(e){ $('#tskuTabla').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
   },
   paint(){
-    const q=($('#tskuSearch').value||'').toLowerCase().trim();
-    let rs=this.data; if(q)rs=rs.filter(t=>(t.sku||'').toLowerCase().includes(q));
-    if(!rs.length){ $('#tskuTabla').innerHTML='<div class="vacio">Sin tiempos aún. Se van aprendiendo cuando los operarios fabrican.</div>'; return; }
-    $('#tskuTabla').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo medio/ud</th><th style="padding:11px 14px;text-align:right">Muestras</th></tr></thead><tbody>
-      ${rs.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono',monospace;font-weight:700">${esc(t.sku)}</td>
+    const q=($('#tskuSearch').value||'').toLowerCase().trim(), min=Prod.TIEMPO_MIN_UDS;
+    const fil=t=>!q||(t.sku||'').toLowerCase().includes(q);
+    const ok=this.data.filter(t=>t.seg>0&&fil(t)), pocos=this.data.filter(t=>!(t.seg>0)).length;
+    const raros=this.raros.filter(fil);
+    const td="padding:9px 14px;text-align:right;font-family:'JetBrains Mono',monospace";
+    let h=`<div style="padding:12px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">Tiempo de cada unidad de los últimos ${Prod.REF_DIAS} días (inicio → fin, sin las paradas). Se quitan los tiempos raros: menos de la mitad o más del doble de la mediana del núcleo. Con ${min} unidades normales o más, el tiempo del núcleo es su mediana; con menos usa el estándar de su programa (o ${fmtDur(Prod.TIEMPO_DEFAULT_SEG)}) y no sale en esta lista${pocos?` (<b>${pocos}</b> núcleos aún con el estándar)`:''}.</div>`;
+    h+=ok.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo/ud</th><th style="padding:11px 14px;text-align:right">Estándar</th><th style="padding:11px 14px;text-align:right">Más rápido</th><th style="padding:11px 14px;text-align:right">Más lento</th><th style="padding:11px 14px;text-align:right">Válidas</th><th style="padding:11px 14px;text-align:right">Raras</th></tr></thead><tbody>
+      ${ok.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono',monospace;font-weight:700">${esc(t.sku)}</td>
         <td style="padding:9px 14px;color:var(--muted)">${esc(medida(t.sku)||'')}</td>
-        <td style="padding:9px 14px;text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700">${fmtDur(t.mediana_seg||t.segundos||t.mediana||0)}</td>
-        <td style="padding:9px 14px;text-align:right;color:var(--muted)">${t.n_unidades||t.muestras||t.n||'—'}</td></tr>`).join('')}
-      </tbody></table>`;
+        <td style="${td};font-weight:800">${fmtDur(t.seg)}</td><td style="${td};color:var(--muted)">${fmtDur(Prod.tiempoDefaultDe(t.sku))}</td>
+        <td style="${td}">${fmtDur(t.min)}</td><td style="${td}">${fmtDur(t.max)}</td>
+        <td style="${td}">${t.val}</td><td style="${td};color:${t.raros?'var(--terra)':'var(--muted)'}">${t.raros||'—'}</td></tr>`).join('')}
+      </tbody></table></div>`:`<div class="vacio">${q?'Ningún núcleo con ese nombre tiene aún '+min+' unidades normales.':'Ningún núcleo tiene aún '+min+' unidades normales: todos usan el estándar.'}</div>`;
+    h+=`<div style="padding:14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <b>Unidades con tiempo raro</b><span style="color:var(--muted);font-size:12px">${raros.length} en los últimos ${Prod.REF_DIAS} días · cuentan como fabricadas pero no para los tiempos. Un tiempo muy corto suele ser escanear inicio y fin seguidos; uno muy largo, una parada sin marcar.</span>
+      ${raros.length?`<button class="chip" style="background:var(--surf2);color:var(--ink);margin-left:auto" onclick="Tsku.verRaros=!Tsku.verRaros;Tsku.paint()">${this.verRaros?'Ocultar':'Ver'}</button>`:''}</div>`;
+    if(this.verRaros&&raros.length) h+=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:8px 14px">Fecha</th><th style="padding:8px 14px">Puesto</th><th style="padding:8px 14px">Núcleo</th><th style="padding:8px 14px">Unidad</th><th style="padding:8px 14px;text-align:right">Tiempo</th><th style="padding:8px 14px;text-align:right">Normal del núcleo</th></tr></thead><tbody>
+      ${raros.slice(0,200).map(x=>{ const r=Prod.refs[x.sku]||{}, corto=x.seg<r.base; return `<tr style="border-top:1px solid var(--border)"><td style="padding:7px 14px">${new Date(x.fin).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
+        <td style="padding:7px 14px">${esc(this.puestos[x.puesto_id]||('Puesto '+x.puesto_id))}</td><td style="padding:7px 14px;font-family:'JetBrains Mono',monospace">${esc(x.sku)}</td><td style="padding:7px 14px;font-family:'JetBrains Mono',monospace;color:var(--muted)">${esc(x.unidad_id)}</td>
+        <td style="${td};font-weight:800;color:var(--terra)">${fmtDur(x.seg)} ${corto?'↓':'↑'}</td><td style="${td};color:var(--muted)">${fmtDur(r.base)}</td></tr>`; }).join('')}
+      </tbody></table>${raros.length>200?`<div style="padding:8px 14px;font-size:11px;color:var(--muted)">y ${raros.length-200} más</div>`:''}</div>`;
+    $('#tskuTabla').innerHTML=h;
   }
 };
 
