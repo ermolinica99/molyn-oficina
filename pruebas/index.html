@@ -3505,34 +3505,45 @@ function fmtDur(seg){ seg=Math.round(seg); const h=Math.floor(seg/3600),m=Math.f
   if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+s+'s'; return s+'s'; }
 function medianaJs(arr){ if(!arr.length)return 0; const s=[...arr].sort((a,b)=>a-b),m=Math.floor(s.length/2);
   return s.length%2?s[m]:(s[m-1]+s[m])/2; }
-// JORNADA para el OEE de Informes: cada día trabajado cuenta al menos las horas de su turno de plantilla
-// (Configuración → Turnos de trabajo, el horario completo con su descanso). Fichar 7h30 de un turno de 8h
-// cuenta 8h; fichar 10h cuenta 10h, y las 2h de más son horas extra. Un turno todavía abierto cuenta lo que
-// lleva (el día no ha acabado).
+// JORNADA para el OEE de Informes: cada día trabajado cuenta al menos las horas EFECTIVAS de su turno de
+// plantilla (Configuración → Turnos de trabajo: el horario menos el descanso; de 6 a 15 con 30 min de descanso
+// son 8h30). El descanso es una parada planificada: se quita de lo fichado cada día y las paradas de
+// desayuno/descanso, hasta esos minutos, no cuentan como parada; lo que se pasen sí. Fichar 8h de un turno
+// de 8h30 efectivas cuenta 8h30; lo que pase de 8h30 son horas extra. Un turno todavía abierto cuenta lo que
+// lleva (el día no ha acabado) y solo descuenta el descanso que ya se ha marcado.
 function segPlantilla(t){
   const hm=x=>{ const [h,m]=String(x||'0:0').split(':').map(Number); return (h||0)*60+(m||0); };
   const tramo=(a,b)=>{ if(!a||!b) return 0; let d=hm(b)-hm(a); if(d<0) d+=1440; return d; };
   let m=tramo(t.hora_inicio,t.hora_fin); if(t.tipo==='partido') m+=tramo(t.hora_inicio2,t.hora_fin2); return m*60;
 }
+const esDescanso=motivo=>/^(desayuno|descanso|comida|almuerzo)$/i.test(String(motivo||'').trim());
 // segundos de jornada fijados por puesto: los turnos de plantilla de sus trabajadores (uno de mañana y otro
 // de tarde suman; dos trabajadores en el mismo turno cuentan una vez)
 function jornadaPuestos(usrs,plantillas){
   const pl={}; (plantillas||[]).filter(t=>t.activo!==false).forEach(t=>pl[t.id]=t);
   const tp={}; (usrs||[]).forEach(u=>{ if(u.activo!==false && u.puesto_id && u.turno_id && pl[u.turno_id]) (tp[u.puesto_id]=tp[u.puesto_id]||new Set()).add(u.turno_id); });
-  const r={}; Object.entries(tp).forEach(([p,set])=>{ r[p]=[...set].reduce((a,id)=>a+segPlantilla(pl[id]),0); }); return r;
+  const r={}; Object.entries(tp).forEach(([p,set])=>{ r[p]={seg:[...set].reduce((a,id)=>a+Math.max(0,segPlantilla(pl[id])-(pl[id].descanso_min||0)*60),0),
+    desc:[...set].reduce((a,id)=>a+(pl[id].descanso_min||0)*60,0)}; }); return r;
 }
 // turnos de un puesto (y, para días sin fichaje, la jornada estimada de sus unidades) → fichado, base del OEE y extra.
-// a/b recortan al periodo (ms); estim: {dia:[iniMs,finMs]} de los días con unidades
-function jornadaBase(turs,plSeg,a,b,now,estim){
+// a/b recortan al periodo (ms); estim: {dia:[iniMs,finMs]} de los días con unidades; pl: {seg,desc} de
+// jornadaPuestos; pars: paradas del puesto. Devuelve también plan: segundos de descanso marcados como parada
+// que no cuentan (hasta el descanso del turno cada día), para restarlos de las paradas.
+function jornadaBase(turs,pl,a,b,now,estim,pars){
+  const plSeg=(pl&&pl.seg)||0, desc=(pl&&pl.desc)||0;
   const dias={};
   (turs||[]).forEach(t=>{ const i=new Date(t.inicio).getTime(), f=t.fin?new Date(t.fin).getTime():now;
     const s=Math.max(0,(Math.min(f,b)-Math.max(i,a))/1000); if(!(s>0)) return;
     const k=ymdLocal(new Date(i)), d=dias[k]||(dias[k]={f:0,abierto:false,est:false}); d.f+=s; if(!t.fin) d.abierto=true; });
   Object.entries(estim||{}).forEach(([k,[i,f]])=>{ if(!dias[k]) dias[k]={f:Math.max(0,(f-i)/1000),abierto:k===ymdLocal(new Date(now)),est:true}; });
-  let fichado=0, base=0, extra=0, est=false;
-  Object.values(dias).forEach(d=>{ fichado+=d.f; if(d.est) est=true;
-    base+=(plSeg>0 && !d.abierto)?Math.max(d.f,plSeg):d.f; if(plSeg>0) extra+=Math.max(0,d.f-plSeg); });
-  return {fichado,base,extra,est,dias:Object.keys(dias).length};
+  // descanso marcado cada día (desayuno, descanso…)
+  const des={}; (pars||[]).forEach(x=>{ if(!esDescanso(x.motivo)) return; const i=new Date(x.inicio).getTime(), f=x.fin?new Date(x.fin).getTime():now;
+    const s=Math.max(0,(Math.min(f,b)-Math.max(i,a))/1000); if(s>0){ const k=ymdLocal(new Date(i)); des[k]=(des[k]||0)+s; } });
+  let fichado=0, base=0, extra=0, est=false, plan=0;
+  Object.entries(dias).forEach(([k,d])=>{ if(d.est) est=true;
+    const marc=des[k]||0, q=Math.min(d.f,d.abierto?Math.min(desc,marc):desc), f=d.f-q; plan+=Math.min(marc,q);
+    fichado+=f; base+=(plSeg>0 && !d.abierto)?Math.max(f,plSeg):f; if(plSeg>0) extra+=Math.max(0,f-plSeg); });
+  return {fichado,base,extra,est,plan,dias:Object.keys(dias).length};
 }
 function solaparSeg(iniMs,finMs,intervalos){
   let t=0;
@@ -3631,7 +3642,7 @@ const Prodv = {
         safe(sb.from('usuarios').select('id,nombre,rol,puesto_id').eq('activo',true).order('nombre'),[])
       ]);
       // para el OEE (igual que en Informes): tiempo teórico de cada programa y jornada con el turno de plantilla
-      // como mínimo cada día (fichar 7h30 de un turno de 8h cuenta 8h)
+      // efectivas (sin el descanso) como mínimo cada día
       await Prod.cargarCostesPuesto();
       const [plantillas,turnoIds]=await Promise.all([
         selectAll('turnos_plantilla','*').catch(()=>[]),
@@ -3690,7 +3701,7 @@ const Prodv = {
     turO.forEach(t=>{ const i=new Date(t.inicio), f=t.fin?new Date(t.fin):now; turno+=Math.max(0,(f-i)/1000); if(!t.fin)inTurno=true; });
     // jornada para el OEE (como Informes): lo fichado con el turno de plantilla como mínimo cada día cerrado
     const rg=this._rangoMs||[-Infinity,Infinity];
-    const jor=jornadaBase(turO,(this._plSeg||{})[o.id]||0,rg[0],rg[1],now.getTime(),estim);
+    const jor=jornadaBase(turO,(this._plSeg||{})[o.id],rg[0],rg[1],now.getTime(),estim,parO);
     // tiempo teórico de lo hecho (el del programa de cada referencia)
     const teo=Object.values(porSku).reduce((a,s)=>a+s.n*Prod.tiempoDefaultDe(s.sku),0);
     let paradas=0,npar=0,pausa=null; const porMotivo={};
@@ -3719,7 +3730,7 @@ const Prodv = {
     if(!pausa && !abierta && (inTurno||turno>0) && idle!=null && idle>15*60)this.alerts.push({tipo:'Sin actividad',msg:o.nombre+' lleva '+fmtDur(idle)+' sin registrar avance',sev:'warn'});
     if(abierta && currentSecs>45*60)this.alerts.push({tipo:'Tarea larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en '+(abierta.sku||abierta.ot||'una tarea'),sev:'warn'});
 
-    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,jornada:jor.base,fichadoJ:jor.fichado,teo,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
+    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,jornada:jor.base,fichadoJ:jor.fichado,planJ:jor.plan,teo,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
   },
   // agrupa las filas por operario (this.rows) en filas por puesto de trabajo, sumando sus métricas
   fmtUd(s){ s=Math.round(s||0); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); },
@@ -3779,7 +3790,7 @@ const Prodv = {
     // hecho / (fichado − paradas); calidad = unidades sin retrabajo. Antes el rendimiento era contra el histórico y,
     // si no había histórico, contaba como 100% (salía "--" pero el OEE lo tomaba como perfecto).
     const jornadaG=sum('jornada'), fichG=sum('fichadoJ'), teoG=sum('teo');
-    const parG=rows.reduce((a,r)=>a+Math.min(r.paradas||0,r.fichadoJ||0),0);
+    const parG=rows.reduce((a,r)=>a+Math.min(Math.max(0,(r.paradas||0)-(r.planJ||0)),r.fichadoJ||0),0);
     const oeeDisp=jornadaG?Math.max(0,fichG-parG)/jornadaG:0;
     const efG=(fichG-parG)>0?teoG/(fichG-parG):0;
     const oee=oeeDisp*efG*calidadG;
@@ -4173,7 +4184,7 @@ const Inf = {
       e[k]=e[k]?[Math.min(e[k][0],i0),Math.max(e[k][1],f)]:[i0,f]; });
     const jp=jornadaPuestos(d.usrs,d.plantillas), jor={};
     [...new Set([...d.turs.map(t=>String(t.puesto_id)),...Object.keys(estim)])].forEach(p=>{
-      jor[p]=jornadaBase(d.turs.filter(t=>String(t.puesto_id)===p),jp[p]||0,a,b,now,estim[p]); });
+      jor[p]=jornadaBase(d.turs.filter(t=>String(t.puesto_id)===p),jp[p],a,b,now,estim[p],d.pars.filter(x=>String(x.puesto_id)===p)); });
     const turno={}, estimado=new Set(); Object.entries(jor).forEach(([p,x])=>{ turno[p]=x.base; if(x.est) estimado.add(p); });
     const filas=Object.values(gC).map(y=>{
       const p=gP[y.k]||{n:0,seg:0,teo:0};
@@ -4192,7 +4203,7 @@ const Inf = {
     // calidad = unidades sin retrabajo / unidades. Necesita turno y un mínimo de 5 unidades.
     const gPu=this.agrupar(d.cur,x=>String(x.puesto_id));
     const rank=Object.values(gPu).filter(y=>y.n>=5&&y.seg>0&&turno[y.k]>0).map(y=>{
-      const t=turno[y.k], fi=(jor[y.k]||{}).fichado||t, pa=Math.min(pausa[y.k]||0,fi);
+      const t=turno[y.k], fi=(jor[y.k]||{}).fichado||t, pa=Math.min(Math.max(0,(pausa[y.k]||0)-((jor[y.k]||{}).plan||0)),fi);
       const disp=(fi-pa)/t, rend=fi-pa>0?y.teo/(fi-pa):0, cal=Math.max(0,(y.n-y.ret)/y.n);
       return {k:y.k,txt:this.nombrePuesto(y.k),gente:this.trabajadores(y.k),n:y.n,disp,rend,cal,oee:disp*rend*cal,est:estimado.has(y.k),extra:(jor[y.k]||{}).extra||0,udh:y.n/(y.seg/3600)}; })
       .sort((x,y)=>y.oee-x.oee);
@@ -4253,11 +4264,11 @@ const Inf = {
           <td style="${tdn}">${f.ret||'—'}</td><td style="${tdn};color:${f.calidad<0.97?'var(--red)':'var(--ink)'}">${pc(f.calidad)}</td>
           <td style="${tdn}">${e(f.eur)}</td><td style="${tdn}">${e(f.n?f.eur/f.n:0)}</td></tr>`).join('')}
         </tbody></table></div>
-        <div style="font-size:11px;color:var(--muted);padding:8px 14px">Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado, contando como mínimo las horas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
+        <div style="font-size:11px;color:var(--muted);padding:8px 14px">Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
       :'<div class="vacio">No hay unidades terminadas en este periodo.</div>');
 
     // 3) puestos más productivos
-    h+=card((this.tipo==='semana'?'Trabajador de la semana':'Trabajador del mes')+' · OEE','OEE = <b>disponibilidad</b> (tiempo de turno sin paradas) × <b>rendimiento</b> (tiempo teórico de lo que ha hecho ÷ tiempo de turno sin paradas) × <b>calidad</b> (unidades sin retrabajo). Dicho de otra forma: qué parte de su turno se ha convertido en unidades buenas a ritmo teórico. Cada día cuenta como mínimo las horas de su turno (fichar 7h30 de un turno de 8h cuenta 8h) y las horas extra suman. Entran los puestos con 5 unidades o más. Los datos se registran por puesto: si un puesto tiene varios trabajadores, el resultado es de todos.',
+    h+=card((this.tipo==='semana'?'Trabajador de la semana':'Trabajador del mes')+' · OEE','OEE = <b>disponibilidad</b> (tiempo de turno sin paradas) × <b>rendimiento</b> (tiempo teórico de lo que ha hecho ÷ tiempo de turno sin paradas) × <b>calidad</b> (unidades sin retrabajo). Dicho de otra forma: qué parte de su turno se ha convertido en unidades buenas a ritmo teórico. Cada día cuenta como mínimo las horas efectivas de su turno, sin el descanso (de 6 a 15 con 30 min de descanso son 8h30), y las horas extra suman. El desayuno o descanso marcado como parada no resta hasta los minutos de descanso del turno; lo que se pase, sí. Entran los puestos con 5 unidades o más. Los datos se registran por puesto: si un puesto tiene varios trabajadores, el resultado es de todos.',
       c.rank.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;padding:12px 14px">
         ${c.rank.slice(0,3).map((x,i)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:${i===0?'#FBF3E4':'var(--surf)'}">
           <div style="font-size:22px">${['🥇','🥈','🥉'][i]}</div><div style="font-weight:800;font-size:15px">${esc(x.gente.length?x.gente.join(', '):x.txt)}</div>
