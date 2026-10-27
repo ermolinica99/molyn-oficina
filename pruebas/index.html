@@ -329,6 +329,7 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
     <button class="nav" id="navPartes" onclick="nav('partes')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Partes lanzados</span></button>
     <button class="nav" id="navOT" onclick="nav('ot')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span>Órdenes de trabajo</span></button>
     <button class="nav" id="navInv" onclick="nav('inv')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg><span>Inventario físico</span></button>
+    <button class="nav" id="navRec" onclick="nav('rec')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>Recuentos</span></button>
     <button class="nav" id="navCatalogo" onclick="nav('catalogo')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>Producto</span></button>
     <button class="nav" id="navEst" onclick="nav('est')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg><span>Estándares</span></button>
     <div class="grp">Análisis</div>
@@ -572,6 +573,13 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
         </div>
         <div id="sinNucLista"></div>
       </div>
+    </div>
+
+    <div class="content" id="view-rec" style="display:none">
+      <div class="h1">Recuentos</div>
+      <div class="h1sub">Lo que cuenta el encargado en Planta → Inventario: revisadlo juntos y aplicad los ajustes. Y las pistas de por qué el stock puede no cuadrar.</div>
+      <div class="seg" id="recTabs" style="margin-bottom:16px"></div>
+      <div id="recBody"></div>
     </div>
 
     <div class="content" id="view-inv" style="display:none">
@@ -1483,13 +1491,13 @@ const CONF_SUBVIEWS=['cDiario','cTurnos','cPuestos','cUsr','cLotes','cSinNucleo'
 function nav(v){
   const titulos={dash:'Dashboard',prod:'Producción',partes:'Partes lanzados',ot:'Órdenes de trabajo',
     cDiario:'Diario / Personalizado',cTurnos:'Turnos de trabajo',cPuestos:'Puestos de trabajo',cUsr:'Usuarios y costes',cLotes:'Lotes de fabricación',cSinNucleo:'Colchones sin núcleo',
-    inv:'Inventario físico',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempo por núcleo',inf:'Informes',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
-  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',inf:'navInf',apr:'navApr',alta:'navAlta',pers:'navPers'};
+    inv:'Inventario físico',rec:'Recuentos',catalogo:'Producto',est:'Estándares',prodv:'Productividad',tsku:'Tiempo por núcleo',inf:'Informes',apr:'Aprobaciones',alta:'Alta masiva',pers:'Personalización'};
+  const navIds={dash:'navDash',prod:'navProd',partes:'navPartes',ot:'navOT',inv:'navInv',rec:'navRec',catalogo:'navCatalogo',est:'navEst',prodv:'navProdv',tsku:'navTsku',inf:'navInf',apr:'navApr',alta:'navAlta',pers:'navPers'};
   if((ADMIN_VIEWS.has(v)||CONF_SUBVIEWS.includes(v)) && !Auth.esAdmin()){
     toast('No tienes permisos para abrir esta sección','err');
     v='dash';
   }
-  const todas=['dash','prod','partes','ot','inv','catalogo','est','prodv','tsku','inf','apr','alta','pers',...CONF_SUBVIEWS];
+  const todas=['dash','prod','partes','ot','inv','rec','catalogo','est','prodv','tsku','inf','apr','alta','pers',...CONF_SUBVIEWS];
   todas.forEach(k=>{
     const vw=document.getElementById('view-'+k); if(vw)vw.style.display=(v===k?'block':'none');
     const nb=document.getElementById(navIds[k]); if(nb)nb.classList.toggle('on',v===k);
@@ -1512,6 +1520,7 @@ function nav(v){
   if(v==='cSinNucleo') NucCat.load();
   if(v==='pers') Pers.load();
   if(v==='inv') Inv.paint();
+  if(v==='rec') Rec.reload();
   if(v==='catalogo') Catalogo.load();
   if(v==='prodv') Prodv.startAuto();
   else Prodv.stopAuto();
@@ -3105,6 +3114,223 @@ function otInventario(){
 // ============================================================
 //  INVENTARIO FÍSICO
 // ============================================================
+// ============================================================
+//  RECUENTOS: lo que cuenta el encargado en Planta → Inventario se guarda en un recuento. Aquí Oficina lo
+//  revisa (hoja rellenada con lo que decía la app al contar, lo contado y la diferencia, más pistas de por
+//  qué puede no cuadrar) y aplica los ajustes. Dos listas más: etiquetas sin cerrar y reservas viejas.
+// ============================================================
+const Rec = {
+  tab:'rec', sel:null, ETQ_DIAS:3, RES_DIAS:7,
+  setTab(t){ this.tab=t; this.sel=null; this.reload(); },
+  pintarTabs(){
+    const b=(k,t,n)=>`<button class="${this.tab===k?'on':''}" onclick="Rec.setTab('${k}')">${t}${n?` <span style="background:var(--terra);color:#fff;border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px">${n}</span>`:''}</button>`;
+    const p=this._p||{};
+    $('#recTabs').innerHTML=b('rec','Recuentos',p.term)+b('etq','Etiquetas sin cerrar',p.etq)+b('res','Reservas sin consumir',p.res);
+  },
+  async reload(){
+    const el=$('#recBody'); el.innerHTML='<div class="loading">Cargando…</div>';
+    try{
+      const [term,pis]=await Promise.all([
+        sb.from('recuentos').select('id',{count:'exact',head:true}).eq('estado','terminado').then(r=>r.count||0).catch(()=>0),
+        this.pistas()]);
+      this._p={term,etq:pis.etqRows.length,res:pis.resRows.length}; this._pis=pis;
+      this.pintarTabs();
+      if(this.tab==='etq') return this.pintarEtq();
+      if(this.tab==='res') return this.pintarRes();
+      if(this.sel) return this.pintarCuadre();
+      return this.pintarLista();
+    }catch(e){ el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+(/recuento/.test(e.message||'')?' · falta ejecutar 01_recuentos.sql en la base de pruebas':'')+'</div>'; }
+  },
+  // pistas de por qué puede no cuadrar: unidades lanzadas hace días sin terminar y reservas viejas pendientes
+  async pistas(){
+    const D=86400000;
+    const [etqRows,resRows]=await Promise.all([
+      selectWhere('unidades','id,sku,ot,lanzada_at',q=>q.eq('estado','pendiente').lt('lanzada_at',new Date(Date.now()-this.ETQ_DIAS*D).toISOString())).catch(()=>[]),
+      selectWhere('reservas','*',q=>q.eq('estado','pendiente').lt('created_at',new Date(Date.now()-this.RES_DIAS*D).toISOString())).catch(()=>[])]);
+    const porSku={};
+    etqRows.forEach(u=>{ const x=porSku[u.sku]||(porSku[u.sku]={etq:0,res:0}); x.etq++; });
+    resRows.forEach(r=>{ const x=porSku[r.sku]||(porSku[r.sku]={etq:0,res:0}); x.res+=Number(r.cantidad)||0; });
+    return {etqRows,resRows,porSku};
+  },
+  fecha(t){ return t?new Date(t).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'; },
+  async nombres(){ if(!this._us){ this._us={}; try{ (await selectAll('usuarios','id,nombre')).forEach(u=>this._us[u.id]=u.nombre); }catch(e){} } return this._us; },
+
+  // ---------- lista de recuentos ----------
+  async pintarLista(){
+    const [rs,us]=await Promise.all([sb.from('recuentos').select('*').order('creado_at',{ascending:false}).limit(30).then(r=>{ if(r.error) throw r.error; return r.data||[]; }),this.nombres()]);
+    const ids=rs.map(r=>r.id); let lin=[]; if(ids.length) lin=await selectWhere('recuento_lineas','recuento_id,app_total,contado,estado',q=>q.in('recuento_id',ids));
+    const est={abierto:['Contando','var(--blue)','#E4EDF0'],terminado:['Para revisar','var(--terra)','#F5E7DF'],aplicado:['Aplicado','var(--green)','#E4EDE6'],anulado:['Anulado','var(--muted)','var(--surf2)']};
+    $('#recBody').innerHTML=rs.length?rs.map(r=>{ const L=lin.filter(x=>x.recuento_id===r.id), dif=L.filter(x=>x.contado!==x.app_total).length, e=est[r.estado]||[r.estado,'var(--muted)','var(--surf2)'];
+      return `<div class="card" style="margin-bottom:10px;cursor:pointer" onclick="Rec.sel=${r.id};Rec.reload()"><div style="display:flex;align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px"><div style="font-weight:700;font-size:15px">Recuento ${r.tipo==='ciclico'?'cíclico':'completo'} · ${this.fecha(r.creado_at)}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px">${esc(us[r.creado_por]||'Planta')}${r.terminado_at?' · terminado '+this.fecha(r.terminado_at):''}${r.aplicado_at?' · aplicado '+this.fecha(r.aplicado_at):''}</div></div>
+        <div class="mono" style="text-align:right"><b style="font-size:18px">${L.length}</b> <span style="font-size:12px;color:var(--muted)">núcleos</span><br><span style="font-size:12px;color:${dif?'var(--red)':'var(--green)'}">${dif?dif+' con diferencia':'todo cuadra'}</span></div>
+        <span style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:20px;background:${e[2]};color:${e[1]}">${e[0]}</span></div></div>`; }).join('')
+      :'<div class="vacio">Todavía no hay recuentos. El encargado los hace en Planta → Inventario, escaneando el QR de la hoja de recuento (Inventario físico → Hoja de recuento).</div>';
+  },
+
+  // ---------- cuadre de un recuento ----------
+  async datosCuadre(){
+    const id=this.sel;
+    const [{data:r,error},lin,us]=await Promise.all([sb.from('recuentos').select('*').eq('id',id).maybeSingle(),selectWhere('recuento_lineas','*',q=>q.eq('recuento_id',id)),this.nombres()]);
+    if(error) throw error; if(!r) throw new Error('No existe el recuento');
+    await refrescarMet(true);
+    const filas=lin.map(l=>{ const p=partesNuc(l.sku), m=medidaDe(l.sku), b=MET[l.sku]||{};
+      const [an,la]=m?m.split('x').map(Number):[null,null];
+      return {...l,prog:b.prog||progDe({sku:l.sku}),desc:PROG_DESC[b.prog||progDe({sku:l.sku})]||'',ancho:an,largo:la,medida:m?an+' × '+la:'—',dif:l.contado-l.app_total,
+        ahora:(b.disp||0)+(b.madurando||0),pista:(this._pis&&this._pis.porSku[l.sku])||null,quien:us[l.contado_por]||''}; });
+    filas.sort((a,b)=>String(a.prog).localeCompare(String(b.prog))||(a.ancho??9999)-(b.ancho??9999)||(a.largo??9999)-(b.largo??9999)||a.sku.localeCompare(b.sku));
+    const grupos=[]; filas.forEach(f=>{ let g=grupos[grupos.length-1]; if(!g||g.prog!==f.prog){ g={prog:f.prog,desc:f.desc,filas:[]}; grupos.push(g); } g.filas.push(f); });
+    return {r,filas,grupos,quien:us[r.creado_por]||''};
+  },
+  pistaTxt(p){ if(!p) return ''; return [p.etq?p.etq+' etiquetas sin cerrar':'',p.res?p.res+' reservas viejas sin consumir':''].filter(Boolean).join(' · '); },
+  async pintarCuadre(){
+    const D=await this.datosCuadre(); this._cuadre=D;
+    const {r,filas,grupos}=D, pend=filas.filter(f=>f.estado==='pendiente'), difP=pend.filter(f=>f.dif!==0);
+    const sum=k=>filas.reduce((a,f)=>a+f[k],0), editable=r.estado==='terminado'||r.estado==='abierto';
+    const th='padding:9px 10px;text-align:right;white-space:nowrap', td="padding:8px 10px;text-align:right;font-family:'JetBrains Mono',monospace";
+    const estLin=f=>f.estado==='aplicado'?'<span style="color:var(--green);font-weight:700">✓ aplicado</span>':f.estado==='descartado'?'<span style="color:var(--muted)">descartado</span>'
+      :(editable?`<button class="chip" style="padding:6px 10px;font-size:12px;${f.dif===0?'background:var(--surf2);color:var(--ink)':''}" onclick="Rec.aplicar([${f.id}])">${f.dif===0?'OK':'Aplicar'}</button> <button class="chip" style="padding:6px 10px;font-size:12px;background:#fff;color:var(--muted);border:1px solid var(--border)" onclick="Rec.descartar(${f.id})">✕</button>`:'<span style="color:var(--muted)">pendiente</span>');
+    $('#recBody').innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="chip" style="background:#fff;color:var(--marca-dd);border:1px solid var(--border)" onclick="Rec.sel=null;Rec.reload()">← Recuentos</button>
+        <div><div style="font-weight:700;font-size:16px">Recuento ${r.tipo==='ciclico'?'cíclico':'completo'} · ${this.fecha(r.creado_at)}</div><div style="font-size:12px;color:var(--muted)">${esc(D.quien||'Planta')} · ${r.estado==='abierto'?'aún contando':r.estado==='terminado'?'terminado '+this.fecha(r.terminado_at)+' · pendiente de revisar':r.estado}</div></div>
+        <div style="flex:1"></div>
+        <button class="chip" style="background:#fff;color:var(--marca-dd);border:1px solid var(--border)" onclick="Rec.excel()">⬇ Excel</button>
+        <button class="chip" style="background:var(--marca)" onclick="Rec.hoja()">🖨 Hoja rellenada (PDF)</button>
+        ${editable&&pend.length?`<button class="chip" onclick="Rec.aplicar(${JSON.stringify(pend.map(f=>f.id))})">Aplicar ajustes (${difP.length} con diferencia)</button>`:''}
+        ${r.estado==='abierto'?`<button class="chip" style="background:#fff;color:var(--red);border:1px solid var(--border)" onclick="Rec.anular()">Anular</button>`:''}</div>
+      <div class="kpis" style="grid-template-columns:repeat(4,1fr)">${[[filas.length,'núcleos contados'],[sum('app_total'),'uds según la app al contar'],[sum('contado'),'uds contadas'],[(sum('contado')-sum('app_total')>0?'+':'')+(sum('contado')-sum('app_total')),'diferencia total']].map(([v,t])=>`<div class="kpi" style="cursor:default"><div class="kv">${v}</div><div class="ksub" style="margin-top:6px">${t}</div></div>`).join('')}</div>
+      <div style="font-size:12px;color:var(--muted);margin:-6px 0 12px">Revisadlo juntos oficina y encargado (la hoja en PDF tiene sitio para firmar). Al aplicar, se suma o resta la diferencia que había en el momento de contar: si después se ha fabricado o consumido, eso se respeta. Si una diferencia se explica por una pista (etiquetas sin cerrar, reservas sin consumir), mejor arreglarla en su pestaña y descartar la línea.</div>
+      <div class="card"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:860px"><thead><tr style="background:var(--surf2);text-align:left">
+        <th style="padding:9px 10px">Medida · núcleo</th><th style="${th}">App al contar</th><th style="${th}">Contado</th><th style="${th}">Dif.</th><th style="${th}">App ahora</th><th style="padding:9px 10px">Pistas</th><th style="padding:9px 10px">Quién · cuándo</th><th style="${th}"></th></tr></thead><tbody>
+        ${grupos.map(g=>`<tr><td colspan="8" style="background:var(--hueco);padding:7px 10px;font-weight:700">${esc(g.prog)} <span style="font-weight:400;color:var(--muted)">${esc(g.desc)}</span></td></tr>`+g.filas.map(f=>`<tr style="border-top:1px solid var(--border)">
+          <td style="padding:8px 10px"><b>${esc(f.medida)}</b><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${esc(f.sku)}</div></td>
+          <td style="${td}">${f.app_total}<div style="font-size:10px;color:var(--muted)">${f.app_disp} disp · ${f.app_madur} mad</div></td><td style="${td};font-weight:800">${f.contado}</td>
+          <td style="${td};font-weight:800;color:${f.dif===0?'var(--green)':f.dif>0?'var(--blue)':'var(--red)'}">${f.dif===0?'✓':(f.dif>0?'+':'')+f.dif}</td>
+          <td style="${td};color:var(--muted)">${f.ahora}</td>
+          <td style="padding:8px 10px;font-size:12px;color:var(--terra)">${esc(this.pistaTxt(f.pista))}</td>
+          <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(f.quien)}<br>${this.fecha(f.contado_at)}</td>
+          <td style="${td};white-space:nowrap">${estLin(f)}</td></tr>`).join('')).join('')||'<tr><td colspan="8" class="vacio">Sin líneas.</td></tr>'}
+        </tbody></table></div></div>`;
+  },
+  // aplica líneas: la diferencia del momento de contar se convierte en alta o baja de stock
+  async aplicar(ids){
+    const D=this._cuadre; if(!D) return;
+    const ls=D.filas.filter(f=>ids.includes(f.id)&&f.estado==='pendiente'); if(!ls.length) return;
+    const dif=ls.filter(f=>f.dif!==0);
+    if(!confirm(dif.length?`¿Aplicar ${dif.length} ajuste${dif.length===1?'':'s'}?\n\n${dif.slice(0,12).map(f=>`${f.sku}: ${f.dif>0?'+':''}${f.dif}`).join('\n')}${dif.length>12?'\n…':''}`:`¿Dar por buenas ${ls.length} líneas que cuadran?`)) return;
+    let ok=0; const errs=[]; const now=new Date().toISOString();
+    for(const f of ls){
+      try{
+        if(f.dif>0){ const fab=new Date(Date.now()-(CFG.maduracion||0)*86400000-60000).toISOString(); await crearUnidadesAjuste(f.sku,f.dif,'AJUSTE INVENTARIO (recuento '+this.fecha(D.r.creado_at)+')',fab); }
+        else if(f.dif<0){ const n=-f.dif;
+          const {data,error}=await sb.from('unidades').select('id').eq('sku',f.sku).eq('estado','stock').order('fabricada_at').limit(n); if(error) throw error;
+          const idsU=(data||[]).map(u=>u.id); if(idsU.length<n) throw new Error('solo hay '+idsU.length+' en stock'); await borrarUnidades(idsU); }
+        if(f.dif!==0){ const reg={sku:f.sku,tipo:f.dif>0?'alta':'baja',cantidad:Math.abs(f.dif),estado:'aprobado',fecha:now,motivo:'Recuento',nota:'Recuento '+this.fecha(D.r.creado_at)+': contados '+f.contado+', app '+f.app_total};
+          let r=await sb.from('ajustes_inventario').insert(reg); if(r.error){ delete reg.motivo; delete reg.fecha; r=await sb.from('ajustes_inventario').insert(reg); } }
+        chk(await sb.from('recuento_lineas').update({estado:'aplicado',aplicado_at:now}).eq('id',f.id)); ok++;
+      }catch(e){ errs.push(f.sku+': '+(e.message||e)); }
+    }
+    await this.cerrarSiHecho();
+    toast(errs.length?`${ok} aplicadas · ${errs.length} con error: ${errs[0]}`:`✓ ${ok} línea${ok===1?'':'s'} aplicada${ok===1?'':'s'}`,errs.length?'err':'ok');
+    await refrescarMet(true); this.reload();
+  },
+  async descartar(id){ if(!confirm('¿Descartar esta línea? No se cambia el stock.')) return;
+    try{ chk(await sb.from('recuento_lineas').update({estado:'descartado'}).eq('id',id)); await this.cerrarSiHecho(); this.reload(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  async cerrarSiHecho(){
+    const lin=await selectWhere('recuento_lineas','estado',q=>q.eq('recuento_id',this.sel));
+    if(lin.length&&lin.every(l=>l.estado!=='pendiente')) chk(await sb.from('recuentos').update({estado:'aplicado',aplicado_at:new Date().toISOString()}).eq('id',this.sel));
+  },
+  async anular(){ if(!confirm('¿Anular este recuento? No se cambia el stock y el encargado podrá empezar otro.')) return;
+    try{ chk(await sb.from('recuentos').update({estado:'anulado'}).eq('id',this.sel)); this.sel=null; this.reload(); }catch(e){ toast('Error: '+(e.message||e),'err'); } },
+  // hoja rellenada para revisar y firmar
+  async hoja(){
+    const D=this._cuadre||await this.datosCuadre(), {r,grupos,filas}=D, f=this.fecha.bind(this);
+    const tot=k=>filas.reduce((a,x)=>a+x[k],0);
+    ventanaImpresion(`<!doctype html><html><head><meta charset="utf-8"><title>Cuadre del recuento ${esc(f(r.creado_at))}</title><style>
+      @page{size:A4;margin:11mm 10mm 12mm}*{box-sizing:border-box}body{font-family:'Work Sans',Arial,sans-serif;color:#2F3433;margin:0;font-size:10pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .cab{display:flex;align-items:flex-end;gap:16px;border-bottom:2px solid #4D5352;padding-bottom:8px;margin-bottom:10px}.cab img{height:40px}.cab h1{font-size:16pt;margin:0;letter-spacing:.04em;text-transform:uppercase}
+      .cab .s{font-size:9pt;color:#7C8281}.cab .d{margin-left:auto;text-align:right;font-size:9pt;color:#7C8281;line-height:1.5}
+      .res{display:flex;gap:8px;margin:8px 0 12px}.res div{flex:1;border:1px solid #E6E4DF;border-radius:6px;padding:6px 10px;font-size:8.5pt;color:#7C8281}.res b{display:block;font-size:14pt;color:#2E3231;font-family:'JetBrains Mono',monospace}
+      table{width:100%;border-collapse:collapse}thead{display:table-header-group}tr{page-break-inside:avoid}
+      th{background:#4D5352;color:#fff;font-size:7.5pt;letter-spacing:.06em;text-transform:uppercase;padding:5px 6px;text-align:right}th.l,td.l{text-align:left}
+      td{border-bottom:1px solid #E6E4DF;padding:5px 6px;text-align:right;font-size:9.5pt}.n{font-family:'JetBrains Mono',monospace}.cod{font-family:'JetBrains Mono',monospace;font-size:8pt;color:#4D5352}
+      tr.g td{background:#EFEDE9;font-weight:700;padding:6px}tr.dif td{background:#FFF7F3}.ok{color:#2F7A55}.mas{color:#3C6375;font-weight:800}.men{color:#C2412D;font-weight:800}.pis{font-size:8pt;color:#B0552F;text-align:left}
+      .firma{display:flex;gap:30px;margin-top:26px;font-size:9.5pt}.firma div{flex:1;border-top:1px solid #4D5352;padding-top:4px;color:#7C8281}</style></head><body>
+      <div class="cab"><img src="data:image/png;base64,${LOGO_VF_GRIS}"><div><h1>Cuadre del recuento</h1><div class="s">Recuento ${r.tipo==='ciclico'?'cíclico':'completo'} del ${esc(f(r.creado_at))} · contado por ${esc(D.quien||'Planta')}</div></div>
+        <div class="d">Impreso el <b>${esc(new Date().toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}))}</b><br>Estado: ${esc(r.estado)}</div></div>
+      <div class="res"><div>Núcleos contados<b>${filas.length}</b></div><div>Con diferencia<b>${filas.filter(x=>x.dif!==0).length}</b></div><div>App al contar<b>${tot('app_total')}</b></div><div>Contado<b>${tot('contado')}</b></div><div>Diferencia<b>${tot('contado')-tot('app_total')>0?'+':''}${tot('contado')-tot('app_total')}</b></div></div>
+      <table><thead><tr><th class="l">Medida · código</th><th>Disp.</th><th>Madur.</th><th>App al contar</th><th>Contado</th><th>Dif.</th><th class="l">Pistas</th><th class="l">Revisado</th></tr></thead><tbody>
+      ${grupos.map(g=>`<tr class="g"><td class="l" colspan="8">${esc(g.prog)} <span style="font-weight:400;color:#7C8281">${esc(g.desc)}</span></td></tr>`+g.filas.map(x=>`<tr class="${x.dif?'dif':''}"><td class="l"><b>${esc(x.medida)}</b><div class="cod">${esc(x.sku)}</div></td>
+        <td class="n">${x.app_disp}</td><td class="n">${x.app_madur||'—'}</td><td class="n"><b>${x.app_total}</b></td><td class="n"><b>${x.contado}</b></td>
+        <td class="n ${x.dif===0?'ok':x.dif>0?'mas':'men'}">${x.dif===0?'✓':(x.dif>0?'+':'')+x.dif}</td><td class="pis">${esc(this.pistaTxt(x.pista))}</td><td class="l" style="width:16%"><span style="display:inline-block;width:14px;height:14px;border:1.3px solid #4D5352;border-radius:3px;vertical-align:middle"></span></td></tr>`).join('')).join('')}
+      </tbody></table>
+      <div class="firma"><div>Encargado</div><div>Oficina</div><div>Fecha</div></div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script></body></html>`,'Cuadre del recuento');
+  },
+  async excel(){
+    if(typeof XLSX==='undefined'||!XLSX.utils){ toast('No se ha podido cargar la librería de Excel','err'); return; }
+    const D=this._cuadre||await this.datosCuadre();
+    const A=[['CUADRE DEL RECUENTO · '+this.fecha(D.r.creado_at)+' · '+(D.quien||'Planta')],[],['Programa','Descripción','Medida','Código','Disp. al contar','Madur. al contar','App al contar','Contado','Diferencia','App ahora','Pistas','Contado por','Hora','Estado']];
+    D.filas.forEach(f=>A.push([f.prog,f.desc,f.medida,f.sku,f.app_disp,f.app_madur,f.app_total,f.contado,f.dif,f.ahora,this.pistaTxt(f.pista),f.quien,this.fecha(f.contado_at),f.estado]));
+    const ws=XLSX.utils.aoa_to_sheet(A); ws['!cols']=[8,14,11,26,10,10,10,9,10,10,34,14,14,11].map(w=>({wch:w})); ws['!autofilter']={ref:'A3:N'+A.length};
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Cuadre'); XLSX.writeFile(wb,'cuadre_recuento_'+ymdLocal(new Date(D.r.creado_at))+'.xlsx');
+  },
+
+  // ---------- etiquetas sin cerrar ----------
+  pintarEtq(){
+    const rows=this._pis.etqRows, g={}; rows.forEach(u=>{ const x=g[u.ot]||(g[u.ot]={ot:u.ot,sku:u.sku,ids:[],lz:u.lanzada_at}); x.ids.push(u.id); if(u.lanzada_at<x.lz) x.lz=u.lanzada_at; });
+    const ots=Object.values(g).sort((a,b)=>String(a.lz).localeCompare(String(b.lz)));
+    $('#recBody').innerHTML=`<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Unidades lanzadas hace más de ${this.ETQ_DIAS} días que siguen "fabricando": o se fabricaron y no se terminaron en la tablet (el stock real es mayor que el de la app), o no se llegaron a hacer.</div>`+
+      (ots.length?ots.map(o=>`<div class="card" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:14px;padding:12px 16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px"><div style="font-family:'JetBrains Mono',monospace;font-weight:700">${esc(o.ot)} · ${esc(o.sku)}</div><div style="font-size:12px;color:var(--muted)">${o.ids.length} sin terminar · lanzada ${this.fecha(o.lz)}</div></div>
+        <button class="chip" style="background:var(--green)" onclick="Rec.etqFabricados('${jsq(o.ot)}')">Ya están fabricados</button>
+        <button class="chip" style="background:#fff;color:var(--red);border:1px solid var(--border)" onclick="Rec.etqQuitar('${jsq(o.ot)}')">No se hicieron</button></div></div>`).join('')
+      :'<div class="vacio">✓ No hay etiquetas antiguas sin terminar.</div>');
+  },
+  idsOT(ot){ return this._pis.etqRows.filter(u=>u.ot===ot).map(u=>u.id); },
+  async etqFabricados(ot){
+    const ids=this.idsOT(ot); if(!ids.length||!confirm(`¿Pasar ${ids.length} unidades de ${ot} a stock como fabricadas?`)) return;
+    try{ const lz=this._pis.etqRows.find(u=>u.ot===ot).lanzada_at, fab=new Date(new Date(lz).getTime()+(CFG.dias_fabricacion||0)*86400000).toISOString();
+      for(let i=0;i<ids.length;i+=150) chk(await sb.from('unidades').update({estado:'stock',fabricada_at:fab}).in('id',ids.slice(i,i+150)).eq('estado','pendiente'));
+      const quedan=await idsPendientesDeOT(ot); if(!quedan.length) chk(await sb.from('ordenes').update({estado:'cerrada',cerrada_at:new Date().toISOString()}).eq('ot',ot));
+      toast('✓ '+ids.length+' unidades de '+ot+' en stock','ok'); await refrescarMet(true); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async etqQuitar(ot){
+    const ids=this.idsOT(ot); if(!ids.length||!confirm(`¿Quitar ${ids.length} unidades de ${ot} que no se llegaron a fabricar? Rompe sus etiquetas.`)) return;
+    try{ await ajustarOT(ot,ids); toast('✓ Quitadas '+ids.length+' de '+ot,'ok'); await refrescarMet(true); this.reload(); }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+
+  // ---------- reservas viejas sin consumir ----------
+  pintarRes(){
+    const rows=this._pis.resRows.slice().sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+    $('#recBody').innerHTML=`<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Reservas de partes de hace más de ${this.RES_DIAS} días que siguen pendientes: si el colchón ya se hizo, su núcleo se gastó sin escanearlo en la tablet (el stock de la app es mayor que el real).</div>`+
+      (rows.length?`<div class="card"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:720px"><thead><tr style="background:var(--surf2);text-align:left">
+        <th style="padding:9px 10px">Parte</th><th style="padding:9px 10px">Modelo</th><th style="padding:9px 10px">Núcleo</th><th style="padding:9px 10px;text-align:right">Uds</th><th style="padding:9px 10px">Desde</th><th></th></tr></thead><tbody>
+        ${rows.map(r=>`<tr style="border-top:1px solid var(--border)"><td style="padding:8px 10px;font-family:'JetBrains Mono',monospace">${esc(r.parte_ref||'—')}</td><td style="padding:8px 10px">${esc(r.sku_pf||'—')}</td>
+          <td style="padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:12px">${esc(r.sku)}</td><td style="padding:8px 10px;text-align:right;font-weight:700">${r.cantidad}</td><td style="padding:8px 10px;color:var(--muted)">${this.fecha(r.created_at)}</td>
+          <td style="padding:8px 10px;text-align:right;white-space:nowrap"><button class="chip" style="padding:6px 10px;font-size:12px" onclick="Rec.resGastado(${r.id})">Se gastó</button> <button class="chip" style="padding:6px 10px;font-size:12px;background:#fff;color:var(--muted);border:1px solid var(--border)" onclick="Rec.resAnular(${r.id})">Ya no hace falta</button></td></tr>`).join('')}
+      </tbody></table></div></div>`:'<div class="vacio">✓ No hay reservas antiguas pendientes.</div>');
+  },
+  // el núcleo se gastó sin escanear: se consumen las unidades más antiguas en stock y la reserva queda consumida
+  async resGastado(id){
+    const r=this._pis.resRows.find(x=>x.id===id); if(!r) return; const n=Number(r.cantidad)||0;
+    if(!confirm(`¿Dar por gastados ${n} ${r.sku} (parte ${r.parte_ref||'—'})? Se consumen las ${n} unidades más antiguas del stock.`)) return;
+    try{
+      const {data,error}=await sb.from('unidades').select('id').eq('sku',r.sku).eq('estado','stock').order('fabricada_at').limit(n); if(error) throw error;
+      const ids=(data||[]).map(u=>u.id), now=new Date().toISOString();
+      if(ids.length) chk(await sb.from('unidades').update({estado:'consumida',consumida_at:now}).in('id',ids).eq('estado','stock'));
+      if(ids.length>=n) chk(await sb.from('reservas').update({estado:'consumida'}).eq('id',id));
+      else chk(await sb.from('reservas').update({cantidad:n-ids.length}).eq('id',id));
+      toast(ids.length>=n?`✓ ${n} consumidos`:`Solo había ${ids.length} en stock: consumidos; quedan ${n-ids.length} reservados`,ids.length>=n?'ok':'err');
+      await refrescarMet(true); this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async resAnular(id){ if(!confirm('¿Anular esta reserva? El colchón ya no necesita este núcleo.')) return;
+    try{ chk(await sb.from('reservas').delete().eq('id',id)); await refrescarMet(true); this.reload(); }catch(e){ toast('Error: '+(e.message||e),'err'); } }
+};
+
 const Inv = {
   // ---------- HOJA DE RECUENTO: núcleos con alguna unidad (disponibles + madurando), por programa y medida ----------
   async gruposRecuento(){

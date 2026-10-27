@@ -10,7 +10,7 @@ Copia de la app para probar cambios sin tocar la app real ni sus datos.
   **Informes** (productividad semanal / mensual por programa o por puesto, OEE con la jornada del turno,
   tiempos por referencia, paradas, unidades por día, Excel y PDF). Informes solo lee datos que ya
   existen en la base real: no necesita ningún SQL.
-- No hay cambios de base de datos en desarrollo (`pruebas/sql/` está vacío).
+- Cambios de base de datos en desarrollo: `pruebas/sql/01_recuentos.sql` (tablas de los recuentos de inventario). Se aplica a la base de pruebas con "Aplicar SQL a PRUEBAS".
 
 ## Lo anterior está guardado
 Todo lo que se desarrolló antes en pruebas (producto final PF, reservas de PF, calidad y expedición,
