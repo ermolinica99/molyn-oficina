@@ -1612,18 +1612,31 @@ const Prod = {
 
   // TIEMPO DE REFERENCIA de cada núcleo (rendimiento del OEE, eficiencia de Informes, "vs histórico"):
   // sus unidades de los últimos REF_DIAS días (tiempo inicio→fin sin las paradas del puesto, ver duraciones),
-  // quitando los tiempos raros (menos de la mitad o más del doble de su mediana). Con TIEMPO_MIN_UDS unidades
-  // válidas o más, la mediana de las válidas; con menos, el estándar (teórico del programa o 4min 30s).
-  // Planta aprende los tiempos con la misma regla (tiempos_sku).
+  // quitando los tiempos raros (menos de la mitad o más del doble de su mediana). Las unidades se agrupan por
+  // TIRADA: cada lote que se cierra en la tablet (una OT de 10 hecha de golpe es una tirada; 3 a las 12, 4 a la 1
+  // y 3 al día siguiente son 3). Al cerrar un lote la tablet reparte su tiempo a partes iguales y encadena las
+  // unidades (el fin de una es el inicio de la siguiente), así se reconocen; una unidad suelta es su propia
+  // tirada. Cada tirada da una muestra = su tiempo medio por unidad. Con TIEMPO_MIN_UDS
+  // tiradas o más, la mediana de las tiradas; con menos, el estándar (teórico del programa o 4min 30s).
+  // Planta aprende los tiempos con la misma regla (tiempos_sku; n_unidades guarda el nº de tiradas).
   REF_DIAS:90, RARO_MIN:0.5, RARO_MAX:2, refs:{}, refsDs:[], _refsKey:'', _refsAt:0,
+  // agrupa en tiradas unidades de la misma OT y puesto encadenadas (inicio = fin de la anterior, ±1 s)
+  tiradas(ds){
+    const g={}; ds.forEach(x=>{ const k=(x.ot||'')+'|'+x.puesto_id+'|'+x.sku; (g[k]=g[k]||[]).push(x); });
+    const out=[]; Object.values(g).forEach(arr=>{ arr.sort((a,b)=>a.ini-b.ini); let cur=null, finAnt=null;
+      arr.forEach(x=>{ if(!cur || !x.ot || finAnt==null || Math.abs(x.ini-finAnt)>1000){ cur=[]; out.push(cur); } cur.push(x); finAnt=new Date(x.fin).getTime(); }); });
+    return out;
+  },
   calcRefs(ds){
-    const g={}; ds.forEach(x=>(g[x.sku]=g[x.sku]||[]).push(x.seg));
+    const g={}; ds.forEach(x=>(g[x.sku]=g[x.sku]||[]).push(x));
     const out={}; Object.entries(g).forEach(([sku,arr])=>{
-      const base=arr.length>=3?medianaJs(arr):0;
-      const val=base?arr.filter(v=>v>=base*this.RARO_MIN&&v<=base*this.RARO_MAX):arr;
-      out[sku]={n:arr.length,val:val.length,raros:arr.length-val.length,base,
-        seg:val.length>=this.TIEMPO_MIN_UDS?Math.round(medianaJs(val)):0,
-        min:val.length?Math.min(...val):0,max:val.length?Math.max(...val):0};
+      const segs=arr.map(x=>x.seg), base=segs.length>=3?medianaJs(segs):0;
+      const val=base?arr.filter(x=>x.seg>=base*this.RARO_MIN&&x.seg<=base*this.RARO_MAX):arr;
+      // tiradas con todas sus unidades (para no partir un lote si quitamos una rara) y muestra con las válidas
+      const okU=new Set(val), mues=[]; this.tiradas(arr).forEach(t=>{ const v=t.filter(x=>okU.has(x)); if(v.length) mues.push(v.reduce((a,x)=>a+x.seg,0)/v.length); });
+      out[sku]={n:arr.length,val:val.length,raros:arr.length-val.length,base,tiradas:mues.length,
+        seg:mues.length>=this.TIEMPO_MIN_UDS?Math.round(medianaJs(mues)):0,
+        min:mues.length?Math.min(...mues):0,max:mues.length?Math.max(...mues):0};
     });
     return out;
   },
@@ -1636,7 +1649,7 @@ const Prod = {
     if(!forzar && this._refsKey===key && Date.now()-this._refsAt<10*60000) return this.refs;
     const ini=new Date(finMs-this.REF_DIAS*86400000).toISOString(), fin=new Date(finMs).toISOString();
     const [evs,pars]=await Promise.all([
-      selectWhere('fabricacion_eventos','unidad_id,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lt('ts',fin)),
+      selectWhere('fabricacion_eventos','unidad_id,ot,sku,puesto_id,tipo,ts',q=>q.gte('ts',ini).lt('ts',fin)),
       selectWhere('paradas','puesto_id,motivo,inicio,fin',q=>q.gte('inicio',ini).lt('inicio',fin)).catch(()=>[])]);
     this.refsDs=this.duraciones(evs,pars); this.refs=this.calcRefs(this.refsDs);
     this._refsKey=key; this._refsAt=Date.now(); return this.refs;
@@ -1657,11 +1670,11 @@ const Prod = {
       arr.forEach(e=>{
         if(e.tipo==='inicio'){ ini=e; return; }
         if(e.tipo!=='fin' || !ini) return;
-        const a=new Date(ini.ts).getTime(), b=new Date(e.ts).getTime(); ini=null;
+        const a=new Date(ini.ts).getTime(), b=new Date(e.ts).getTime(), i0=ini; ini=null;
         const seg=(b-a)/1000-solaparSeg(a,b,parP[e.puesto_id]||[]);
         if(!(seg>0 && seg<8*3600)) return;
         const cp=this.costePuesto[e.puesto_id], eh=cp>0?cp:this.costeHoraDe(e.sku);
-        out.push({unidad_id:e.unidad_id,sku:e.sku,puesto_id:e.puesto_id,seg,eur:seg*eh/3600,ret:solaparSeg(a,b,retP[e.puesto_id]||[])>0,fin:e.ts});
+        out.push({unidad_id:e.unidad_id,ot:e.ot||i0.ot||null,sku:e.sku,puesto_id:e.puesto_id,seg,eur:seg*eh/3600,ret:solaparSeg(a,b,retP[e.puesto_id]||[])>0,ini:a,fin:e.ts});
       });
     });
     return out;
@@ -4309,11 +4322,11 @@ const Inf = {
           <td style="${tdn}">${f.ret||'—'}</td><td style="${tdn};color:${f.calidad<0.97?'var(--red)':'var(--ink)'}">${pc(f.calidad)}</td>
           <td style="${tdn}">${e(f.eur)}</td><td style="${tdn}">${e(f.n?f.eur/f.n:0)}</td></tr>`).join('')}
         </tbody></table></div>
-        <div style="font-size:11px;color:var(--muted);padding:8px 14px">${c.tot.raros?`<b style="color:var(--terra)">${n0(c.tot.raros)} uds con tiempo raro</b> (menos de la mitad o más del doble de lo normal en su núcleo): cuentan como fabricadas pero no entran en el tiempo medio ni en la eficiencia; se ven en Tiempo por núcleo. `:''}Eficiencia: tiempo de referencia del núcleo (mediana de sus tiempos normales con 7 uds o más; si no, el estándar del programa) ÷ tiempo real. Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
+        <div style="font-size:11px;color:var(--muted);padding:8px 14px">${c.tot.raros?`<b style="color:var(--terra)">${n0(c.tot.raros)} uds con tiempo raro</b> (menos de la mitad o más del doble de lo normal en su núcleo): cuentan como fabricadas pero no entran en el tiempo medio ni en la eficiencia; se ven en Tiempo por núcleo. `:''}Eficiencia: tiempo de referencia del núcleo (mediana de sus tiradas, con 7 tiradas o más; si no, el estándar del programa) ÷ tiempo real. Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
       :'<div class="vacio">No hay unidades terminadas en este periodo.</div>');
 
     // 3) puestos más productivos
-    h+=card((this.tipo==='semana'?'Trabajador de la semana':'Trabajador del mes')+' · OEE','OEE = <b>disponibilidad</b> (tiempo de turno sin paradas) × <b>rendimiento</b> (tiempo de referencia de lo que ha hecho ÷ tiempo de turno sin paradas; referencia = mediana del núcleo con 7 uds normales o más, si no el estándar del programa) × <b>calidad</b> (unidades sin retrabajo). Dicho de otra forma: qué parte de su turno se ha convertido en unidades buenas a ritmo teórico. Cada día cuenta como mínimo las horas efectivas de su turno, sin el descanso (de 6 a 15 con 30 min de descanso son 8h30), y las horas extra suman. El desayuno o descanso marcado como parada no resta hasta los minutos de descanso del turno; lo que se pase, sí. Entran los puestos con 5 unidades o más. Los datos se registran por puesto: si un puesto tiene varios trabajadores, el resultado es de todos.',
+    h+=card((this.tipo==='semana'?'Trabajador de la semana':'Trabajador del mes')+' · OEE','OEE = <b>disponibilidad</b> (tiempo de turno sin paradas) × <b>rendimiento</b> (tiempo de referencia de lo que ha hecho ÷ tiempo de turno sin paradas; referencia = mediana de las tiradas del núcleo con 7 tiradas o más, si no el estándar del programa) × <b>calidad</b> (unidades sin retrabajo). Dicho de otra forma: qué parte de su turno se ha convertido en unidades buenas a ritmo teórico. Cada día cuenta como mínimo las horas efectivas de su turno, sin el descanso (de 6 a 15 con 30 min de descanso son 8h30), y las horas extra suman. El desayuno o descanso marcado como parada no resta hasta los minutos de descanso del turno; lo que se pase, sí. Entran los puestos con 5 unidades o más. Los datos se registran por puesto: si un puesto tiene varios trabajadores, el resultado es de todos.',
       c.rank.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;padding:12px 14px">
         ${c.rank.slice(0,3).map((x,i)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:${i===0?'#FBF3E4':'var(--surf)'}">
           <div style="font-size:22px">${['🥇','🥈','🥉'][i]}</div><div style="font-weight:800;font-size:15px">${esc(x.gente.length?x.gente.join(', '):x.txt)}</div>
@@ -4403,15 +4416,15 @@ const Tsku = {
     const ok=this.data.filter(t=>t.seg>0&&fil(t)), pocos=this.data.filter(t=>!(t.seg>0)).length;
     const raros=this.raros.filter(fil);
     const td="padding:9px 14px;text-align:right;font-family:'JetBrains Mono',monospace";
-    let h=`<div style="padding:12px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">Tiempo de cada unidad de los últimos ${Prod.REF_DIAS} días (inicio → fin, sin las paradas). Se quitan los tiempos raros: menos de la mitad o más del doble de la mediana del núcleo. Con ${min} unidades normales o más, el tiempo del núcleo es su mediana; con menos usa el estándar de su programa (o ${fmtDur(Prod.TIEMPO_DEFAULT_SEG)}) y no sale en esta lista${pocos?` (<b>${pocos}</b> núcleos aún con el estándar)`:''}.</div>`;
+    let h=`<div style="padding:12px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">Tiempo de cada unidad de los últimos ${Prod.REF_DIAS} días (inicio → fin, sin las paradas). Se quitan los tiempos raros: menos de la mitad o más del doble de la mediana del núcleo. Las unidades de una misma tirada (cada lote cerrado en la tablet; una unidad suelta es su propia tirada) cuentan como una sola muestra: su tiempo medio por unidad. Con ${min} tiradas o más, el tiempo del núcleo es la mediana de sus tiradas; con menos usa el estándar de su programa (o ${fmtDur(Prod.TIEMPO_DEFAULT_SEG)}) y no sale en esta lista${pocos?` (<b>${pocos}</b> núcleos aún con el estándar)`:''}.</div>`;
     h+=ok.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo/ud</th><th style="padding:11px 14px;text-align:right">Estándar</th><th style="padding:11px 14px;text-align:right">Más rápido</th><th style="padding:11px 14px;text-align:right">Más lento</th><th style="padding:11px 14px;text-align:right">Válidas</th><th style="padding:11px 14px;text-align:right">Raras</th></tr></thead><tbody>
+      <thead><tr style="background:var(--surf2);text-align:left"><th style="padding:11px 14px">Núcleo</th><th style="padding:11px 14px">Medida</th><th style="padding:11px 14px;text-align:right">Tiempo/ud</th><th style="padding:11px 14px;text-align:right">Estándar</th><th style="padding:11px 14px;text-align:right">Tirada más rápida</th><th style="padding:11px 14px;text-align:right">Tirada más lenta</th><th style="padding:11px 14px;text-align:right">Tiradas</th><th style="padding:11px 14px;text-align:right">Uds válidas</th><th style="padding:11px 14px;text-align:right">Uds raras</th></tr></thead><tbody>
       ${ok.map(t=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:9px 14px;font-family:'JetBrains Mono',monospace;font-weight:700">${esc(t.sku)}</td>
         <td style="padding:9px 14px;color:var(--muted)">${esc(medida(t.sku)||'')}</td>
         <td style="${td};font-weight:800">${fmtDur(t.seg)}</td><td style="${td};color:var(--muted)">${fmtDur(Prod.tiempoDefaultDe(t.sku))}</td>
         <td style="${td}">${fmtDur(t.min)}</td><td style="${td}">${fmtDur(t.max)}</td>
-        <td style="${td}">${t.val}</td><td style="${td};color:${t.raros?'var(--terra)':'var(--muted)'}">${t.raros||'—'}</td></tr>`).join('')}
-      </tbody></table></div>`:`<div class="vacio">${q?'Ningún núcleo con ese nombre tiene aún '+min+' unidades normales.':'Ningún núcleo tiene aún '+min+' unidades normales: todos usan el estándar.'}</div>`;
+        <td style="${td};font-weight:700">${t.tiradas}</td><td style="${td}">${t.val}</td><td style="${td};color:${t.raros?'var(--terra)':'var(--muted)'}">${t.raros||'—'}</td></tr>`).join('')}
+      </tbody></table></div>`:`<div class="vacio">${q?'Ningún núcleo con ese nombre tiene aún '+min+' tiradas.':'Ningún núcleo tiene aún '+min+' tiradas: todos usan el estándar.'}</div>`;
     h+=`<div style="padding:14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <b>Unidades con tiempo raro</b><span style="color:var(--muted);font-size:12px">${raros.length} en los últimos ${Prod.REF_DIAS} días · cuentan como fabricadas pero no para los tiempos. Un tiempo muy corto suele ser escanear inicio y fin seguidos; uno muy largo, una parada sin marcar.</span>
       ${raros.length?`<button class="chip" style="background:var(--surf2);color:var(--ink);margin-left:auto" onclick="Tsku.verRaros=!Tsku.verRaros;Tsku.paint()">${this.verRaros?'Ocultar':'Ver'}</button>`:''}</div>`;
