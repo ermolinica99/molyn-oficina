@@ -655,11 +655,32 @@ async function selectWhere(table,cols,filterFn){
   return out;
 }
 
+// CONSUMO DIARIO: lo consumido en los últimos N días LABORABLES (lunes a viernes, sin contar hoy, que está a
+// medias) dividido entre N. Antes se dividía solo entre los días en que hubo consumo: un núcleo que gastó 12 un
+// único día salía a 12/día, se marcaba bajo mínimo y Producción lanzaba reposición de más.
+function ventanaConsumo(n){
+  const fin=new Date(); fin.setHours(0,0,0,0);
+  const ini=new Date(fin); let k=0;
+  while(k<Math.max(1,n||1)){ ini.setDate(ini.getDate()-1); const w=ini.getDay(); if(w!==0&&w!==6) k++; }
+  return {ini,fin,dias:Math.max(1,n||1)};
+}
+// días que tiene que cubrir el stock: de lanzar a fabricado (días de fabricación) + la maduración
+function diasCobertura(){ return (Number(CFG.maduracion)||0)+(Number(CFG.dias_fabricacion)||0); }
+// consumo diario efectivo (forzado a diario: al menos el umbral) y punto de pedido de un núcleo
+function aplicarConsumo(b){
+  const umbral=parseFloat(CFG.umbral_semanal);
+  b.D=b.forzado?Math.max(b.Dreal,umbral):b.Dreal;
+  b.personalizado=b.forzado?false:(b.D<umbral);
+  b.ROP=Math.ceil(b.D*diasCobertura());
+  b.bajoMin=(!b.personalizado)&&b.saldo<b.ROP;
+  b.reponer=b.bajoMin?(b.ROP-b.saldo):0;
+}
 async function calcularMetricas(){
   const now=new Date();
-  const mad=CFG.maduracion, diasH=CFG.dias_historico, umbral=parseFloat(CFG.umbral_semanal);
-  // solo necesitamos el consumo de los últimos ~35 días (no todo el histórico)
-  const cutoff=new Date(now.getTime()-35*86400000).toISOString();
+  const mad=CFG.maduracion, diasH=CFG.dias_historico;
+  const V=ventanaConsumo(diasH);
+  // el consumo de la ventana y, para la ficha, los últimos 14 días naturales
+  const cutoff=new Date(Math.min(V.ini.getTime(),now.getTime()-15*86400000)).toISOString();
   // TODAS las consultas en paralelo (mucho más rápido que una tras otra)
   const pProds=(async()=>{ try{return await selectWhere('productos','sku,nombre,descripcion,forzar_diario');}
                            catch(e){return await selectWhere('productos','sku,nombre,descripcion');} })();
@@ -680,7 +701,7 @@ async function calcularMetricas(){
   });
   const pend={};res.forEach(r=>{pend[r.sku]=(pend[r.sku]||0)+(r.cantidad||0)});
   const m={};
-  prods.forEach(p=>{m[p.sku]={sku:p.sku,nombre:p.nombre||'',prog:progDe(p),stock:0,disp:0,madurando:0,fabricando:0,dias:{},cons28:0,forzado:!!p.forzar_diario};});
+  prods.forEach(p=>{m[p.sku]={sku:p.sku,nombre:p.nombre||'',prog:progDe(p),stock:0,disp:0,madurando:0,fabricando:0,dias:{},consVentana:0,forzado:!!p.forzar_diario};});
   const madMs=mad*86400000;
   activos.forEach(u=>{
     const b=m[u.sku];if(!b)return;
@@ -690,23 +711,18 @@ async function calcularMetricas(){
       if(fab&&(now-fab)>=madMs)b.disp++;else b.madurando++;
     }
   });
+  const vIni=V.ini.getTime(), vFin=V.fin.getTime();
   consumo.forEach(u=>{
     const b=m[u.sku];if(!b||!u.consumida_at)return;
-    const day=u.consumida_at.slice(0,10);
+    const t=new Date(u.consumida_at), day=ymdLocal(t); // día en hora local (no UTC: lo de después de medianoche es del día siguiente)
     b.dias[day]=(b.dias[day]||0)+1;
-    if((now-new Date(u.consumida_at))/1000<=28*86400)b.cons28++;
+    if(t.getTime()>=vIni && t.getTime()<vFin) b.consVentana++;
   });
   Object.values(m).forEach(b=>{
-    const ds=Object.keys(b.dias).sort().reverse().slice(0,diasH);
-    const tot=ds.reduce((s,d)=>s+b.dias[d],0);
-    b.Dreal=ds.length?Math.round(tot/ds.length*100)/100:0;
-    b.D=b.forzado?Math.max(b.Dreal,umbral):b.Dreal;
+    b.Dreal=Math.round(b.consVentana/V.dias*100)/100;
     b.pend=pend[b.sku]||0;
     b.saldo=b.disp+b.madurando+b.fabricando-b.pend;
-    b.personalizado=b.forzado?false:(b.D<umbral);
-    b.ROP=Math.ceil(b.D*mad);
-    b.bajoMin=(!b.personalizado)&&b.saldo<b.ROP;
-    b.reponer=b.bajoMin?(b.ROP-b.saldo):0;
+    aplicarConsumo(b);
     // en uso: lo usa algún modelo, o aún tiene unidades/reservas vivas, o está forzado a diario
     b.enUso=!usados||usados.has(b.sku)||b.stock>0||b.fabricando>0||b.pend>0||b.forzado;
   });
@@ -718,10 +734,8 @@ async function toggleForzado(sku,val){
   try{
     const {error}=await sb.from('productos').update({forzar_diario:val}).eq('sku',sku);
     if(error)throw error;
-    const b=MET[sku];const umbral=parseFloat(CFG.umbral_semanal),mad=CFG.maduracion;
-    b.forzado=val;b.D=val?Math.max(b.Dreal,umbral):b.Dreal;
-    b.personalizado=val?false:(b.D<umbral);
-    b.ROP=Math.ceil(b.D*mad);b.bajoMin=(!b.personalizado)&&b.saldo<b.ROP;b.reponer=b.bajoMin?(b.ROP-b.saldo):0;
+    const b=MET[sku];
+    b.forzado=val; aplicarConsumo(b);
     toast(val?'★ Forzado a diario: '+sku:'Marca quitada: '+sku,'ok');
     render();
   }catch(e){toast('No se pudo guardar. ¿Ejecutaste forzar_diario.sql? '+(e.message||''),'err');}
@@ -1410,15 +1424,6 @@ const Prod = {
         else this.lineas.forEach(x=>{ if(x.sku_pf===l.sku_pf) x.consumoManual=v; });
         this.recompute(); }});
   },
-  cambiarConsumoLinea(i){
-    const l=this.lineas[i]; if(!l||!l.nucleo_modelo||l.sin_nucleo) return;
-    const m=this.modelosMap[l.sku_pf]||{};
-    abrirConsumoModal({sku_pf:l.sku_pf,titulo:l.nombre||'',nuc:l.nucleo_modelo,cur:('consumoManual' in l)?l.consumoManual:(m.nucleo_consumo||null),alcance:true,
-      onGuardar:async(v,siempre)=>{
-        if(siempre){ await guardarConsumoModelo(l.sku_pf,v); this.lineas.forEach(x=>{ if(x.sku_pf===l.sku_pf) delete x.consumoManual; }); }
-        else this.lineas.forEach(x=>{ if(x.sku_pf===l.sku_pf) x.consumoManual=v; });
-        this.recompute(); }});
-  },
   async recompute(){
     this.aplicarCortes();
     const demanda={};
@@ -1662,13 +1667,17 @@ const Prod = {
   async lanzar(){
     const items=Object.entries(this.cant).filter(([s,n])=>n>0);
     if(!items.length && !this.lineas.length){ toast('No hay nada que lanzar','err'); return; }
-    // evitar relanzar el mismo número de parte dos veces
+    // evitar relanzar el mismo número de parte dos veces: se mira en sus reservas y en sus OT no anuladas
+    // (si un lanzamiento se cortó después de crear OT, estas cuentan aunque no haya reservas)
     if(this.parteNum){
       try{
-        const {data:dup,error}=await sb.from('reservas').select('created_at').eq('parte_ref',this.parteNum).order('created_at').limit(1);
-        if(error) throw error;
-        if(dup && dup.length){
-          const f=new Date(dup[0].created_at).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
+        const [r1,r2]=await Promise.all([
+          sb.from('reservas').select('created_at').eq('parte_ref',this.parteNum).order('created_at').limit(1),
+          sb.from('ordenes').select('lanzada_at').eq('parte_ref',this.parteNum).neq('estado','anulada').order('lanzada_at').limit(1)]);
+        if(r1.error) throw r1.error; if(r2.error) throw r2.error;
+        const fechas=[...(r1.data||[]).map(x=>x.created_at),...(r2.data||[]).map(x=>x.lanzada_at)].filter(Boolean).sort();
+        if(fechas.length){
+          const f=new Date(fechas[0]).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
           toast(`⚠️ El parte ${this.parteNum} ya se lanzó el ${f}. Anúlalo en "Partes lanzados" si quieres repetirlo.`,'err');
           return;
         }
@@ -1676,6 +1685,7 @@ const Prod = {
     }
     if(!confirm(`¿Lanzar ${items.length} OT (${items.reduce((s,[,n])=>s+n,0)} uds) y generar los partes?`)) return;
     $('#btnLanzar').disabled=true; $('#btnLanzar').textContent='Lanzando…';
+    const creadas=[]; let reservasOk=false;
     try{
       const nucsDem=[...new Set(this.lineas.filter(l=>l.sku_nucleo).map(l=>l.sku_nucleo))];
       const pools=await this.construirPools(nucsDem);
@@ -1690,6 +1700,7 @@ const Prod = {
         // la reposición por mínimo o lo añadido a mano no es demanda de este parte
         const parteDeEsto=(this.parteNum && this.demandaSkus && this.demandaSkus.has(sku))?this.parteNum:null;
         let e1=(await sb.from('ordenes').insert({ot,sku,nombre,cantidad:n,lanzada_at:now,fabricada_at:null,estado:'abierta',parte_ref:parteDeEsto})).error; if(e1)throw e1;
+        creadas.push(ot);
         const uds=[]; for(let i=1;i<=n;i++) uds.push({id:`${ot}-${String(i).padStart(4,'0')}`,ot,sku,estado:'pendiente',lanzada_at:now});
         let e2=(await sb.from('unidades').insert(uds)).error; if(e2)throw e2;
         uds.forEach(u=>nuevos.push({id:u.id,sku,ot,nombre,lanzada_at:now,tipo:this.tipo[sku]||'stock',parte_ref:parteDeEsto}));
@@ -1703,6 +1714,7 @@ const Prod = {
         blk.forEach(x=>{ if(x.nucleo) res.push({parte_ref:this.parteNum||null,sku:x.nucleo,ot:x.ot||null,sku_pf:x.sku_pf,cantidad:x.cant,bloque:name}); });
       });
       if(res.length){ let e3=(await sb.from('reservas').insert(res)).error; if(e3)throw e3; }
+      reservasOk=true;
       // documento de parte + etiquetas QR
       const docParte=this.imprimirParte(nucRows,_bA,_bB,_bC,_bD);
       // copia exacta del documento para poder reimprimirlo desde Partes lanzados
@@ -1717,7 +1729,18 @@ const Prod = {
       // refrescar dashboard
       await refrescarMet(true); render();
       Partes.reload();
-    }catch(e){ toast('Error al lanzar: '+(e.message||e),'err'); }
+    }catch(e){
+      // si falló antes de guardar las reservas (p. ej. se cortó la conexión) se deshacen las OT ya creadas:
+      // antes se quedaban OT con etiquetas sin reservas y, al reintentar, se duplicaban
+      let deshecho='';
+      if(!reservasOk && creadas.length){
+        try{ for(const ot of creadas){ await borrarUnidades(await idsPendientesDeOT(ot)); chk(await sb.from('ordenes').update({estado:'anulada',cerrada_at:new Date().toISOString()}).eq('ot',ot)); }
+          deshecho=' · se han anulado las '+creadas.length+' OT que llegó a crear: puedes volver a lanzarlo'; }
+        catch(e2){ deshecho=' · ATENCIÓN: no se pudieron anular las OT '+creadas.join(', ')+' (anúlalas en Órdenes de trabajo antes de reintentar)'; }
+        await refrescarMet(true).catch(()=>{}); render();
+      }
+      toast('Error al lanzar: '+(e.message||e)+deshecho,'err');
+    }
     finally{ $('#btnLanzar').disabled=false; $('#btnLanzar').textContent='Lanzar OT · partes · reservas'; }
   },
 
@@ -1750,6 +1773,11 @@ const Prod = {
         Object.values(pools[sku][k]).forEach(g=>{ g.n=Math.max(0,g.n-(yaReservado[sku+'|'+g.ot]||0)); });
       });
     }
+    // las reservas pendientes SIN OT (sueltas al anular o cerrar una OT, o pasadas a otro núcleo) también tienen
+    // derecho a esos núcleos: ocupan lo primero que haya (disponible, madurando, fabricando) antes que el parte nuevo
+    const sinOT={}; reservasPend.forEach(r=>{ if(!r.ot) sinOT[r.sku]=(sinOT[r.sku]||0)+(Number(r.cantidad)||0); });
+    for(const sku in sinOT){ const p=pools[sku]; if(!p) continue; let n=sinOT[sku];
+      ['disp','madur','fabri'].forEach(k=>{ Object.values(p[k]).sort((a,b)=>String(a.ot).localeCompare(String(b.ot))).forEach(g=>{ const t=Math.min(n,g.n); g.n-=t; n-=t; }); }); }
     const out={};
     for(const sku in pools){ const p=pools[sku];
       out[sku]={
@@ -2004,10 +2032,10 @@ const Partes = {
   },
 
   async anularOT(ot){
-    if(!confirm(`¿Anular la OT de núcleo ${ot}? Se borrarán sus reservas y unidades pendientes, y quedará marcada como anulada.`)) return;
+    if(!confirm(`¿Anular la OT de núcleo ${ot}? Se borrarán sus unidades pendientes y quedará anulada. Las reservas que se queden sin núcleo siguen pendientes, sin OT, y las cubrirá el próximo parte (para quitar las de un modelo, usa su ✕).`)) return;
     try{
-      await anularOTPorNumero(ot);
-      toast('✓ OT '+ot+' anulada','ok');
+      const sueltas=await anularOTPorNumero(ot);
+      toast('✓ OT '+ot+' anulada'+(sueltas?' · '+sueltas+' uds reservadas quedan pendientes sin OT':''),'ok');
       await this.reload(); await refrescarMet(true); OT.reload(); render();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
@@ -2049,15 +2077,16 @@ const Partes = {
   },
 
   async anularParte(parte_ref){
-    if(!confirm(`¿Anular el parte ${parte_ref} completo? Se anularán las OT de núcleo lanzadas solo para este parte y se borrarán todas sus reservas.`)) return;
+    if(!confirm(`¿Anular el parte ${parte_ref} completo? Se borrarán todas sus reservas y se anularán las OT de núcleo lanzadas para este parte. Si otro parte tenía reservado de esas OT, sus reservas se mantienen (pendientes sin OT si ya no quedan núcleos).`)) return;
     try{
       const {data:ordenesProp,error:e0}=await sb.from('ordenes').select('ot').eq('parte_ref',parte_ref);
       if(e0)throw e0;
-      const now=new Date().toISOString();
-      for(const o of (ordenesProp||[])) await anularOTPorNumero(o.ot,now);
+      // primero sus propias reservas (así lo que ya esté fabricado en sus OT sirve a los demás partes)
       const {error:e1}=await sb.from('reservas').delete().eq('parte_ref',parte_ref);
       if(e1)throw e1;
-      toast('✓ Parte '+parte_ref+' anulado','ok');
+      const now=new Date().toISOString(); let sueltas=0;
+      for(const o of (ordenesProp||[])) sueltas+=await anularOTPorNumero(o.ot,now);
+      toast('✓ Parte '+parte_ref+' anulado'+(sueltas?' · '+sueltas+' uds de otros partes quedan pendientes sin OT':''),'ok');
       await this.reload(); await refrescarMet(true); OT.reload(); render();
     }catch(e){ toast('Error al anular el parte: '+(e.message||e)+' (¿ejecutaste el ALTER TABLE ordenes ADD COLUMN parte_ref?)','err'); }
   }
@@ -2073,22 +2102,17 @@ const OT = {
   async reload(){
     $('#otTabla').innerHTML='<div class="loading">Cargando órdenes…</div>';
     try{
-      const ords=await selectAll('ordenes','*');
-      // traer el conteo de unidades de TODAS las OT (para saber pendientes/stock reales)
-      const ots=ords.map(o=>o.ot);
-      // paginado por bloques: 200 OT pueden tener más de 1000 unidades y Supabase cortaba el resultado
-      // (las OT afectadas salían con 0 pendientes y desaparecían de "Abiertas")
-      let uds=[];
-      for(let i=0;i<ots.length;i+=200){
-        const chunk=ots.slice(i,i+200);
-        uds=uds.concat(await selectWhere('unidades','ot,estado',q=>q.in('ot',chunk)));
-      }
+      // solo las unidades vivas (pendientes y en stock), paginadas con orden estable: antes se traían las de
+      // TODAS las OT de la historia, consumidas incluidas, y la pantalla iba cada vez más lenta
+      const [ords,uds]=await Promise.all([
+        selectAll('ordenes','*'),
+        selectWhere('unidades','ot,estado',q=>q.in('estado',['pendiente','stock']))]);
       const cont={};
-      uds.forEach(u=>{const c=cont[u.ot]||(cont[u.ot]={pend:0,stock:0,cons:0});
-        if(u.estado==='pendiente')c.pend++;else if(u.estado==='stock')c.stock++;else if(u.estado==='consumida')c.cons++;});
+      uds.forEach(u=>{const c=cont[u.ot]||(cont[u.ot]={pend:0,stock:0});
+        if(u.estado==='pendiente')c.pend++;else if(u.estado==='stock')c.stock++;});
       this.rows=ords.map(o=>({ot:o.ot,sku:o.sku,nombre:o.nombre,cant:o.cantidad,
         estado:o.estado||'abierta',
-        pend:(cont[o.ot]||{}).pend||0,stock:(cont[o.ot]||{}).stock||0,cons:(cont[o.ot]||{}).cons||0,
+        pend:(cont[o.ot]||{}).pend||0,stock:(cont[o.ot]||{}).stock||0,
         prog:(String(o.sku||'').match(/^N\d{3}/)||[''])[0],
         lanzada:o.lanzada_at,cerrada:o.cerrada_at,parte_ref:o.parte_ref||null}));
       // rellenar el selector de programas
@@ -2281,6 +2305,7 @@ const OT = {
         }else if(tipo==='cerrar'){
           await borrarUnidades(await idsPendientesDeOT(o.ot));
           chk(await sb.from('ordenes').update({estado:'cerrada',cerrada_at:now}).eq('ot',o.ot));
+          await soltarReservasSobrantes(o.ot);
         }else if(tipo==='anular'){
           await anularOTPorNumero(o.ot,now);
         }
@@ -2327,7 +2352,7 @@ const Conf = {
       </div></div>`;
     const fieldsEl=$('#confFields');
     if(fieldsEl) fieldsEl.innerHTML=
-      f('cf_dias','Días de histórico (con consumo)',c.dias_historico??5,'1','')+
+      f('cf_dias','Días de histórico (laborables, sin hoy)',c.dias_historico??5,'1','')+
       f('cf_umbral','Umbral personalizado (consumo/día mínimo)',c.umbral_semanal??2,'0.1','')+
       f('cf_madur','Maduración (días)',c.maduracion??2,'1','')+
       f('cf_fab','Días de fabricación (de lanzar a fabricado)',c.dias_fabricacion??0,'1','');
@@ -2794,8 +2819,9 @@ const Inv = {
     let rs=Object.values(MET);
     if(q)rs=rs.filter(b=>b.sku.toLowerCase().includes(q)||(b.nombre||'').toLowerCase().includes(q));
     rs.sort((a,b)=>a.sku.localeCompare(b.sku));
+    const total=rs.length;
     rs=rs.slice(0,120); // no pintar 272 de golpe si no hay búsqueda
-    $('#invLista').innerHTML=rs.length?rs.map(b=>`
+    $('#invLista').innerHTML=(total>rs.length?`<div style="grid-column:1/-1;background:#F7EDDF;color:#8a5a1e;border-radius:10px;padding:9px 14px;font-size:13px">Se ven ${rs.length} de ${total} núcleos. Escribe en el buscador para encontrar el resto.</div>`:'')+(rs.length?rs.map(b=>`
       <div class="nc ${b.forzado?'forz':(b.personalizado?'':'diario')}">
         <div class="nh"><div><div class="sku">${esc(b.sku)}</div><div class="med">${esc(etiquetaNuc(b))}</div></div></div>
         <div class="nb">
@@ -2806,7 +2832,7 @@ const Inv = {
             <button class="chip" style="background:var(--green);flex:1" onclick="Inv.ajuste('${esc(b.sku)}',1)">+ Alta</button>
           </div>
         </div></div>`).join('')
-      : '<div class="vacio">Escribe para buscar un núcleo.</div>';
+      : '<div class="vacio">No hay ningún núcleo con esa búsqueda.</div>');
   },
   async ajuste(sku,signo){
     const inp=document.getElementById('inv_'+cssId(sku));
@@ -2816,14 +2842,14 @@ const Inv = {
       const disp=b?b.disp:0;
       if(n>disp){ toast('No hay tantas unidades disponibles ('+disp+')','err'); return; }
     }
-    // pedir motivo
-    const opciones=signo>0?'Motivo (alta):\n1 = Recuento / inventario\n2 = Devolución\n3 = Corrección de fabricación\n4 = Otro'
-                          :'Motivo (baja):\n1 = Rotura / defectuoso\n2 = Recuento / inventario\n3 = Corrección de fabricación\n4 = Otro';
-    const mapa=signo>0?{'1':'Recuento','2':'Devolución','3':'Corrección fabricación','4':'Otro'}
-                      :{'1':'Rotura/defectuoso','2':'Recuento','3':'Corrección fabricación','4':'Otro'};
-    const sel=prompt(`${signo>0?'ALTA':'BAJA'} de ${n} uds · ${sku}\n\n${opciones}`,'1');
-    if(sel===null)return; // canceló
-    const motivo=mapa[String(sel).trim()]||'Otro';
+    // motivo con botones (antes había que escribir 1, 2, 3 o 4 en una ventana de texto)
+    const motivos=signo>0?['Recuento','Devolución','Corrección fabricación','Otro']:['Rotura/defectuoso','Recuento','Corrección fabricación','Otro'];
+    abrirModal((signo>0?'Alta':'Baja')+' de '+n+' ud'+(n===1?'':'s'),sku);
+    $('#modalBody').innerHTML=`<div style="font-size:14px;margin-bottom:12px">¿Por qué?</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${motivos.map(m=>`<button class="chip" style="padding:13px;background:${signo>0?'var(--green)':'var(--red)'}" onclick="cerrarModal();Inv.aplicar('${jsq(sku)}',${signo},${n},'${jsq(m)}')">${esc(m)}</button>`).join('')}</div>
+      <button class="chip" style="margin-top:10px;width:100%;padding:11px;background:var(--surf2);color:var(--ink)" onclick="cerrarModal()">Cancelar</button>`;
+  },
+  async aplicar(sku,signo,n,motivo){
     if(this._busy) return; this._busy=true;
     try{
       const now=new Date().toISOString();
@@ -2978,6 +3004,14 @@ const Prodv = {
         safe(sb.from('tiempos_sku').select('*').eq('vigente',true),[]),
         safe(sb.from('usuarios').select('id,nombre,rol,puesto_id').eq('activo',true).order('nombre'),[])
       ]);
+      // para el OEE (igual que en Informes): tiempo teórico de cada programa y jornada con el turno de plantilla
+      // como mínimo cada día (fichar 7h30 de un turno de 8h cuenta 8h)
+      await Prod.cargarCostesPuesto();
+      const [plantillas,turnoIds]=await Promise.all([
+        selectAll('turnos_plantilla','*').catch(()=>[]),
+        selectAll('usuarios','id,puesto_id,activo,turno_id').catch(()=>[])]);
+      this._plSeg=jornadaPuestos(turnoIds,plantillas);
+      this._rangoMs=[new Date(ini).getTime(),new Date(fin).getTime()+1];
       const hist={}; tsku.forEach(t=>{ hist[t.sku]=Number(t.mediana_seg||t.segundos||t.mediana||0)||0; });
       const now=new Date();
       this.alerts=[];
@@ -3023,6 +3057,11 @@ const Prodv = {
 
     let turno=0, inTurno=false;
     turO.forEach(t=>{ const i=new Date(t.inicio), f=t.fin?new Date(t.fin):now; turno+=Math.max(0,(f-i)/1000); if(!t.fin)inTurno=true; });
+    // jornada para el OEE (como Informes): lo fichado con el turno de plantilla como mínimo cada día cerrado
+    const rg=this._rangoMs||[-Infinity,Infinity];
+    const jor=jornadaBase(turO,(this._plSeg||{})[o.id]||0,rg[0],rg[1],now.getTime(),null);
+    // tiempo teórico de lo hecho (el del programa de cada referencia)
+    const teo=Object.values(porSku).reduce((a,s)=>a+s.n*Prod.tiempoDefaultDe(s.sku),0);
     let paradas=0,npar=0,pausa=null; const porMotivo={};
     parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000); paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[this.bucketIdx(i)]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p;
       const mo=porMotivo[p.motivo||'Otro']=porMotivo[p.motivo||'Otro']||{motivo:p.motivo||'Otro',seg:0,n:0}; mo.seg+=_d; mo.n++; });
@@ -3049,7 +3088,7 @@ const Prodv = {
     if(!pausa && !abierta && (inTurno||turno>0) && idle!=null && idle>15*60)this.alerts.push({tipo:'Sin actividad',msg:o.nombre+' lleva '+fmtDur(idle)+' sin registrar avance',sev:'warn'});
     if(abierta && currentSecs>45*60)this.alerts.push({tipo:'Tarea larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en '+(abierta.sku||abierta.ot||'una tarea'),sev:'warn'});
 
-    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
+    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,jornada:jor.base,fichadoJ:jor.fichado,teo,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
   },
   // agrupa las filas por operario (this.rows) en filas por puesto de trabajo, sumando sus métricas
   fmtUd(s){ s=Math.round(s||0); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); },
@@ -3103,11 +3142,19 @@ const Prodv = {
     const sum=k=>rows.reduce((a,r)=>a+(r[k]||0),0);
     const uds=sum('hechas'), efectivo=sum('efectivo'), turno=sum('turno'), paradas=sum('paradas'), disp=sum('disp');
     const dispG=turno?disp/turno:0, rendG=disp?efectivo/disp:0;
-    const efs=rows.filter(r=>r.eficiencia);
-    const efG=efs.length?efs.reduce((a,r)=>a+r.eficiencia*r.hechas,0)/Math.max(1,efs.reduce((a,r)=>a+r.hechas,0)):0;
     const retrabajosG=sum('retrabajos');
     const calidadG=uds>0?Math.max(0,(uds-retrabajosG)/uds):1;
-    const oee=dispG*(efG||1)*calidadG;
+    // OEE igual que en Informes: disponibilidad = (fichado − paradas) / jornada; rendimiento = tiempo teórico de lo
+    // hecho / (fichado − paradas); calidad = unidades sin retrabajo. Antes el rendimiento era contra el histórico y,
+    // si no había histórico, contaba como 100% (salía "--" pero el OEE lo tomaba como perfecto).
+    const jornadaG=sum('jornada'), fichG=sum('fichadoJ'), teoG=sum('teo');
+    const parG=rows.reduce((a,r)=>a+Math.min(r.paradas||0,r.fichadoJ||0),0);
+    const oeeDisp=jornadaG?Math.max(0,fichG-parG)/jornadaG:0;
+    const efG=(fichG-parG)>0?teoG/(fichG-parG):0;
+    const oee=oeeDisp*efG*calidadG;
+    // velocidad frente al histórico de cada referencia (tarjeta "Vs histórico"; no entra en el OEE)
+    const efs=rows.filter(r=>r.eficiencia);
+    const efH=efs.length?efs.reduce((a,r)=>a+r.eficiencia*r.hechas,0)/Math.max(1,efs.reduce((a,r)=>a+r.hechas,0)):0;
     const ritmoG=efectivo?uds/(efectivo/3600):0;
     const hs=this.horasActivas(), H=this.hourly||[];
     const serieUds=hs.map(h=>(H[h]&&H[h].uds)||0);
@@ -3132,12 +3179,12 @@ const Prodv = {
           <text x="52" y="66" text-anchor="middle" fill="#8F8A80" font-family="Archivo Narrow, sans-serif" font-size="10" letter-spacing="1">OEE</text>
         </svg>
         <div style="display:flex;flex-direction:column;gap:9px;flex:1">
-          ${barra('Disponibilidad',Math.round(dispG*100)+'%',dispG*100,'#F0EFEB')}
+          ${barra('Disponibilidad',Math.round(oeeDisp*100)+'%',oeeDisp*100,'#F0EFEB')}
           ${barra('Rendimiento',efG?Math.round(efG*100)+'%':'--',efG*100,'#D9A78F')}
           ${barra('Calidad',Math.round(calidadG*100)+'%'+(retrabajosG?' · '+retrabajosG+' retrab.':''),calidadG*100,retrabajosG?'#C24A2E':'#4C9A5E')}
         </div>
       </div>
-      <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento (vs histórico) × calidad</div>
+      <div style="margin-top:auto;padding-top:14px;font-size:11px;color:#8F8A80">Disponibilidad × rendimiento (vs tiempo teórico) × calidad · igual que en Informes</div>
     </div>`;
     const esDia=!this.rangoInfo || this.rangoInfo.bucketBy==='hora';
     const kpis=[
@@ -3149,8 +3196,8 @@ const Prodv = {
         deltaCol:ultRitmo>=ritmoG?'var(--green)':'var(--red)',
         sub:esDia?'sobre hora efectiva · última hora '+ultRitmo.toFixed(1):'sobre el periodo completo',
         chart:this.spark(serieRitmo,160,34,'var(--blue)','#E4EDF0')}),
-      this.kpiCard({tit:'Vs histórico',val:efG?Math.round(efG*100)+'%':'--',unit:'',
-        delta:efG?(efG>=1?'+':'')+Math.round((efG-1)*100)+'%':'',deltaCol:efG>=1?'var(--green)':'var(--red)',
+      this.kpiCard({tit:'Vs histórico',val:efH?Math.round(efH*100)+'%':'--',unit:'',
+        delta:efH?(efH>=1?'+':'')+Math.round((efH-1)*100)+'%':'',deltaCol:efH>=1?'var(--green)':'var(--red)',
         sub:'tiempo histórico / real por SKU',
         chart:`<div style="display:flex;align-items:flex-end;gap:3px;height:34px">${rows.map(r=>{
           const v=r.eficiencia||0, h=Math.max(3,Math.min(34,v*24));
@@ -4007,6 +4054,7 @@ async function ajustarOT(ot,ids){
   const cambios={cantidad:Math.max(0,(Number(ord&&ord.cantidad)||0)-ids.length)};
   if(!pend){ cambios.estado=uds.length?'cerrada':'anulada'; cambios.cerrada_at=new Date().toISOString(); }
   chk(await sb.from('ordenes').update(cambios).eq('ot',ot));
+  await soltarReservasSobrantes(ot);
   return ids.length;
 }
 
@@ -4149,8 +4197,12 @@ async function open_detalle(sku,nombre){
   abrirModal(nombre||sku, sku);
   try{
     const ords=(await sb.from('ordenes').select('*').eq('sku',sku).order('ot')).data||[];
-    let uds=[]; for(let f=0;;f+=1000){ const {data}=await sb.from('unidades').select('id,ot,estado,fabricada_at,lanzada_at').eq('sku',sku).range(f,f+999); uds=uds.concat(data||[]); if(!data||data.length<1000)break; }
-    const st=uds.filter(u=>u.estado==='stock').length, pe=uds.filter(u=>u.estado==='pendiente').length, co=uds.filter(u=>u.estado==='consumida').length;
+    // solo las unidades vivas, paginadas con orden estable (antes sin orden y con todo el histórico de consumidas:
+    // con más de 1000 podía saltarse o repetir unidades); las consumidas solo se cuentan
+    const [uds,{count:nCons}]=await Promise.all([
+      selectWhere('unidades','id,ot,estado,fabricada_at,lanzada_at',q=>q.eq('sku',sku).in('estado',['stock','pendiente'])),
+      sb.from('unidades').select('id',{count:'exact',head:true}).eq('sku',sku).eq('estado','consumida')]);
+    const st=uds.filter(u=>u.estado==='stock').length, pe=uds.filter(u=>u.estado==='pendiente').length, co=nCons||0;
     const now=new Date(), mad=CFG.maduracion*86400000;
     // OT activas (con stock o pendiente)
     const udByOt={}; uds.forEach(u=>{(udByOt[u.ot]=udByOt[u.ot]||[]).push(u);});
@@ -4217,13 +4269,15 @@ async function open_detalle(sku,nombre){
     (async()=>{
       try{
         const desde=new Date(Date.now()-14*86400000).toISOString();
-        let cons=[]; for(let f=0;;f+=1000){ const {data}=await sb.from('unidades').select('consumida_at').eq('sku',sku).eq('estado','consumida').gte('consumida_at',desde).range(f,f+999); cons=cons.concat(data||[]); if(!data||data.length<1000)break; }
+        const cons=await selectWhere('unidades','id,consumida_at',q=>q.eq('sku',sku).eq('estado','consumida').gte('consumida_at',desde));
         const porDia={};
-        cons.forEach(u=>{ if(u.consumida_at){ const d=u.consumida_at.slice(0,10); porDia[d]=(porDia[d]||0)+1; } });
-        // últimos 14 días (aunque sean 0)
-        const dias=[]; for(let i=13;i>=0;i--){ const d=new Date(Date.now()-i*86400000).toISOString().slice(0,10); dias.push([d,porDia[d]||0]); }
+        cons.forEach(u=>{ if(u.consumida_at){ const d=ymdLocal(new Date(u.consumida_at)); porDia[d]=(porDia[d]||0)+1; } });
+        // últimos 14 días (aunque sean 0), en hora local
+        const dias=[]; for(let i=13;i>=0;i--){ const d=ymdLocal(new Date(Date.now()-i*86400000)); dias.push([d,porDia[d]||0]); }
         const maxV=Math.max(1,...dias.map(x=>x[1]));
-        const total=cons.length, media=Math.round(total/14*10)/10;
+        const total=dias.reduce((a,x)=>a+x[1],0);
+        // la media es la misma que usa el Dashboard (últimos días laborables)
+        const b=MET[sku], media=b?String(b.Dreal).replace('.',','):'—';
         const barras=dias.map(([d,v])=>{
           const h=Math.round(v/maxV*46);
           const dd=d.slice(8,10)+'/'+d.slice(5,7);
@@ -4235,7 +4289,7 @@ async function open_detalle(sku,nombre){
         const cbody=$('#modalBody');
         if(cbody){
           cbody.insertAdjacentHTML('beforeend',
-            `<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin:18px 0 8px">CONSUMO ÚLTIMOS 14 DÍAS · ${total} uds · media ${media}/día</div>
+            `<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin:18px 0 8px">CONSUMO ÚLTIMOS 14 DÍAS · ${total} uds · consumo/día (últimos ${CFG.dias_historico} laborables, el del Dashboard): ${media}</div>
              <div style="display:flex;align-items:flex-end;gap:2px;height:76px;padding:6px 0;border-top:1px solid var(--border)">${barras}</div>`);
         }
       }catch(e){}
@@ -4528,13 +4582,29 @@ async function guardarEditorNucleo(sku_pf){
       if(!catId){ toast('Elige o crea una categoría','err'); return; }
       patch={sku_nucleo:null, sin_nucleo:true, categoria_sin_nucleo_id:Number(catId)};
     }
+    // reservas pendientes del modelo en su núcleo anterior: pasan al nuevo (como en Alta masiva); si ahora no lleva
+    // núcleo, se borran. Antes se quedaban en el núcleo viejo con una demanda que ya no existía.
+    const antes=((Catalogo.map&&Catalogo.map[sku_pf])||Prod.modelosMap[sku_pf]||{}).sku_nucleo||null;
+    let pend=[];
+    if(antes && antes!==patch.sku_nucleo){
+      pend=await selectWhere('reservas','id,cantidad',q=>q.eq('sku_pf',sku_pf).eq('sku',antes).or('estado.eq.pendiente,estado.is.null'));
+      const uds=pend.reduce((a,r)=>a+(Number(r.cantidad)||0),0);
+      if(pend.length && !patch.sku_nucleo && !confirm(`${sku_pf} tiene ${uds} uds reservadas de ${antes}. Si ya no lleva núcleo, esas reservas se borran. ¿Seguir?`)) return;
+    }
     const {error}=await sb.from('modelos').update(patch).eq('sku_pf',sku_pf);
     if(error)throw error;
+    let msgRes='';
+    if(pend.length){
+      const ids=pend.map(r=>r.id), uds=pend.reduce((a,r)=>a+(Number(r.cantidad)||0),0);
+      if(patch.sku_nucleo){ chk(await sb.from('reservas').update({sku:patch.sku_nucleo,ot:null,bloque:'pendiente'}).in('id',ids)); msgRes=' · '+uds+' uds reservadas pasan a '+patch.sku_nucleo; }
+      else{ chk(await sb.from('reservas').delete().in('id',ids)); msgRes=' · '+uds+' uds reservadas de '+antes+' borradas'; }
+      await refrescarMet(true); render();
+    }
     const merged=Object.assign({},Prod.modelosMap[sku_pf]||{sku_pf},patch);
     Prod.modelosMap[sku_pf]=merged;
     if(Catalogo.map[sku_pf]) Object.assign(Catalogo.map[sku_pf],patch);
     cerrarModal();
-    toast('✓ Guardado','ok');
+    toast('✓ Guardado'+msgRes,'ok');
     if(_nucEditorCb) _nucEditorCb(merged);
   }catch(e){ toast('Error al guardar: '+(e.message||e),'err'); }
 }
@@ -4553,9 +4623,34 @@ async function guardarCosteMaterial(sku,costeMO){
 }
 
 // anula una OT de núcleo: borra sus reservas y unidades, marca la orden anulada
+// reservas pendientes de una OT que ya no puede servirlas todas (anulada, cerrada sin fabricar todo o con
+// etiquetas que sobran): las que no caben en sus unidades vivas (en stock o pendientes) se sueltan de la OT y
+// siguen pendientes, sin OT, para que las cubra el stock o el próximo parte. Antes se borraban todas las de la
+// OT, también las de OTROS partes que tiraban de ella, y su demanda desaparecía sin avisar.
+// Se sueltan primero las más recientes: las que llegaron antes conservan su OT.
+async function soltarReservasSobrantes(ot){
+  const [res,uds]=await Promise.all([
+    selectWhere('reservas','*',q=>q.eq('ot',ot).or('estado.eq.pendiente,estado.is.null')),
+    selectWhere('unidades','id',q=>q.eq('ot',ot).in('estado',['stock','pendiente']))]);
+  let sobra=res.reduce((a,r)=>a+(Number(r.cantidad)||0),0)-uds.length;
+  const total=Math.max(0,sobra);
+  const orden=[...res].sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||''))||(Number(b.id)||0)-(Number(a.id)||0));
+  for(const r of orden){
+    if(sobra<=0) break;
+    const c=Number(r.cantidad)||0, q=Math.min(c,sobra);
+    if(q<=0) continue;
+    if(q===c) chk(await sb.from('reservas').update({ot:null,bloque:'pendiente'}).eq('id',r.id));
+    else{
+      chk(await sb.from('reservas').update({cantidad:c-q}).eq('id',r.id));
+      const resto={...r,cantidad:q,ot:null,bloque:'pendiente'}; delete resto.id;
+      chk(await sb.from('reservas').insert(resto));
+    }
+    sobra-=q;
+  }
+  return total;
+}
 async function anularOTPorNumero(ot,now){
   now=now||new Date().toISOString();
-  chk(await sb.from('reservas').delete().eq('ot',ot));
   // respeta lo que ya esté fabricado (o consumido): solo se borran las unidades pendientes.
   // si queda algo fabricado, la OT se cierra con esa cantidad en vez de anularse del todo.
   const uds=await selectWhere('unidades','id,estado',q=>q.eq('ot',ot));
@@ -4566,6 +4661,7 @@ async function anularOTPorNumero(ot,now){
   }else{
     chk(await sb.from('ordenes').update({estado:'anulada',cerrada_at:now}).eq('ot',ot));
   }
+  return soltarReservasSobrantes(ot);
 }
 
 // ---- arranque ----
