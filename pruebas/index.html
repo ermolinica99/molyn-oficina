@@ -622,6 +622,9 @@ let PROG=null;
 // vista del Dashboard: 'medidas' (tablas de medidas por programa; al pulsar una casilla salen sus tarjetas) o 'detalle' (la de siempre)
 let DVISTA=(()=>{ try{ return localStorage.getItem('dashVista')||'medidas'; }catch(e){ return 'medidas'; } })();
 let CELDA=null;    // {prog,med} casilla elegida en la vista de medidas
+// ocultar en las tablas las medidas vacías (sin stock, sin fabricar, sin reservas y sin estar bajo mínimo)
+let OCULTAR_VACIAS=(()=>{ try{ return localStorage.getItem('dashVacias')!=='no'; }catch(e){ return true; } })();
+function setOcultarVacias(v){ OCULTAR_VACIAS=v; try{ localStorage.setItem('dashVacias',v?'si':'no'); }catch(e){} render(); }
 
 // ---- carga de datos ----
 async function cargarConfig(){
@@ -989,9 +992,16 @@ function pintarVistaDash(){
     if(bs.some(b=>b.bajoMin)) return {k:'a',s,t:'bajo mínimo'};
     return {k:'g',s,t:'libres'}; };
   const COL={g:'background:#E4EDE6;color:#2F6E3E',a:'background:#FAEBD3;color:#9A5F12',r:'background:#F7DCD5;color:#A3321C',x:'background:var(--bg);color:#9E978A;border:1px dashed #D5CFC3'};
-  const progs=Object.values(pg).sort((a,b)=>a.prog.localeCompare(b.prog));
+  const vacia=bs=>!bs||bs.every(b=>!b.stock&&!b.fabricando&&!b.pend&&!b.bajoMin);
+  const ver=bs=>bs&&!(OCULTAR_VACIAS&&vacia(bs));
+  let nOcultas=0;
+  const progs=Object.values(pg).filter(g=>!OCULTAR_VACIAS||Object.values(g.c).some(bs=>!vacia(bs))||g.sin.some(b=>!vacia([b])))
+    .sort((a,b)=>a.prog.localeCompare(b.prog));
+  if(OCULTAR_VACIAS) Object.values(pg).forEach(g=>Object.values(g.c).forEach(bs=>{ if(vacia(bs)) nOcultas++; }));
   const tabla=g=>{
-    const an=[...g.anchos].sort((a,b)=>a-b), la=[...g.largos].sort((a,b)=>a-b);
+    // filas (anchos) y columnas (largos) con alguna medida que enseñar
+    const an=[...g.anchos].filter(w=>[...g.largos].some(l=>ver(g.c[w+'x'+l]))).sort((a,b)=>a-b),
+          la=[...g.largos].filter(l=>[...g.anchos].some(w=>ver(g.c[w+'x'+l]))).sort((a,b)=>a-b);
     const rojos=Object.values(g.c).filter(bs=>bs.some(b=>b.saldo<0)).length;
     const libres=[...Object.values(g.c).flat(),...g.sin].reduce((a,b)=>a+Math.max(0,b.saldo),0);
     return `<div class="card" style="margin:0;padding:12px 14px">
@@ -1000,7 +1010,7 @@ function pintarVistaDash(){
       <table style="border-collapse:separate;border-spacing:3px;width:100%;font-size:12px">
         <tr><td></td>${la.map(l=>`<td style="color:var(--muted);text-align:center">${l}</td>`).join('')}</tr>
         ${an.map(w=>`<tr><td style="color:var(--muted);padding-right:6px;width:1%">${w}</td>${la.map(l=>{ const k=w+'x'+l, bs=g.c[k];
-          if(!bs) return '<td style="text-align:center;color:#D0CABE">·</td>';
+          if(!ver(bs)) return '<td style="text-align:center;color:#D0CABE">·</td>';
           const e=est(bs), on=CELDA&&CELDA.prog===g.prog&&CELDA.med===k;
           return `<td><div onclick="setCelda('${jsq(g.prog)}','${k}')" title="${esc(g.prog+' · '+w+'×'+l+' · '+e.t+(bs.length>1?' · '+bs.length+' núcleos':''))}" style="${COL[e.k]};border-radius:7px;text-align:center;padding:7px 0;cursor:pointer;font-family:'JetBrains Mono';font-weight:800;font-size:14px;${on?'outline:2px solid var(--ink);outline-offset:1px':''}">${e.k==='x'&&e.s===0?'✂':e.s}${bs.length>1?'<sup style="font-size:9px;font-weight:600"> '+bs.length+'</sup>':''}</div></td>`; }).join('')}</tr>`).join('')}
       </table>
@@ -1008,7 +1018,8 @@ function pintarVistaDash(){
     </div>`; };
   $('#mapa').innerHTML=`<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:2px 2px 10px">
       ${[['g','Bien'],['a','Bajo mínimo'],['r','Faltan (más reservado que stock)'],['x','Se corta del '+corteCfg().base]].map(([k,t])=>`<span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px;${COL[k]}"></i>${t}</span>`).join('')}
-      <span>· El número es el saldo libre: stock + fabricando − reservado. Pulsa una casilla para ver sus núcleos.</span></div>
+      <span>· El número es el saldo libre: stock + fabricando − reservado. Pulsa una casilla para ver sus núcleos.</span>
+      <label style="margin-left:auto;cursor:pointer;white-space:nowrap"><input type="checkbox" ${OCULTAR_VACIAS?'checked':''} onchange="setOcultarVacias(this.checked)" style="vertical-align:-2px"> Ocultar medidas vacías${OCULTAR_VACIAS&&nOcultas?' ('+nOcultas+')':''}</label></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:18px">${progs.map(tabla).join('')||'<div class="vacio">No hay núcleos.</div>'}</div>`;
   // tarjetas: las de la casilla elegida (o lo que se busque arriba)
   const q=$('#search').value.trim();
