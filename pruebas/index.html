@@ -4718,11 +4718,11 @@ const Est={
       <button class="chip" style="background:var(--ink)" onclick="Est.ver(${i})">Ver</button>
       <button class="chip" style="background:var(--terra)" onclick="Est.imprimir(${i})">Imprimir / PDF</button></div>`).join('');
   },
-  ver(i){ const e=ESTANDARES[i]; $('#estVisorTit').textContent=e.titulo; $('#estFrame').src=e.archivo; $('#estVisor').style.display='block'; $('#estVisor').scrollIntoView({behavior:'smooth'}); },
+  ver(i){ const e=ESTANDARES[i]; $('#estVisorTit').textContent=e.titulo; $('#estFrame').src=e.archivo+'?v='+Date.now(); /* ?v=: siempre la última versión (GitHub Pages deja la página 10 min en caché) */ $('#estVisor').style.display='block'; $('#estVisor').scrollIntoView({behavior:'smooth'}); },
   cerrar(){ $('#estVisor').style.display='none'; $('#estFrame').src='about:blank'; },
   // abre el estándar en otra pestaña con el diálogo de imprimir; ahí se elige la impresora o "Guardar como PDF"
   imprimir(i){
-    const w=window.open(ESTANDARES[i].archivo+'?print=1','_blank');
+    const w=window.open(ESTANDARES[i].archivo+'?print=1&v='+Date.now(),'_blank');
     if(!w) toast('El navegador bloqueó la ventana: permite las ventanas emergentes para esta web','err');
   }
 };
