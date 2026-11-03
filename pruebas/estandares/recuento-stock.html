@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Estándar · Recuento de stock</title>
+<title>Estándar · Inventario y recuento de stock</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Narrow:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
@@ -161,78 +161,176 @@ table.tb{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
   .check li,.hoja{font-size:12.5px}
 }
 </style>
+<style>
+.qr{width:46px;height:46px;flex:none;border-radius:6px;background:repeating-linear-gradient(90deg,#1B1A17 0 4px,#fff 4px 7px),#fff;background-blend-mode:multiply;outline:2px solid #1B1A17}
+.sheetrow{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid #E5E5E5;font-size:13px}
+.sheetrow .c{font-family:var(--mono);font-weight:700}
+.sheetrow .box{margin-left:auto;width:54px;height:30px;border:2px solid #1B1A17;border-radius:6px}
+.nums{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;font-size:12px;color:#6B6B6B}
+.nums b{display:block;font-family:var(--mono);font-size:20px;color:#1B1A17}
+.nums .tot{background:#EDEAE2;border-radius:8px;padding:4px}
+.cnt{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:700;font-size:14px}
+.cnt small{display:block;font-weight:400;color:#6B6B6B;font-size:12px}
+.mini{font-size:12.5px;border-radius:8px;padding:8px 10px;line-height:1.4}
+.mini.warn{background:#FCEFD9;color:#7A4B0E}.mini.inf{background:#E4EDF0;color:#2F5566}
+.cuadre{width:100%;border-collapse:collapse;font-size:11px;table-layout:auto}
+.cuadre th{background:#EDEAE2;text-align:right;padding:6px 4px;font-size:11.5px}.cuadre th:first-child{text-align:left}
+.cuadre td{padding:6px 4px;border-top:1px solid #E5E5E5;text-align:right;font-family:var(--mono)}.cuadre td:first-child{text-align:left}
+.chipb{display:inline-block;border-radius:6px;padding:3px 6px;font-weight:800;font-size:10.5px;background:#1B1A17;color:#fff;font-family:var(--body)}
+.chipb.g{background:#EDEAE2;color:#1B1A17}
+</style>
 </head><body>
 <div class="wrap">
   <header>
     <div class="brand"><i></i>MOLYN · Estándar de encargado y oficina</div>
-    <h1>Recuento de stock: <em>lo que hay = lo que dice la app</em></h1>
-    <p class="lead">Cada semana se cuenta el almacén y se cuadra con la app. El encargado cuenta y pide los ajustes desde la tablet; oficina los aprueba e imprime las etiquetas que falten.</p>
+    <h1>Inventario: <em>lo que hay = lo que dice la app</em></h1>
+    <p class="lead">El encargado cuenta en la tablet (Planta › Inventario) escaneando el QR de la hoja de recuento. Cada conteo se guarda con lo que decía la app en ese momento. Oficina y el encargado revisan juntos el cuadre y oficina aplica los ajustes e imprime las etiquetas que falten.</p>
   </header>
 
   <div class="blk">
     <h2>Cuándo</h2>
-    <ul class="check"><li><span><b>Una vez por semana</b>, el mismo día (lo fija el encargado).</span></li><li><span>Y siempre que algo no cuadre: falta un núcleo para un parte, sobran etiquetas, el Dashboard no coincide con el almacén.</span></li></ul>
+    <ul class="check">
+      <li><span><b>Recuento cíclico: lunes y jueves.</b> La tablet propone unos 5 núcleos: los que más se mueven, los que hace más que no se cuentan y los que tienen algo raro. Se cuentan en un momento.</span></li>
+      <li><span><b>Inventario completo: una vez al mes</b>, con la hoja de recuento de todo el almacén.</span></li>
+      <li><span>Y siempre que algo no cuadre: falta un núcleo para un parte, aparece uno de más o el Dashboard no coincide con el almacén.</span></li>
+    </ul>
   </div>
   <div class="blk">
     <h2>Antes de contar</h2>
-    <ul class="check"><li><span>Ningún puesto con un lote abierto (todo terminado).</span></li><li><span>La barra de arriba de las tablets en verde: nada pendiente de enviar.</span></li><li><span>Todos los núcleos que han salido, <b>consumidos</b> en la tablet.</span></li></ul>
+    <ul class="check">
+      <li><span>Ningún puesto con un lote abierto: todo lo cortado, <b>terminado</b> en la tablet.</span></li>
+      <li><span>Todo lo que ha salido del almacén, <b>consumido</b> en la tablet (estándar «Consumir núcleos»).</span></li>
+      <li><span>La barra de arriba de las tablets en <b>verde</b>: nada pendiente de enviar.</span></li>
+      <li><span>Oficina mira en <b>Recuentos</b> las pestañas <b>Etiquetas sin cerrar</b> y <b>Reservas sin consumir</b>, y arregla lo que pueda antes: son las causas más habituales de que no cuadre.</span></li>
+    </ul>
   </div>
-  <div class="case"><div class="tag">E</div><div><h2>Encargado: contar y pedir el ajuste</h2><p>Desde la tablet del encargado.</p></div></div>
-  <section class="step" style="grid-template-columns:1fr">
+
+  <div class="case"><div class="tag">O</div><div><h2>Oficina: preparar la hoja</h2><p>Solo para el inventario completo. El cíclico no necesita hoja.</p></div></div>
+  <section class="step">
     <div class="sh"><div class="num">1</div><div>
-      <h2>Cuenta por núcleo</h2>
-      <p>Cuenta lo que hay en el almacén por código de núcleo. Separa los <b>disponibles</b> y los que aún están <b>en maduración</b> (fecha «Disponible» de la etiqueta).</p>
+      <h2>Imprime la hoja de recuento</h2>
+      <p>Oficina › <b>Inventario físico</b> › <b>🖨 Hoja de recuento (PDF)</b>. Salen solo los núcleos con alguna unidad (disponibles + madurando), agrupados por programa y medida, cada uno con su <b>QR</b> y lo que dice la app. También en <b>⬇ Excel</b>.</p>
+      <div class="path"><span>Inventario físico</span><b>›</b><span class="hit">🖨 Hoja de recuento (PDF)</span></div>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="sheet">
+      <div class="t">N002 · 160 × 200</div>
+      <div class="sheetrow"><i class="qr"></i><div><div class="c">N002160X200040</div>App: 12 disp · 4 madur</div><span class="box"></span></div>
+      <div class="sheetrow"><i class="qr"></i><div><div class="c">N002150X190040</div>App: 7 disp · 0 madur</div><span class="box"></span></div>
+    </div></div>
+  </section>
+
+  <div class="case"><div class="tag">E</div><div><h2>Encargado: contar</h2><p>Tablet del encargado › pestaña Inventario.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">2</div><div>
+      <h2>Escanea el QR del núcleo</h2>
+      <p>Escanea el <b>QR de la hoja</b> con <b>Cámara</b>. También vale la <b>etiqueta</b> de cualquier núcleo, o escribir el código y pulsar <b>Ver</b>. En el cíclico, pulsa <b>Ver propuesta</b> y cuenta esos.</p>
+      <div class="path"><span>Inventario</span><b>›</b><span class="hit">📷 Cámara</span><b>o</b><span>código + Ver</span></div>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal">
+      <div class="mini inf"><b>Hoy toca contar</b> · Recuento cíclico: los que más se mueven, los que hace más que no se cuentan y los que tienen algo raro. <u>Ver propuesta</u></div>
+      <div style="display:flex;gap:8px"><div class="fld" style="flex:1">Núcleo (SKU) o etiqueta</div><span class="bigbtn ink" style="padding:10px 14px">Ver</span></div>
     </div></div>
   </section>
   <section class="step">
-    <div class="sh"><div class="num">2</div><div>
-      <h2>Compara con la app</h2>
-      <p>Pestaña <b>Stock</b>: cada núcleo con sus disponibles y en maduración. Apunta las diferencias.</p>
-    </div></div>
-    <div class="screen" aria-hidden="true"><div class="modal"><div class="fld" style="font-size:13px;line-height:1.6">040 160x200 · N002160X200040<br>Disp 12 · Madur 4</div></div></div>
-  </section>
-  <section class="step" style="grid-template-columns:1fr">
     <div class="sh"><div class="num">3</div><div>
-      <h2>Antes de ajustar, busca la causa</h2>
-      <p>Mira la tabla de abajo. Si faltan porque se usaron sin escanear, se <b>consumen</b>, no se dan de baja. Si es un lote mal cerrado, se corrige con su estándar.</p>
+      <h2>Cuenta maduros y madurando</h2>
+      <p>Arriba ves lo que dice la app <b>ahora</b>. Cuenta lo que hay de verdad y pon <b>Maduros</b> (ya disponibles) y <b>Madurando</b> (fecha «Disponible» de la etiqueta aún no cumplida) con − / +. Los que se están <b>fabricando</b> no se cuentan: aún no están en el almacén.</p>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal">
+      <h4>160 × 200 <small style="font-family:var(--mono);font-weight:400;color:#6B6B6B">N002160X200040</small></h4>
+      <div class="nums"><div>Disponibles<b>12</b></div><div>Madurando<b>4</b></div><div class="tot">En la app<b>16</b></div></div>
+      <div class="cnt"><span>Maduros<small>disponibles ya</small></span><div class="stepper"><span>−</span><b>11</b><span>+</span></div></div>
+      <div class="cnt"><span>Madurando<small>aún en maduración</small></span><div class="stepper"><span>−</span><b>4</b><span>+</span></div></div>
     </div></div>
   </section>
   <section class="step">
     <div class="sh"><div class="num">4</div><div>
-      <h2>Pide el alta o la baja</h2>
-      <p>Pestaña <b>Inventario</b>. <b>Sobran (alta)</b>: núcleo, cantidad y «Que maduren» si están recién hechos. <b>Faltan (baja)</b>: núcleo y cantidad. Escribe siempre una <b>nota</b> con el motivo y pulsa <b>Enviar a oficina</b>.</p>
+      <h2>Guarda y sigue con el siguiente</h2>
+      <p>Te dice si cuadra, si <b>sobran</b> o si <b>faltan</b> (o «Mismo total, distinta maduración»). Si cuadra: <b>✓ Cuadra · guardar y siguiente</b>. Si no: <b>Guardar en el recuento (−1)</b>. No hace falta buscar la causa ahora: se revisa con oficina. Si te equivocas, toca el núcleo en la lista y vuelve a contarlo (se sustituye); con la ✕ lo quitas.</p>
     </div></div>
-    <div class="screen" aria-hidden="true"><div class="modal"><div class="segs"><div class="on ring">Sobran (alta)</div><div>Faltan (baja)</div></div><div class="fld">N002160X200040</div><div style="display:flex;gap:10px;align-items:center"><div class="fld" style="width:70px;text-align:center">2</div><b style="font-size:13px">☐ Que maduren</b></div><div class="fld">Recuento semanal: 2 sin etiqueta</div><div class="bigbtn ink">Enviar a oficina</div></div></div>
+    <div class="screen" aria-hidden="true"><div class="modal">
+      <div class="mini warn"><b>Faltan 1 respecto a la app</b><br>Total contado 15</div>
+      <div class="bigbtn ink ring">Guardar en el recuento (−1)</div>
+      <div class="mini inf">Contados en este recuento: 23 · 21 cuadran · 2 con diferencia</div>
+    </div></div>
   </section>
   <section class="step" style="grid-template-columns:1fr">
     <div class="sh"><div class="num">5</div><div>
-      <h2>Sigue la petición</h2>
-      <p>En <b>Mis solicitudes</b> ves si oficina la ha aprobado o rechazado.</p>
+      <h2>Lo que no está en la hoja también se cuenta</h2>
+      <p>Si en el almacén hay un núcleo que no sale en la hoja (la app cree que hay 0) o uno <b>sin etiqueta</b>, escribe su código y pulsa <b>Ver</b>: cuéntalo igual. Al aplicar, oficina le dará de alta e imprimirá su etiqueta. Si al escanear avisa de que la hoja <b>no coincide</b> con la app, es que se ha fabricado o consumido desde que se imprimió: <b>cuenta lo que hay ahora</b>.</p>
     </div></div>
   </section>
-  <div class="case"><div class="tag">O</div><div><h2>Oficina: aprobar</h2><p>Llega como aviso arriba a la derecha y en Aprobaciones.</p></div></div>
   <section class="step">
     <div class="sh"><div class="num">6</div><div>
-      <h2>Aprueba o rechaza</h2>
-      <p><b>Alta:</b> al aprobar pregunta «¿Imprimir la etiqueta?»; pulsa <b>Sí, aprobar e imprimir</b> y manda las etiquetas al almacén para pegarlas. <b>Baja:</b> se quitan las unidades <b>más antiguas</b> en stock de ese núcleo. Si no cuadra con lo que esperas, <b>Rechazar</b> y habla con el encargado.</p>
+      <h2>Termina y manda a oficina</h2>
+      <p>Cuando hayas contado todo, al final de la lista: <b>Terminar recuento y mandar a oficina</b>. Apunta a mano en la hoja los núcleos con diferencia para revisarlos juntos.</p>
     </div></div>
-    <div class="screen" aria-hidden="true"><div class="modal"><div style="font-weight:800">¿Imprimir las 2 etiquetas?</div><div class="bigbtn ok ring">Sí, aprobar e imprimir</div><div class="bigbtn ink">Aprobar sin imprimir</div><div class="bigbtn ghost">Cancelar</div></div></div>
+    <div class="screen" aria-hidden="true"><div class="modal"><div class="bigbtn ink ring">Terminar recuento y mandar a oficina</div></div></div>
+  </section>
+
+  <div class="case"><div class="tag">O</div><div><h2>Oficina y encargado: revisar y aplicar</h2><p>Oficina › Recuentos. Se revisa juntos antes de aplicar.</p></div></div>
+  <section class="step">
+    <div class="sh"><div class="num">7</div><div>
+      <h2>Revisad el cuadre juntos</h2>
+      <p>Abre el recuento: cada núcleo con lo que decía la app al contar, lo contado (maduros · madurando) y la diferencia, con <b>pistas</b> si hay etiquetas sin cerrar o reservas viejas de ese núcleo. Imprime <b>🖨 Hoja rellenada (PDF)</b>, revisadla oficina y encargado y firmadla.</p>
+      <div class="path"><span>Recuentos</span><b>›</b><span>el recuento</span><b>›</b><span class="hit">🖨 Hoja rellenada (PDF)</span></div>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal">
+      <table class="cuadre"><tr><th>Núcleo</th><th>App</th><th>Contado</th><th>Dif.</th><th></th></tr>
+        <tr><td>N002160X200040</td><td>16</td><td>15</td><td style="color:#C0492B;font-weight:800">−1</td><td><span class="chipb">Aplicar</span></td></tr>
+        <tr><td>N002150X190040</td><td>7</td><td>9</td><td style="color:#2F5566;font-weight:800">+2</td><td><span class="chipb">Aplicar</span></td></tr>
+        <tr><td>N00290X190040</td><td>5</td><td>5</td><td>✓</td><td><span class="chipb g">OK</span></td></tr></table>
+    </div></div>
   </section>
   <section class="step" style="grid-template-columns:1fr">
-    <div class="sh"><div class="num">7</div><div>
-      <h2>Comprueba</h2>
-      <p>Después de aprobar, el stock del núcleo en el Dashboard y en la pestaña Stock tiene que coincidir con lo contado.</p>
+    <div class="sh"><div class="num">8</div><div>
+      <h2>Primero, la causa</h2>
+      <p>Si una diferencia se explica por una pista, se arregla en su pestaña y la línea se <b>descarta</b> (✕):</p>
+      <ul class="check" style="margin-top:8px">
+        <li><span><b>Etiquetas sin cerrar</b> (OT lanzadas hace días sin terminar): <b>Ya están fabricados</b> si se cortaron y no se terminaron en la tablet; <b>No se hicieron</b> si no se llegaron a cortar (se rompen sus etiquetas).</span></li>
+        <li><span><b>Reservas sin consumir</b> (núcleos de un parte que nadie consumió): <b>Se gastó</b> si el núcleo se usó sin escanear; <b>Ya no hace falta</b> si el colchón se anuló.</span></li>
+      </ul>
     </div></div>
   </section>
+  <section class="step">
+    <div class="sh"><div class="num">9</div><div>
+      <h2>Aplica los ajustes</h2>
+      <p><b>Aplicar</b> en cada línea, o <b>Aplicar ajustes (N con diferencia)</b> para todas. Se suma o resta la diferencia que había <b>al contar</b>: lo fabricado o consumido después se respeta.</p>
+      <ul class="check" style="margin-top:8px">
+        <li><span><b>Sobran:</b> se dan de alta (OT de inventario) y pregunta <b>¿Imprimir ahora sus etiquetas?</b> Sí: se mandan al almacén y se pegan en los núcleos que sobraban.</span></li>
+        <li><span><b>Faltan:</b> se dan de baja las unidades más antiguas de ese núcleo.</span></li>
+        <li><span><b>Mismo total, distinta maduración:</b> se pasan unidades de madurando a maduros o al revés.</span></li>
+      </ul>
+    </div></div>
+    <div class="screen" aria-hidden="true"><div class="modal">
+      <div style="font-weight:800">Se han dado de alta 2 unidades nuevas: N002150X190040: 2. ¿Imprimir ahora sus etiquetas?</div>
+      <div class="bigbtn ok ring">Aceptar</div><div class="bigbtn ghost">Cancelar</div>
+    </div></div>
+  </section>
+  <section class="step" style="grid-template-columns:1fr">
+    <div class="sh"><div class="num">10</div><div>
+      <h2>Comprueba</h2>
+      <p>Con todas las líneas aplicadas o descartadas, el recuento queda <b>Aplicado</b>. El stock del núcleo en el Dashboard y en la pestaña Stock de la tablet tiene que coincidir con lo contado. Si algo no cuadra con lo que esperáis, <b>no apliques</b>: volved a contar ese núcleo. Un recuento mal empezado se puede <b>Anular</b> (no cambia el stock).</p>
+    </div></div>
+  </section>
+
   <div class="blk">
     <h2>Por qué no cuadra y qué hacer</h2>
-    <div class="tw"><table class="tb"><tr><th>Causa</th><th>Qué hacer</th></tr><tr><td>Núcleos usados sin escanear</td><td>Consumirlos en la tablet (estándar Consumir núcleos). No es una baja.</td></tr><tr><td>Lote cerrado con más o menos de los que salieron</td><td>Estándar «Las etiquetas no cuadran con el corte».</td></tr><tr><td>Núcleos sin etiqueta</td><td>Alta con «Que maduren» si son recientes; oficina imprime su etiqueta.</td></tr><tr><td>Rotos o defectuosos</td><td>Baja con nota «rotura».</td></tr><tr><td>Núcleo en otro sitio o mal colocado</td><td>Buscarlo antes de pedir una baja.</td></tr><tr><td>Diferencia que se repite cada semana</td><td>Abrir un 3C para encontrar la causa.</td></tr></table></div>
+    <div class="tw"><table class="tb"><tr><th>Causa</th><th>Qué hacer</th></tr>
+      <tr><td>Núcleos usados sin escanear</td><td>Recuentos › Reservas sin consumir › <b>Se gastó</b>, o consumirlos en la tablet. Descartar la línea del recuento.</td></tr>
+      <tr><td>Etiquetas de una OT que no se terminaron en la tablet</td><td>Recuentos › Etiquetas sin cerrar › <b>Ya están fabricados</b> o <b>No se hicieron</b>. Descartar la línea.</td></tr>
+      <tr><td>Lote cerrado con más o menos de los que salieron</td><td>Estándar «Las etiquetas no cuadran con el corte».</td></tr>
+      <tr><td>Núcleos sin etiqueta</td><td>Contarlos en el recuento (código a mano). Al aplicar se dan de alta y se imprime su etiqueta.</td></tr>
+      <tr><td>Rotos o defectuosos</td><td>No contarlos. Al aplicar se dan de baja. Anótalo en la hoja.</td></tr>
+      <tr><td>Núcleo en otro sitio o mal colocado</td><td>Buscarlo antes de aplicar una baja.</td></tr>
+      <tr><td>Diferencia que se repite en cada recuento</td><td>Abrir un 3C para encontrar la causa.</td></tr>
+    </table></div>
   </div>
   <div class="blk">
-    <h2>Oficina también puede ajustar directamente</h2>
-    <p>Oficina › <b>Inventario físico</b> › <b>+ Alta</b> / <b>− Baja</b> con su motivo (recuento, devolución, corrección de fabricación, rotura…). Queda registrado y no pasa por Aprobaciones. Una baja <b>no se puede deshacer</b>: si luego aparece el núcleo, hay que darlo de alta otra vez.</p>
+    <h2>Fuera del recuento</h2>
+    <p>Un núcleo de más en un corte se pide desde el puesto (Avisar a oficina › <b>Salió de más</b>) y oficina lo aprueba en Aprobaciones. Oficina también puede ajustar a mano en <b>Inventario físico</b> › <b>+ Alta</b> / <b>− Baja</b> con su motivo, pero lo normal es hacerlo con el recuento: queda registrado qué se contó, quién y cuándo. Una baja <b>no se puede deshacer</b>: si luego aparece el núcleo, se cuenta en el siguiente recuento.</p>
   </div>
-  <footer>Ningún ajuste sin nota: el motivo es lo que permite encontrar la causa.</footer>
+  <footer>Se cuenta lo que hay, se revisa juntos y se aplica: nunca un ajuste sin recuento.</footer>
 </div>
 <script>
 // ?print=1 → abre el diálogo de imprimir (desde ahí se puede "Guardar como PDF")
