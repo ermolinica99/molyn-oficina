@@ -721,7 +721,8 @@ const LOGO_B64="iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AACROElEQVR4nOzdd3wc
 <script>
 const SUPABASE_URL = ES_PRUEBAS ? "https://iqxstbjqjycsmlpdpwza.supabase.co" : "https://kmfdywyeesybqqfmfxys.supabase.co";
 const SUPABASE_KEY = ES_PRUEBAS ? "sb_publishable_2iYIXB64r_-To-qIP98npw_7m8cD5yO" : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttZmR5d3llZXN5YnFxZm1meHlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNTA0MDMsImV4cCI6MjA5OTgyNjQwM30.dDrPPvqxqWBqFTA5FNC3YLAVK53nm8V2tn5JKHN9ve4";
-const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+// la sesión es una cuenta real de Supabase (email + contraseña); como antes, dura lo que dure la pestaña
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{storage:window.sessionStorage}});
 const $=s=>document.querySelector(s);
 // dura según el texto (los errores y los mensajes largos, p. ej. "Rompe las etiquetas…", más) y un aviso
 // anterior ya no oculta al siguiente antes de tiempo
@@ -3029,6 +3030,10 @@ const Usr = {
       this.ofi=[];
       if(Auth.esAdmin()){
         try{ const {data:o}=await sb.from('usuarios_oficina').select('*').order('created_at'); this.ofi=o||[]; }catch(e){}
+        // tablets de planta que han pedido acceso (o ya lo tienen)
+        this.disp=[]; this.dispErr='';
+        try{ const {data:d,error:ed}=await sb.from('dispositivos').select('*').order('creado_at'); if(ed) throw ed; this.disp=d||[]; }
+        catch(e){ this.dispErr=/dispositivos/.test(e.message||'')?'Falta aplicar 03_seguridad.sql en la base de datos':(e.message||String(e)); }
       }
       this.paint();
     }catch(e){ $('#usrLista').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+' (¿ejecutaste configuracion_turnos_puestos.sql?)</div>'; }
@@ -3042,7 +3047,8 @@ const Usr = {
       return `<div class="card" style="margin-bottom:8px;border-left:4px solid ${admin?'var(--pur)':'var(--terra)'}">
         <div style="display:flex;align-items:center;gap:12px;padding:12px 16px">
           <div style="flex:1"><div style="font-weight:700">${esc(u.nombre||u.email)} ${admin?'<span style="font-size:10px;color:var(--pur);font-weight:700">· ADMIN</span>':''}</div>
-            <div style="font-size:12px;color:var(--muted)">${esc(u.email)} · ${esc(u.estado)}</div></div>
+            <div style="font-size:12px;color:var(--muted)">${esc(u.email)} · ${esc(u.estado)}${!u.auth_id&&u.estado==='aprobado'?' · aún no ha entrado con el acceso nuevo':''}</div></div>
+          ${u.auth_pendiente?`<button class="chip" style="background:var(--terra)" title="Ha entrado con una contraseña distinta a la que tenía" onclick="Usr.vincularOfi(${u.id})">Confirmar acceso nuevo</button>`:''}
           ${u.estado==='pendiente'?`<button class="chip" style="background:var(--green)" onclick="Usr.aprobarOfi(${u.id},'aprobado')">Aprobar</button>
             <button class="chip" style="background:var(--red)" onclick="Usr.aprobarOfi(${u.id},'rechazado')">Rechazar</button>`
             :`${!admin?`<button class="chip" style="background:var(--pur)" onclick="Usr.hacerAdmin(${u.id})">Hacer admin</button>`:''}
@@ -3055,7 +3061,49 @@ const Usr = {
       ${pend.length?`<div style="font-size:11px;font-weight:700;color:var(--red);letter-spacing:.5px;margin-bottom:6px">⏳ PENDIENTES DE APROBAR (${pend.length})</div>`+pend.map(oc).join(''):''}
       <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin:12px 0 6px">CON ACCESO (${activos.length})</div>
       ${activos.map(oc).join('')}
+    </div><div style="height:1px;background:var(--border);margin-bottom:24px"></div>`+this.paintTablets();
+  },
+  // TABLETS DE PLANTA: cada tablet pide acceso la primera vez que abre la app y no puede leer ni
+  // guardar nada hasta que un administrador la autoriza aquí
+  paintTablets(){
+    const f=ts=>ts?new Date(ts).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+    const fila=d=>{
+      const ok=d.estado==='aprobado', pend=d.estado==='pendiente';
+      return `<div class="card" style="margin-bottom:8px;border-left:4px solid ${ok?'var(--green)':pend?'var(--red)':'var(--border)'}">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px"><div style="font-weight:700">${esc(d.nombre)}</div>
+            <div style="font-size:12px;color:var(--muted)">${ok?'Autorizada':pend?'Pide acceso':'Sin acceso'} · pedido el ${f(d.creado_at)} · última vez vista: ${f(d.visto_at)}</div></div>
+          ${ok?`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.dispEstado(${d.id},'rechazado')">Quitar acceso</button>`
+              :`<button class="chip" style="background:var(--green)" onclick="Usr.dispEstado(${d.id},'aprobado')">Autorizar</button>
+                <button class="chip" style="background:var(--red)" onclick="Usr.dispBorrar(${d.id})">Borrar</button>`}
+        </div></div>`;
+    };
+    const d=this.disp||[], orden={pendiente:0,aprobado:1,rechazado:2};
+    return `<div style="margin-bottom:24px">
+      <div style="font-size:16px;font-weight:800;margin-bottom:4px">Tablets de planta</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Una tablet solo puede usar la app de Planta si está autorizada aquí. Autoriza solo las que reconozcas por el nombre.</div>
+      ${this.dispErr?`<div class="vacio">${esc(this.dispErr)}</div>`:d.length?[...d].sort((a,b)=>(orden[a.estado]??3)-(orden[b.estado]??3)).map(fila).join(''):'<div class="vacio">Ninguna tablet ha pedido acceso todavía.</div>'}
     </div><div style="height:1px;background:var(--border);margin-bottom:24px"></div>`;
+  },
+  async dispEstado(id,estado){
+    if(estado==='rechazado' && !confirm('¿Quitar el acceso a esta tablet? Dejará de poder guardar nada hasta que la autorices otra vez.')) return;
+    try{
+      const {data,error}=await sb.from('dispositivos').update({estado,aprobado_at:estado==='aprobado'?new Date().toISOString():null}).eq('id',id).select('id');
+      if(error) throw error;
+      if(!data||!data.length) throw new Error('la base de datos no ha dejado cambiarlo (¿eres administrador?)');
+      toast(estado==='aprobado'?'✓ Tablet autorizada':'Acceso retirado',estado==='aprobado'?'ok':''); Avisos.check();
+      if($('#view-cUsr') && $('#view-cUsr').style.display!=='none') this.reload();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async dispBorrar(id){
+    if(!confirm('¿Borrar esta tablet de la lista?')) return;
+    try{ chk(await sb.from('dispositivos').delete().eq('id',id)); Avisos.check(); this.reload(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); }
+  },
+  async vincularOfi(id){
+    if(!confirm('Esta persona ha entrado con una contraseña distinta a la que tenía.\n\n¿Confirmas que es ella y que su acceso nuevo es válido?')) return;
+    try{ chk(await sb.rpc('oficina_vincular',{p_id:id})); toast('✓ Acceso confirmado','ok'); this.reload(); }
+    catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async aprobarOfi(id,estado){
     try{ chk(await sb.from('usuarios_oficina').update({estado,activo:estado==='aprobado'}).eq('id',id));
@@ -4481,64 +4529,96 @@ const Tsku = {
 //  AUTENTICACIÓN (login de oficina)
 // ============================================================
 async function hashPass(pass){
-  // SHA-256 con una sal fija de la app (razonable para acceso interno)
+  // Solo para las cuentas de ANTES del cambio de seguridad: la primera vez que entran se comprueba su
+  // contraseña antigua (SHA-256 con sal fija) para pasarlas a una cuenta real de Supabase. Las contraseñas
+  // ya no se guardan ni se comprueban en la web.
   const data=new TextEncoder().encode('molyn-sal-2026::'+pass);
   const buf=await crypto.subtle.digest('SHA-256',data);
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
+// ACCESO: el email y la contraseña los comprueba Supabase (Auth), no el navegador. La fila de
+// usuarios_oficina solo dice el rol y si la cuenta está aprobada, y la base de datos no deja leer ni
+// escribir nada sin una sesión aprobada (pruebas/sql/03_seguridad.sql).
 const Auth = {
   user:null,
   async init(){
     $('#loginLogo').src='data:image/png;base64,'+LOGO_VF_GRIS;
-    // enlace para solicitar acceso
     $('#loginFoot').innerHTML='¿No tienes cuenta? <a href="#" onclick="event.preventDefault();Auth.modoRegistro()" style="color:#B85C38;font-weight:600">Solicitar acceso</a>';
     $('#loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') this.login(); });
     // sesión de esta pestaña: al recargar (F5) no vuelve a pedir la contraseña, pero se comprueba
     // en la base de datos que la cuenta sigue aprobada y activa
     try{
-      const s=JSON.parse(sessionStorage.getItem('molyn_oficina_user')||'null');
-      if(s && s.email){
-        const {data}=await sb.from('usuarios_oficina').select('*').eq('email',s.email).single();
-        if(data && data.id===s.id && data.pass_hash===s.h && data.activo && data.estado==='aprobado'){ this.entrar(data); return; }
+      const {data}=await sb.auth.getSession();
+      if(data && data.session){
+        const {data:p,error}=await sb.rpc('oficina_perfil');
+        if(!error && p && p.activo!==false && p.estado==='aprobado'){ this.entrar(p); return; }
+        if(!error) await sb.auth.signOut();
       }
     }catch(e){}
     this.mostrar();
   },
   mostrar(){ $('#loginScreen').style.display='flex'; $('#appMain').style.display='none'; $('#loginEmail').focus(); },
-  guardar(u){ return u; },
   esAdmin(){ return this.user && this.user.rol==='administrador'; },
+  err(m){ $('#loginErr').textContent=m; $('#loginBtn').disabled=false; },
+  // pantalla de aviso (solicitud enviada, falta confirmar…) con un botón para volver al acceso
+  aviso(tit,txt){
+    this._registro=false;
+    $('#loginNombre').style.display='none'; $('#loginErr').textContent='';
+    $('#loginTit').textContent=tit; $('#loginSub').textContent=txt;
+    $('#loginBtn').textContent='Volver'; $('#loginBtn').onclick=()=>location.reload();
+    $('#loginBtn').disabled=false; $('#loginFoot').innerHTML='';
+  },
+  async crearCuenta(email,pass){
+    const r=await sb.auth.signUp({email,password:pass,options:{emailRedirectTo:location.origin+location.pathname}});
+    if(r.error){
+      if(/already registered|already been registered/i.test(r.error.message||'')) throw new Error('Ese email ya está registrado');
+      if(/at least|weak|should be/i.test(r.error.message||'')) throw new Error('La contraseña es demasiado corta o débil para el acceso nuevo ('+r.error.message+')');
+      throw r.error;
+    }
+    return !!(r.data && r.data.session); // false: Supabase pide confirmar el email antes de entrar
+  },
   async login(){
     const email=$('#loginEmail').value.trim().toLowerCase();
     const pass=$('#loginPass').value;
     $('#loginErr').textContent='';
     if(!email||!pass){ $('#loginErr').textContent='Rellena email y contraseña'; return; }
     $('#loginBtn').disabled=true;
+    const registro=!!this._registro;
+    const CONFIRMA='Te hemos enviado un email para confirmar la cuenta. Ábrelo y después vuelve aquí y entra con tu email y contraseña.';
     try{
       const h=await hashPass(pass);
-      if(this._registro){
+      if(registro){
         // REGISTRO de nuevo usuario → queda PENDIENTE de aprobación
-        const nombre=$('#loginNombre').value.trim()||email;
-        if(pass.length<8){ $('#loginErr').textContent='La contraseña debe tener al menos 8 caracteres'; $('#loginBtn').disabled=false; return; }
-        const ya=await sb.from('usuarios_oficina').select('email').eq('email',email).single();
-        if(ya.data){ $('#loginErr').textContent='Ese email ya está registrado'; $('#loginBtn').disabled=false; return; }
-        const {error}=await sb.from('usuarios_oficina').insert({email,nombre,pass_hash:h,rol:'oficina',estado:'pendiente',activo:true});
-        if(error)throw error;
-        this._registro=false;
-        $('#loginNombre').style.display='none';
-        $('#loginTit').textContent='Solicitud enviada';
-        $('#loginSub').textContent='Tu cuenta está pendiente de que un administrador la apruebe. Vuelve a intentar entrar cuando te avisen.';
-        $('#loginBtn').textContent='Volver'; $('#loginBtn').onclick=()=>location.reload();
-        $('#loginBtn').disabled=false; $('#loginFoot').innerHTML='';
-        return;
+        if(pass.length<8) return this.err('La contraseña debe tener al menos 8 caracteres');
+        if(!await this.crearCuenta(email,pass)) return this.aviso('Revisa tu correo',CONFIRMA);
+      }else{
+        const r=await sb.auth.signInWithPassword({email,password:pass});
+        if(r.error){
+          const m=r.error.message||'';
+          if(/not confirmed/i.test(m)) return this.err('Falta confirmar tu email: abre el correo que te enviamos y vuelve a entrar');
+          if(!/invalid login credentials/i.test(m)) throw r.error;
+          // ¿cuenta de antes del cambio de seguridad? Si el email y la contraseña son los de antes,
+          // se le crea aquí mismo su cuenta nueva con esa misma contraseña
+          const mig=await sb.rpc('oficina_migrable',{p_email:email,p_hash:h});
+          if(mig.error) throw new Error(/oficina_migrable|schema cache|function/i.test(mig.error.message||'')?'Falta aplicar 03_seguridad.sql en la base de datos':mig.error.message);
+          if(mig.data!==true) return this.err('Email o contraseña incorrectos');
+          if(!await this.crearCuenta(email,pass)) return this.aviso('Revisa tu correo',CONFIRMA);
+        }
       }
-      const {data,error}=await sb.from('usuarios_oficina').select('*').eq('email',email).single();
-      if(error||!data){ $('#loginErr').textContent='Email no encontrado'; $('#loginBtn').disabled=false; return; }
-      if(data.pass_hash!==h){ $('#loginErr').textContent='Contraseña incorrecta'; $('#loginBtn').disabled=false; return; }
-      if(!data.activo || data.estado==='rechazado'){ $('#loginErr').textContent='Tu cuenta está desactivada'; $('#loginBtn').disabled=false; return; }
-      if(data.estado==='pendiente'){ $('#loginErr').textContent='Tu cuenta aún está pendiente de aprobación por un administrador'; $('#loginBtn').disabled=false; return; }
-      this.entrar(data);
-    }catch(e){ $('#loginErr').textContent='Error: '+(e.message||e); $('#loginBtn').disabled=false; }
+      const nombre=registro?($('#loginNombre').value.trim()||email):null;
+      const {data:p,error}=await sb.rpc('oficina_entrar',{p_nombre:nombre,p_hash:h});
+      if(error) throw error;
+      if(!p) throw new Error('No se pudo cargar tu cuenta');
+      if(p.vincular){ await sb.auth.signOut(); return this.aviso('Falta confirmar tu acceso','Este email ya tenía cuenta en MOLYN con otra contraseña. Un administrador tiene que confirmar tu acceso nuevo en Configuración → Usuarios y costes.'); }
+      if(p.activo===false || p.estado==='rechazado'){ await sb.auth.signOut(); return this.err('Tu cuenta está desactivada'); }
+      if(p.estado!=='aprobado'){
+        await sb.auth.signOut();
+        if(registro) return this.aviso('Solicitud enviada','Tu cuenta está pendiente de que un administrador la apruebe. Vuelve a intentar entrar cuando te avisen.');
+        return this.err('Tu cuenta aún está pendiente de aprobación por un administrador');
+      }
+      this.entrar(p);
+    }catch(e){ this.err('Error: '+(e.message||e)); }
   },
   modoRegistro(){
     this._registro=true;
@@ -4558,7 +4638,6 @@ const Auth = {
   },
   entrar(u){
     this.user=u;
-    try{ sessionStorage.setItem('molyn_oficina_user',JSON.stringify({id:u.id,email:u.email,h:u.pass_hash})); }catch(e){}
     $('#loginScreen').style.display='none';
     $('#appMain').style.display='flex';
     // mostrar nombre y rol en la barra superior
@@ -4571,7 +4650,11 @@ const Auth = {
     });
     boot(); // arranca la app
   },
-  logout(){ localStorage.removeItem('molyn_oficina_user'); sessionStorage.removeItem('molyn_oficina_user'); location.reload(); }
+  async logout(){
+    try{ await sb.auth.signOut(); }catch(e){}
+    try{ localStorage.removeItem('molyn_oficina_user'); sessionStorage.removeItem('molyn_oficina_user'); }catch(e){}
+    location.reload();
+  }
 };
 
 // ============================================================
@@ -4742,19 +4825,22 @@ const Avisos = {
       const {data,error}=await sb.from('ajustes_inventario').select('*').eq('estado','pendiente').order('created_at',{ascending:false}).limit(20);
       if(error) return;
       this.rows=data||[];
+      this.tablets=[];
+      if(Auth.esAdmin()){ try{ const {data:tb}=await sb.from('dispositivos').select('id,nombre,creado_at').eq('estado','pendiente').order('creado_at'); this.tablets=tb||[]; }catch(e){} }
       if(!this.users){ this.users={}; try{ const {data:us}=await sb.from('usuarios').select('id,nombre'); (us||[]).forEach(u=>this.users[u.id]=u.nombre); }catch(e){} }
       if(!this.puestos){ this.puestos={}; try{ const {data:ps}=await sb.from('puestos_trabajo').select('id,nombre'); (ps||[]).forEach(p=>this.puestos[p.id]=p.nombre); }catch(e){} }
       const nb=$('#navApr'); let bd=$('#aprBadge');
       if(nb && !bd){ bd=document.createElement('span'); bd.id='aprBadge'; bd.style.cssText='margin-left:auto;background:var(--red);color:#fff;border-radius:20px;font-size:11px;font-weight:800;padding:2px 8px;line-height:1.4'; nb.appendChild(bd); }
       if(bd){ bd.textContent=this.rows.length; bd.style.display=this.rows.length?'':'none'; }
-      if(this.rows.some(r=>!this.vistos.has(r.id))) this.cerrado=false;
+      if(this.rows.some(r=>!this.vistos.has(r.id)) || this.tablets.some(t=>!this.vistos.has('t'+t.id))) this.cerrado=false;
       this.pintar();
     }catch(e){}
   },
-  cerrar(){ this.rows.forEach(r=>this.vistos.add(r.id)); this.cerrado=true; this.pintar(); },
+  cerrar(){ this.rows.forEach(r=>this.vistos.add(r.id)); (this.tablets||[]).forEach(t=>this.vistos.add('t'+t.id)); this.cerrado=true; this.pintar(); },
   pintar(){
     let el=$('#avisosPanel');
-    if(!this.rows.length || this.cerrado){ if(el) el.remove(); return; }
+    const tablets=this.tablets||[];
+    if((!this.rows.length && !tablets.length) || this.cerrado){ if(el) el.remove(); return; }
     if(!el){ el=document.createElement('div'); el.id='avisosPanel';
       el.style.cssText='position:fixed;right:20px;top:16px;z-index:1400;background:#fff;border:2px solid var(--terra);border-radius:14px;padding:12px 14px;box-shadow:0 12px 40px rgba(0,0,0,.22);width:360px;max-width:calc(100vw - 40px);font-size:13px';
       document.body.appendChild(el); }
@@ -4777,8 +4863,12 @@ const Avisos = {
         <div style="font-size:11px;color:var(--muted);margin:2px 0 7px">${quien}${r.created_at?' · '+new Date(r.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}${r.nota?' · “'+esc(r.nota)+'”':''}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${acc}</div></div>`;
     };
-    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px;color:var(--terra)">Peticiones de planta (${this.rows.length})</b>
+    const filaT=t=>`<div style="padding:9px 0;border-top:1px solid var(--border)"><div>La tablet <b>${esc(t.nombre)}</b> pide acceso a Planta</div>
+        <div style="font-size:11px;color:var(--muted);margin:2px 0 7px">${t.creado_at?new Date(t.creado_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''} · autorízala solo si la reconoces</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${btn('Autorizar','var(--green)',`Usr.dispEstado(${t.id},'aprobado')`)}${btn('Ver tablets','var(--ink)',`nav('cUsr')`)}</div></div>`;
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px;color:var(--terra)">Peticiones de planta (${this.rows.length+tablets.length})</b>
         <button onclick="Avisos.cerrar()" title="Ocultar hasta la próxima petición" style="margin-left:auto;border:none;background:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div>
+      ${tablets.map(filaT).join('')}
       ${this.rows.slice(0,3).map(fila).join('')}
       ${admin?`<div style="border-top:1px solid var(--border);padding-top:8px;text-align:right"><a href="#" onclick="event.preventDefault();nav('apr')" style="color:var(--terra);font-weight:700">Ver todas en Aprobaciones</a></div>`:''}`;
   }
