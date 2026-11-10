@@ -4331,14 +4331,16 @@ const Inf = {
       return `<span style="color:${x>0?'var(--green)':'var(--red)'};font-size:11px;font-weight:700">${x>0?'▲':'▼'} ${Math.abs(x).toFixed(0)}%</span>`; };
     const kpi=(v,t,x)=>`<div class="card" style="padding:14px 16px;margin:0"><div style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:800">${v}</div><div style="font-size:12px;color:var(--muted)">${t} ${x||''}</div></div>`;
     const card=(t,s,body)=>`<div class="card" style="margin-top:12px"><div class="ch"><div><div class="t">${t}</div>${s?`<div class="s">${s}</div>`:''}</div></div>${body}</div>`;
-    const cerr=pas.filter(x=>!x.enCurso), medF=cerr.length?cerr.reduce((t,x)=>t+x.fab,0)/cerr.length:0, medC=cerr.length?cerr.reduce((t,x)=>t+x.con,0)/cerr.length:0;
+    // media al mes: solo los meses terminados CON actividad (si la app se empezó a usar a mitad de año, los
+    // meses anteriores están a cero y hundían la media)
+    const cerr=pas.filter(x=>!x.enCurso&&(x.fab>0||x.con>0)), medF=cerr.length?cerr.reduce((t,x)=>t+x.fab,0)/cerr.length:0, medC=cerr.length?cerr.reduce((t,x)=>t+x.con,0)/cerr.length:0;
     const mejor=pas.length?pas.reduce((m,x)=>x.fab>m.fab?x:m):null;
     let h=`<div class="infk">
       ${kpi(n0(tF),'Fabricados en '+A.y,delta(tF,tFP))}
       ${kpi(n0(tC),'Consumidos en '+A.y,delta(tC,tCP))}
       ${kpi((tF-tC>0?'+':'')+n0(tF-tC),'Fabricados − consumidos')}
-      ${kpi(cerr.length?n0(medF)+' / '+n0(medC):'—','Media al mes · fabricados / consumidos')}
-    </div><div style="font-size:11px;color:var(--muted);margin:6px 2px">Las flechas comparan con los mismos meses de ${A.y-1}. Fabricados: unidades terminadas en planta. Consumidos: núcleos consumidos por el encargado. La media al mes no cuenta el mes en curso.${mejor&&mejor.fab?' Mes con más fabricados: '+nom(mejor.d)+' ('+n0(mejor.fab)+').':''}</div>`;
+      ${kpi(cerr.length?n0(medF)+' / '+n0(medC):'—','Media al mes · fabricados / consumidos'+(cerr.length?' <span style="white-space:nowrap">('+cerr.length+(cerr.length===1?' mes':' meses')+')</span>':''))}
+    </div><div style="font-size:11px;color:var(--muted);margin:6px 2px">Las flechas comparan con los mismos meses de ${A.y-1}. Fabricados: unidades terminadas en planta. Consumidos: núcleos consumidos por el encargado. La media al mes solo cuenta los meses terminados con actividad (ni el mes en curso ni los que están a cero).${mejor&&mejor.fab?' Mes con más fabricados: '+nom(mejor.d)+' ('+n0(mejor.fab)+').':''}</div>`;
     const barras=(campo,prev,color)=>{ const mx=Math.max(1,...M.map(x=>Math.max(x[campo],x[prev])));
       return `<div style="display:flex;align-items:flex-end;gap:10px;height:170px;padding:12px 14px 4px">
         ${M.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${nom(x.d)} ${A.y}: ${x[campo]} · ${A.y-1}: ${x[prev]}">
