@@ -640,7 +640,7 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
 
     <div class="content" id="view-inf" style="display:none">
       <div class="h1">Informes</div>
-      <div class="h1sub">Productividad por programa o por puesto, tiempos por referencia y los puestos más productivos, por semana o por mes.</div>
+      <div class="h1sub">Productividad por programa o por puesto, tiempos por referencia y los puestos más productivos, por semana o por mes. En «Año», fabricados y consumidos mes a mes.</div>
       <div id="infCab" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0"></div>
       <div id="infBody"></div>
     </div>
@@ -4239,6 +4239,7 @@ const Inf = {
   tipo:'semana', off:0, por:'programa', d:null, loading:false,
   rango(){
     const h=new Date(); h.setHours(0,0,0,0);
+    if(this.tipo==='anio'){ const y=h.getFullYear()+this.off; return {ini:new Date(y,0,1),fin:new Date(y+1,0,1),pini:new Date(y-1,0,1)}; }
     if(this.tipo==='semana'){
       const ini=new Date(h); ini.setDate(h.getDate()-((h.getDay()+6)%7)+7*this.off);
       const fin=new Date(ini); fin.setDate(ini.getDate()+7); const pini=new Date(ini); pini.setDate(ini.getDate()-7);
@@ -4250,6 +4251,7 @@ const Inf = {
     const y0=new Date(Date.UTC(t.getUTCFullYear(),0,4)); return 1+Math.round(((t-y0)/86400000-3+(y0.getUTCDay()+6)%7)/7); },
   etiqueta(r){
     const f=d=>d.toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+    if(this.tipo==='anio') return 'Año '+r.ini.getFullYear();
     if(this.tipo==='semana'){ const u=new Date(r.fin); u.setDate(u.getDate()-1); return 'Semana '+this.semanaISO(r.ini)+' · '+f(r.ini)+' – '+f(u)+' '+u.getFullYear(); }
     const s=r.ini.toLocaleDateString('es-ES',{month:'long',year:'numeric'}); return s.charAt(0).toUpperCase()+s.slice(1);
   },
@@ -4257,20 +4259,22 @@ const Inf = {
   mover(n){ if(this.off+n>0) return; this.off+=n; this.load(); },
   pintarCab(){
     const seg=(k,ops)=>ops.map(([v,t])=>`<button class="${this[k]===v?'on':''}" onclick="Inf.set('${k}','${v}')">${t}</button>`).join('');
-    $('#infCab').innerHTML=`<div class="seg">${seg('tipo',[['semana','Semana'],['mes','Mes']])}</div>
+    $('#infCab').innerHTML=`<div class="seg">${seg('tipo',[['semana','Semana'],['mes','Mes'],['anio','Año']])}</div>
       <div style="display:flex;align-items:center;gap:6px"><button class="chip" style="background:var(--surf2);color:var(--ink);padding:7px 12px" onclick="Inf.mover(-1)">‹</button>
         <b style="min-width:220px;text-align:center">${esc(this.etiqueta(this.rango()))}</b>
         <button class="chip" style="background:var(--surf2);color:${this.off<0?'var(--ink)':'var(--muted)'};padding:7px 12px" onclick="Inf.mover(1)" ${this.off<0?'':'disabled'}>›</button></div>
-      <div class="seg">${seg('por',[['programa','Por programa'],['puesto','Por puesto']])}</div>
+      ${this.tipo==='anio'?'':`<div class="seg">${seg('por',[['programa','Por programa'],['puesto','Por puesto']])}</div>`}
       <div style="flex:1"></div>
       <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Inf.excel()">⬇ Excel</button>
       <button class="chip" style="background:var(--ink)" onclick="Inf.imprimir()">🖨 Imprimir / PDF</button>`;
   },
 
   async load(){
-    if(this.loading) return; this.loading=true;
+    // si se cambia de periodo mientras carga otro, se vuelve a cargar al terminar (antes se quedaba el anterior)
+    if(this.loading){ this._otra=true; return; } this.loading=true;
     const el=$('#infBody'); this.pintarCab(); el.innerHTML='<div class="loading">Preparando el informe…</div>';
     const r=this.rango();
+    if(this.tipo==='anio'){ try{ await this.loadAnio(r); }catch(e){ el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; } finally{ this.finCarga(); } return; }
     try{
       await Prod.init();
       const F=r.fin.toISOString(), P=r.pini.toISOString(), P1=new Date(r.pini.getTime()-86400000).toISOString();
@@ -4296,7 +4300,67 @@ const Inf = {
       this.d={r,cur,prev,consCur,consPrev,pars,turs,pts,usrs,plantillas,enCurso};
       this.pintar();
     }catch(e){ el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
-    finally{ this.loading=false; }
+    finally{ this.finCarga(); }
+  },
+  finCarga(){ this.loading=false; if(this._otra){ this._otra=false; this.load(); } },
+
+  // ---------- AÑO: cómo va el año, mes a mes (fabricados y consumidos) ----------
+  // Solo se CUENTAN las filas de cada mes (no se descargan), así que es rápido aunque haya muchas.
+  // Fabricados = unidades terminadas en planta (eventos de fin); consumidos = núcleos consumidos por el encargado.
+  async loadAnio(r){
+    const y=r.ini.getFullYear(), ahora=new Date();
+    const cuenta=async(tabla,campo,filtro,a,b)=>{ const {count,error}=await filtro(sb.from(tabla).select(campo,{count:'exact',head:true})).gte(campo,a.toISOString()).lt(campo,b.toISOString()); if(error) throw error; return count||0; };
+    const fab=(a,b)=>cuenta('fabricacion_eventos','ts',q=>q.eq('tipo','fin'),a,b);
+    const con=(a,b)=>cuenta('unidades','consumida_at',q=>q.eq('estado','consumida'),a,b);
+    const meses=await Promise.all(Array.from({length:12},async(_,m)=>{
+      const a=new Date(y,m,1), b=new Date(y,m+1,1), pa=new Date(y-1,m,1), pb=new Date(y-1,m+1,1), futuro=a>ahora;
+      const [f,c,fP,cP]=futuro?[0,0,0,0]:await Promise.all([fab(a,b),con(a,b),fab(pa,pb),con(pa,pb)]);
+      return {m,d:a,fab:f,con:c,fabP:fP,conP:cP,futuro,enCurso:!futuro&&b>ahora};
+    }));
+    this.a={r,y,meses};
+    this.pintarAnio();
+  },
+  pintarAnio(){
+    this.pintarCab();
+    const A=this.a, el=$('#infBody'); if(!A) return;
+    const M=A.meses, nom=d=>{ const t=d.toLocaleDateString('es-ES',{month:'long'}); return t.charAt(0).toUpperCase()+t.slice(1); };
+    const n0=x=>Math.round(x).toLocaleString('es-ES');
+    const pas=M.filter(x=>!x.futuro), sum=(k)=>pas.reduce((t,x)=>t+x[k],0);
+    const tF=sum('fab'), tC=sum('con'), tFP=sum('fabP'), tCP=sum('conP');
+    const delta=(v,p)=>{ if(!(p>0)) return ''; const x=(v-p)/p*100; if(Math.abs(x)<0.5) return '<span style="color:var(--muted);font-size:11px">= </span>';
+      return `<span style="color:${x>0?'var(--green)':'var(--red)'};font-size:11px;font-weight:700">${x>0?'▲':'▼'} ${Math.abs(x).toFixed(0)}%</span>`; };
+    const kpi=(v,t,x)=>`<div class="card" style="padding:14px 16px;margin:0"><div style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:800">${v}</div><div style="font-size:12px;color:var(--muted)">${t} ${x||''}</div></div>`;
+    const card=(t,s,body)=>`<div class="card" style="margin-top:12px"><div class="ch"><div><div class="t">${t}</div>${s?`<div class="s">${s}</div>`:''}</div></div>${body}</div>`;
+    const cerr=pas.filter(x=>!x.enCurso), medF=cerr.length?cerr.reduce((t,x)=>t+x.fab,0)/cerr.length:0, medC=cerr.length?cerr.reduce((t,x)=>t+x.con,0)/cerr.length:0;
+    const mejor=pas.length?pas.reduce((m,x)=>x.fab>m.fab?x:m):null;
+    let h=`<div class="infk">
+      ${kpi(n0(tF),'Fabricados en '+A.y,delta(tF,tFP))}
+      ${kpi(n0(tC),'Consumidos en '+A.y,delta(tC,tCP))}
+      ${kpi((tF-tC>0?'+':'')+n0(tF-tC),'Fabricados − consumidos')}
+      ${kpi(cerr.length?n0(medF)+' / '+n0(medC):'—','Media al mes · fabricados / consumidos')}
+    </div><div style="font-size:11px;color:var(--muted);margin:6px 2px">Las flechas comparan con los mismos meses de ${A.y-1}. Fabricados: unidades terminadas en planta. Consumidos: núcleos consumidos por el encargado. La media al mes no cuenta el mes en curso.${mejor&&mejor.fab?' Mes con más fabricados: '+nom(mejor.d)+' ('+n0(mejor.fab)+').':''}</div>`;
+    const barras=(campo,prev,color)=>{ const mx=Math.max(1,...M.map(x=>Math.max(x[campo],x[prev])));
+      return `<div style="display:flex;align-items:flex-end;gap:10px;height:170px;padding:12px 14px 4px">
+        ${M.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${nom(x.d)} ${A.y}: ${x[campo]} · ${A.y-1}: ${x[prev]}">
+          <div style="font-size:10px;font-family:'JetBrains Mono',monospace">${x.futuro?'':(x[campo]?n0(x[campo]):'')}</div>
+          <div style="display:flex;align-items:flex-end;gap:2px;width:100%;max-width:46px;height:100%;justify-content:center">
+            <div style="width:34%;height:${x[prev]/mx*100}%;min-height:${x[prev]?2:0}px;background:var(--surf2);border:1px solid var(--border);border-bottom:none;border-radius:3px 3px 0 0"></div>
+            <div style="width:66%;height:${x[campo]/mx*100}%;min-height:${x[campo]?2:0}px;background:${color};border-radius:3px 3px 0 0;opacity:${x.enCurso?.6:1}"></div></div></div>`).join('')}</div>
+        <div style="display:flex;gap:10px;padding:0 14px 10px">${M.map(x=>`<div style="flex:1;text-align:center;font-size:10px;color:var(--muted)">${nom(x.d).slice(0,3)}</div>`).join('')}</div>`; };
+    const ley=`Barra de color: ${A.y}. Barra gris: ${A.y-1}. El mes en curso sale más claro porque no ha terminado.`;
+    h+=card('Fabricados por mes',ley,barras('fab','fabP','var(--blue)'));
+    h+=card('Consumidos por mes',ley,barras('con','conP','var(--terra)'));
+    const th='padding:8px 10px;text-align:right;white-space:nowrap', tdn="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;white-space:nowrap";
+    h+=card('Mes a mes','',`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left">
+      <th style="padding:8px 10px">Mes</th><th style="${th}">Fabricados</th><th style="${th}">${A.y-1}</th><th style="${th}">Consumidos</th><th style="${th}">${A.y-1}</th><th style="${th}">Fabricados − consumidos</th></tr></thead><tbody>
+      ${M.map(x=>x.futuro?`<tr style="border-top:1px solid var(--border);color:var(--muted)"><td style="padding:7px 10px">${nom(x.d)}</td><td style="${tdn}">—</td><td style="${tdn}">—</td><td style="${tdn}">—</td><td style="${tdn}">—</td><td style="${tdn}">—</td></tr>`
+        :`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 10px"><b>${nom(x.d)}</b>${x.enCurso?' <span style="font-size:10px;color:var(--muted)">en curso</span>':''}</td>
+        <td style="${tdn}">${n0(x.fab)} ${x.enCurso?'':delta(x.fab,x.fabP)}</td><td style="${tdn};color:var(--muted)">${n0(x.fabP)}</td>
+        <td style="${tdn}">${n0(x.con)} ${x.enCurso?'':delta(x.con,x.conP)}</td><td style="${tdn};color:var(--muted)">${n0(x.conP)}</td>
+        <td style="${tdn};font-weight:700;color:${x.fab-x.con<0?'var(--red)':'var(--ink)'}">${x.fab-x.con>0?'+':''}${n0(x.fab-x.con)}</td></tr>`).join('')}
+      <tr style="border-top:2px solid var(--ink)"><td style="padding:7px 10px"><b>Total</b></td><td style="${tdn};font-weight:800">${n0(tF)}</td><td style="${tdn};color:var(--muted)">${n0(tFP)}</td><td style="${tdn};font-weight:800">${n0(tC)}</td><td style="${tdn};color:var(--muted)">${n0(tCP)}</td><td style="${tdn};font-weight:800">${tF-tC>0?'+':''}${n0(tF-tC)}</td></tr>
+      </tbody></table></div><div style="font-size:11px;color:var(--muted);padding:8px 14px">Los totales de ${A.y-1} son de los mismos meses que ya han empezado en ${A.y}.</div>`);
+    el.innerHTML=h;
   },
 
   // unidades, tiempo, coste y retrabajos agrupados (por programa o por puesto)
@@ -4388,6 +4452,7 @@ const Inf = {
   },
 
   pintar(){
+    if(this.tipo==='anio') return this.pintarAnio();
     this.pintarCab();
     const d=this.d, el=$('#infBody'); if(!d) return;
     const c=this.calc=this.calcular();
@@ -4472,8 +4537,14 @@ const Inf = {
   },
 
   excel(){
-    if(!this.d||!this.calc){ toast('Espera a que cargue el informe','err'); return; }
     if(typeof XLSX==='undefined'||!XLSX.utils.book_new){ toast('No se ha podido cargar la librería de Excel','err'); return; }
+    if(this.tipo==='anio'){
+      if(!this.a){ toast('Espera a que cargue el informe','err'); return; }
+      const A=this.a, wbA=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wbA,XLSX.utils.json_to_sheet(A.meses.filter(x=>!x.futuro).map(x=>({Mes:x.d.toLocaleDateString('es-ES',{month:'long'}),['Fabricados '+A.y]:x.fab,['Fabricados '+(A.y-1)]:x.fabP,['Consumidos '+A.y]:x.con,['Consumidos '+(A.y-1)]:x.conP,'Fabricados − consumidos':x.fab-x.con,...(x.enCurso?{Nota:'mes en curso'}:{})}))),'Por mes');
+      XLSX.writeFile(wbA,'informe_anio_'+A.y+'.xlsx'); return;
+    }
+    if(!this.d||!this.calc){ toast('Espera a que cargue el informe','err'); return; }
     const c=this.calc, d=this.d, r2=x=>Math.round(x*100)/100, wb=XLSX.utils.book_new();
     const hoja=(nombre,rows)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{'':'Sin datos'}]),nombre);
     hoja('Productividad',c.filas.map(f=>({[this.por==='programa'?'Programa':'Puesto']:f.txt,...(this.por==='puesto'?{Trabajadores:f.gente.join(', ')}:{}),Uds:f.n,'Uds periodo anterior':f.nP,Horas:r2(f.seg/3600),[this.por==='puesto'?'Uds/hora trabajada':'Uds/hora']:f.udh!=null?r2(f.udh):'',...(this.por==='puesto'?{'Uds/hora jornada':f.udhJ!=null?r2(f.udhJ):'','Ocupación %':f.ocup!=null?Math.round(f.ocup*100):''}:{}),
@@ -4485,13 +4556,13 @@ const Inf = {
     XLSX.writeFile(wb,'informe_'+this.tipo+'_'+ymdLocal(d.r.ini)+'.xlsx');
   },
   imprimir(){
-    const body=$('#infBody'); if(!this.d) return;
+    const body=$('#infBody'), anio=this.tipo==='anio'; if(anio?!this.a:!this.d) return;
     const w=window.open('','_blank'); if(!w){ toast('Permite las ventanas emergentes para imprimir','err'); return; }
     const estilos=[...document.querySelectorAll('style,link[rel=stylesheet]')].map(x=>x.outerHTML).join('');
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Informe ${esc(this.etiqueta(this.d.r))}</title>${estilos}
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Informe ${esc(this.etiqueta(anio?this.a.r:this.d.r))}</title>${estilos}
       <style>@page{size:A4;margin:12mm}html,body{height:auto!important;overflow:visible!important;display:block!important}body{background:#fff;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}.card{break-inside:avoid;box-shadow:none}tr{break-inside:avoid}table{font-size:10px!important}th,td{padding:4px 5px!important;white-space:normal!important}.h1{font-size:24px}</style></head>
       <body><div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:10px">
-        <div><div class="h1">Informe de producción</div><div class="h1sub">${esc(this.etiqueta(this.d.r))} · ${this.por==='programa'?'por programa':'por puesto'}</div></div>
+        <div><div class="h1">Informe de producción</div><div class="h1sub">${esc(this.etiqueta(anio?this.a.r:this.d.r))}${anio?' · fabricados y consumidos por mes':' · '+(this.por==='programa'?'por programa':'por puesto')}</div></div>
         <div style="text-align:right;font-size:11px;color:var(--muted)"><b style="font-size:16px;color:var(--ink)">MOLYN</b><br>Generado el ${new Date().toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})}</div></div>${body.innerHTML}</body></html>`);
     w.document.close(); setTimeout(()=>{ w.focus(); w.print(); },400);
   }
