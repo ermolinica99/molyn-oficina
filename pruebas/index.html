@@ -723,7 +723,11 @@ const SUPABASE_URL = ES_PRUEBAS ? "https://iqxstbjqjycsmlpdpwza.supabase.co" : "
 const SUPABASE_KEY = ES_PRUEBAS ? "sb_publishable_2iYIXB64r_-To-qIP98npw_7m8cD5yO" : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttZmR5d3llZXN5YnFxZm1meHlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNTA0MDMsImV4cCI6MjA5OTgyNjQwM30.dDrPPvqxqWBqFTA5FNC3YLAVK53nm8V2tn5JKHN9ve4";
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=s=>document.querySelector(s);
-function toast(m,t){const e=$('#toast');e.textContent=m;e.className='toast show '+(t||'');setTimeout(()=>e.className='toast',1900)}
+// dura según el texto (los errores y los mensajes largos, p. ej. "Rompe las etiquetas…", más) y un aviso
+// anterior ya no oculta al siguiente antes de tiempo
+let _toastT=null;
+function toast(m,t){const e=$('#toast');e.textContent=m;e.className='toast show '+(t||'');clearTimeout(_toastT);
+  const ms=Math.min(12000,Math.max(t==='err'?5000:2500,String(m).length*70));_toastT=setTimeout(()=>e.className='toast',ms)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function cssId(s){return String(s).replace(/[^a-zA-Z0-9]/g,'_')}
 // supabase-js NO lanza una excepción cuando falla una escritura: devuelve {error}. Sin comprobarlo,
