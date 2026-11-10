@@ -358,7 +358,7 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
     <div class="top">
       <div class="crumb">MOLYN&nbsp;&nbsp;/&nbsp;&nbsp;<b>Dashboard</b></div>
       <div class="search"><input id="search" placeholder="Buscar SKU o nombre…"></div>
-      <div class="user"><div class="av">OF</div><span style="font-size:13px;color:var(--muted)">Oficina</span><button onclick="Auth.logout()" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;margin-left:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button></div>
+      <div class="user"><div class="av">OF</div><span style="font-size:13px;color:var(--muted)">Oficina</span><button onclick="Clave.abrir()" title="Contraseña que se escribe una vez en cada tablet de planta" style="background:var(--surf2);border:1px solid var(--border);border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;font-family:inherit">Clave de planta</button><button onclick="Auth.logout()" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;margin-left:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button></div>
     </div>
     <div class="content" id="view-dash">
       <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
@@ -3063,42 +3063,32 @@ const Usr = {
       ${activos.map(oc).join('')}
     </div><div style="height:1px;background:var(--border);margin-bottom:24px"></div>`+this.paintTablets();
   },
-  // TABLETS DE PLANTA: cada tablet pide acceso la primera vez que abre la app y no puede leer ni
-  // guardar nada hasta que un administrador la autoriza aquí
+  // TABLETS DE PLANTA: una tablet entra escribiendo, una vez, la contraseña de planta. Aquí se ve qué
+  // dispositivos están dentro y se le puede quitar el acceso a uno (tendrá que volver a poner la contraseña)
   paintTablets(){
     const f=ts=>ts?new Date(ts).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-    const fila=d=>{
-      const ok=d.estado==='aprobado', pend=d.estado==='pendiente';
-      return `<div class="card" style="margin-bottom:8px;border-left:4px solid ${ok?'var(--green)':pend?'var(--red)':'var(--border)'}">
+    const d=(this.disp||[]).filter(x=>x.estado==='aprobado');
+    const fila=x=>`<div class="card" style="margin-bottom:8px;border-left:4px solid var(--green)">
         <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;flex-wrap:wrap">
-          <div style="flex:1;min-width:200px"><div style="font-weight:700">${esc(d.nombre)}</div>
-            <div style="font-size:12px;color:var(--muted)">${ok?'Autorizada':pend?'Pide acceso':'Sin acceso'} · pedido el ${f(d.creado_at)} · última vez vista: ${f(d.visto_at)}</div></div>
-          ${ok?`<button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.dispEstado(${d.id},'rechazado')">Quitar acceso</button>`
-              :`<button class="chip" style="background:var(--green)" onclick="Usr.dispEstado(${d.id},'aprobado')">Autorizar</button>
-                <button class="chip" style="background:var(--red)" onclick="Usr.dispBorrar(${d.id})">Borrar</button>`}
+          <div style="flex:1;min-width:200px"><div style="font-weight:700">${esc(x.nombre)}</div>
+            <div style="font-size:12px;color:var(--muted)">Entró el ${f(x.aprobado_at||x.creado_at)} · última vez vista: ${f(x.visto_at)}</div></div>
+          <button class="chip" style="background:var(--surf2);color:var(--ink)" onclick="Usr.dispQuitar(${x.id})">Quitar acceso</button>
         </div></div>`;
-    };
-    const d=this.disp||[], orden={pendiente:0,aprobado:1,rechazado:2};
     return `<div style="margin-bottom:24px">
-      <div style="font-size:16px;font-weight:800;margin-bottom:4px">Tablets de planta</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Una tablet solo puede usar la app de Planta si está autorizada aquí. Autoriza solo las que reconozcas por el nombre.</div>
-      ${this.dispErr?`<div class="vacio">${esc(this.dispErr)}</div>`:d.length?[...d].sort((a,b)=>(orden[a.estado]??3)-(orden[b.estado]??3)).map(fila).join(''):'<div class="vacio">Ninguna tablet ha pedido acceso todavía.</div>'}
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:16px;font-weight:800">Tablets de planta</div>
+        <button class="chip" style="background:var(--ink);margin-left:auto" onclick="Clave.abrir()">Contraseña de planta</button></div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Dispositivos que han entrado en Planta con la contraseña. Si no reconoces alguno, quítale el acceso y cambia la contraseña.</div>
+      ${this.dispErr?`<div class="vacio">${esc(this.dispErr)}</div>`:d.length?d.map(fila).join(''):'<div class="vacio">Todavía no ha entrado ninguna tablet.</div>'}
     </div><div style="height:1px;background:var(--border);margin-bottom:24px"></div>`;
   },
-  async dispEstado(id,estado){
-    if(estado==='rechazado' && !confirm('¿Quitar el acceso a esta tablet? Dejará de poder guardar nada hasta que la autorices otra vez.')) return;
+  async dispQuitar(id){
+    if(!confirm('¿Quitar el acceso a esta tablet?\n\nDejará de poder guardar hasta que alguien vuelva a escribir en ella la contraseña de planta. Si no quieres que vuelva a entrar, cambia también la contraseña.')) return;
     try{
-      const {data,error}=await sb.from('dispositivos').update({estado,aprobado_at:estado==='aprobado'?new Date().toISOString():null}).eq('id',id).select('id');
+      const {data,error}=await sb.from('dispositivos').delete().eq('id',id).select('id');
       if(error) throw error;
-      if(!data||!data.length) throw new Error('la base de datos no ha dejado cambiarlo (¿eres administrador?)');
-      toast(estado==='aprobado'?'✓ Tablet autorizada':'Acceso retirado',estado==='aprobado'?'ok':''); Avisos.check();
-      if($('#view-cUsr') && $('#view-cUsr').style.display!=='none') this.reload();
+      if(!data||!data.length) throw new Error('la base de datos no ha dejado quitarlo (¿eres administrador?)');
+      toast('Acceso retirado','ok'); this.reload();
     }catch(e){ toast('Error: '+(e.message||e),'err'); }
-  },
-  async dispBorrar(id){
-    if(!confirm('¿Borrar esta tablet de la lista?')) return;
-    try{ chk(await sb.from('dispositivos').delete().eq('id',id)); Avisos.check(); this.reload(); }
-    catch(e){ toast('Error: '+(e.message||e),'err'); }
   },
   async vincularOfi(id){
     if(!confirm('Esta persona ha entrado con una contraseña distinta a la que tenía.\n\n¿Confirmas que es ella y que su acceso nuevo es válido?')) return;
@@ -4658,6 +4648,44 @@ const Auth = {
 };
 
 // ============================================================
+//  CONTRASEÑA DE PLANTA
+// ============================================================
+// La que hay que escribir, una vez, en cada tablet para que pueda usar Planta. La ve cualquier usuario
+// de oficina (para dársela a quien prepara una tablet) y solo la cambia un administrador.
+const Clave = {
+  async abrir(){
+    abrirModal('Contraseña de planta','Se escribe una vez en cada tablet');
+    try{
+      const {data,error}=await sb.from('planta_acceso').select('clave,cambiada_at').eq('id',1).maybeSingle();
+      if(error) throw new Error(/planta_acceso/.test(error.message||'')?'Falta aplicar 03_seguridad.sql en la base de datos':error.message);
+      const admin=Auth.esAdmin();
+      $('#modalBody').innerHTML=`
+        ${data?`<div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:800;text-align:center;padding:18px 12px;background:var(--surf2);border-radius:12px;user-select:all;word-break:break-all">${esc(data.clave)}</div>
+          <div style="font-size:12px;color:var(--muted);text-align:center;margin:8px 0 4px">Cambiada el ${new Date(data.cambiada_at).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})}</div>`
+          :`<div class="vacio">Todavía no hay contraseña de planta. Hasta que un administrador la ponga, ninguna tablet nueva puede entrar.</div>`}
+        <div style="font-size:13px;color:var(--ink2);margin:12px 0">Trátala como una contraseña: quien la sepa puede conectar un dispositivo a Planta. No es el PIN de los puestos.</div>
+        ${admin?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:6px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px">${data?'Cambiarla':'Ponerla'}</div>
+          <div style="display:flex;gap:8px"><input id="claveNueva" placeholder="Nueva contraseña (mínimo 8 caracteres)" autocomplete="off" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit">
+            <button class="chip" style="background:var(--terra)" onclick="Clave.guardar(this)">Guardar</button></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:8px">Las tablets que ya están dentro siguen funcionando. La nueva solo hace falta en las tablets nuevas o en las que les quites el acceso.</div></div>`
+          :`<div style="font-size:12px;color:var(--muted)">Solo un administrador puede cambiarla.</div>`}`;
+    }catch(e){ $('#modalBody').innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
+  },
+  async guardar(btn){
+    const clave=$('#claveNueva').value.trim();
+    if(clave.length<8){ toast('Mínimo 8 caracteres','err'); return; }
+    btn.disabled=true;
+    try{
+      const {data,error}=await sb.from('planta_acceso').upsert({id:1,clave,cambiada_at:new Date().toISOString()}).select('id');
+      if(error) throw error;
+      if(!data||!data.length) throw new Error('la base de datos no ha dejado cambiarla (¿eres administrador?)');
+      toast('✓ Contraseña de planta guardada','ok'); this.abrir();
+    }catch(e){ toast('Error: '+(e.message||e),'err'); btn.disabled=false; }
+  }
+};
+
+// ============================================================
 //  APROBACIONES
 // ============================================================
 const Apr = {
@@ -4825,22 +4853,19 @@ const Avisos = {
       const {data,error}=await sb.from('ajustes_inventario').select('*').eq('estado','pendiente').order('created_at',{ascending:false}).limit(20);
       if(error) return;
       this.rows=data||[];
-      this.tablets=[];
-      if(Auth.esAdmin()){ try{ const {data:tb}=await sb.from('dispositivos').select('id,nombre,creado_at').eq('estado','pendiente').order('creado_at'); this.tablets=tb||[]; }catch(e){} }
       if(!this.users){ this.users={}; try{ const {data:us}=await sb.from('usuarios').select('id,nombre'); (us||[]).forEach(u=>this.users[u.id]=u.nombre); }catch(e){} }
       if(!this.puestos){ this.puestos={}; try{ const {data:ps}=await sb.from('puestos_trabajo').select('id,nombre'); (ps||[]).forEach(p=>this.puestos[p.id]=p.nombre); }catch(e){} }
       const nb=$('#navApr'); let bd=$('#aprBadge');
       if(nb && !bd){ bd=document.createElement('span'); bd.id='aprBadge'; bd.style.cssText='margin-left:auto;background:var(--red);color:#fff;border-radius:20px;font-size:11px;font-weight:800;padding:2px 8px;line-height:1.4'; nb.appendChild(bd); }
       if(bd){ bd.textContent=this.rows.length; bd.style.display=this.rows.length?'':'none'; }
-      if(this.rows.some(r=>!this.vistos.has(r.id)) || this.tablets.some(t=>!this.vistos.has('t'+t.id))) this.cerrado=false;
+      if(this.rows.some(r=>!this.vistos.has(r.id))) this.cerrado=false;
       this.pintar();
     }catch(e){}
   },
-  cerrar(){ this.rows.forEach(r=>this.vistos.add(r.id)); (this.tablets||[]).forEach(t=>this.vistos.add('t'+t.id)); this.cerrado=true; this.pintar(); },
+  cerrar(){ this.rows.forEach(r=>this.vistos.add(r.id)); this.cerrado=true; this.pintar(); },
   pintar(){
     let el=$('#avisosPanel');
-    const tablets=this.tablets||[];
-    if((!this.rows.length && !tablets.length) || this.cerrado){ if(el) el.remove(); return; }
+    if(!this.rows.length || this.cerrado){ if(el) el.remove(); return; }
     if(!el){ el=document.createElement('div'); el.id='avisosPanel';
       el.style.cssText='position:fixed;right:20px;top:16px;z-index:1400;background:#fff;border:2px solid var(--terra);border-radius:14px;padding:12px 14px;box-shadow:0 12px 40px rgba(0,0,0,.22);width:360px;max-width:calc(100vw - 40px);font-size:13px';
       document.body.appendChild(el); }
@@ -4863,12 +4888,8 @@ const Avisos = {
         <div style="font-size:11px;color:var(--muted);margin:2px 0 7px">${quien}${r.created_at?' · '+new Date(r.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}${r.nota?' · “'+esc(r.nota)+'”':''}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${acc}</div></div>`;
     };
-    const filaT=t=>`<div style="padding:9px 0;border-top:1px solid var(--border)"><div>La tablet <b>${esc(t.nombre)}</b> pide acceso a Planta</div>
-        <div style="font-size:11px;color:var(--muted);margin:2px 0 7px">${t.creado_at?new Date(t.creado_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''} · autorízala solo si la reconoces</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${btn('Autorizar','var(--green)',`Usr.dispEstado(${t.id},'aprobado')`)}${btn('Ver tablets','var(--ink)',`nav('cUsr')`)}</div></div>`;
-    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px;color:var(--terra)">Peticiones de planta (${this.rows.length+tablets.length})</b>
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px;color:var(--terra)">Peticiones de planta (${this.rows.length})</b>
         <button onclick="Avisos.cerrar()" title="Ocultar hasta la próxima petición" style="margin-left:auto;border:none;background:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button></div>
-      ${tablets.map(filaT).join('')}
       ${this.rows.slice(0,3).map(fila).join('')}
       ${admin?`<div style="border-top:1px solid var(--border);padding-top:8px;text-align:right"><a href="#" onclick="event.preventDefault();nav('apr')" style="color:var(--terra);font-weight:700">Ver todas en Aprobaciones</a></div>`:''}`;
   }

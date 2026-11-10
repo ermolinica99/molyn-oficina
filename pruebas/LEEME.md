@@ -47,8 +47,11 @@ y contraseñas se comprobaban en el navegador. Con `pruebas/sql/03_seguridad.sql
 - **Sin sesión** no se puede leer ni escribir nada.
 - **Oficina** entra con una cuenta real de Supabase (email + contraseña). Las cuentas de antes se pasan solas
   la primera vez que entran con su email y contraseña de siempre. «Solicitar acceso» sigue igual.
-- **Cada tablet de planta** pide acceso la primera vez (se le pone un nombre) y un administrador la autoriza en
-  Oficina → Configuración → Usuarios y costes → *Tablets de planta*. También sale el aviso arriba a la derecha.
+- **Cada tablet de planta** entra escribiendo, una sola vez, la **contraseña de planta** (y un nombre para
+  reconocerla). Si se cambia de tablet o de navegador, se vuelve a poner. La contraseña la ve cualquier usuario
+  de oficina (botón *Clave de planta*, arriba a la derecha) y solo la cambia un administrador.
+  En Configuración → Usuarios y costes → *Tablets de planta* se ve qué dispositivos han entrado y se les puede
+  quitar el acceso.
 - **Los PIN** de puestos y encargados los comprueba la base de datos; la tablet ya no los descarga.
 - **Permisos por rol:** una tablet solo toca lo de planta; usuarios, puestos, accesos y tablets, solo un administrador.
 
@@ -57,12 +60,15 @@ y contraseñas se comprobaban en el navegador. Con `pruebas/sql/03_seguridad.sql
    activar **Allow anonymous sign-ins** y, en Email, desactivar **Confirm email**.
 2. Actions → **Copiar datos reales a PRUEBAS** (o **Aplicar SQL a PRUEBAS** si los datos ya están).
 3. Abrir Oficina de pruebas y entrar con un email y contraseña de administrador de siempre.
-4. Abrir Planta de pruebas en una tablet, ponerle nombre y autorizarla desde Oficina.
-5. Repasar: lanzar parte, fabricar, consumir, baja y alta desde planta, recuento, ajuste de OT, usuarios y puestos.
+4. En Oficina, botón *Clave de planta* → poner la contraseña de planta (mínimo 8 caracteres).
+5. Abrir Planta de pruebas en una tablet, ponerle nombre y escribir esa contraseña.
+6. Repasar: lanzar parte, fabricar, consumir, baja y alta desde planta, recuento, ajuste de OT, usuarios y puestos.
 
 Cada vez que se lanza «Copiar datos reales a PRUEBAS» las cuentas de oficina vuelven a las de la real (se
-pasan solas otra vez al entrar) y las tablets hay que autorizarlas de nuevo.
+pasan solas otra vez al entrar), y hay que volver a poner la contraseña de planta en Oficina y en cada tablet.
 
 ### Qué no cubre todavía
+- Quien sepa la contraseña de planta puede conectar un dispositivo. Tras 10 fallos en 15 minutos no se admite
+  ninguna contraseña más durante ese rato. Si se filtra: cambiarla y quitar el acceso a lo que no se reconozca.
 - Un usuario de oficina que no es administrador sigue pudiendo leer los PIN de planta por la API.
 - Los PIN siguen guardados sin cifrar en la base de datos (ya no salen de ella hacia las tablets).

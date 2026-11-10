@@ -8,7 +8,8 @@
 --   - OFICINA entra con una cuenta real de Supabase (email + contraseña). La fila de
 --     usuarios_oficina solo dice su rol y si está aprobada.
 --   - Cada TABLET de planta tiene su propia sesión (anónima, guardada en la tablet) y solo
---     funciona cuando un administrador la autoriza en Oficina.
+--     funciona después de escribir en ella, una vez, la CONTRASEÑA DE PLANTA. Esa contraseña la
+--     ve cualquier usuario de oficina y solo la cambia un administrador.
 --   - Los PIN de puestos y encargados se comprueban aquí, en el servidor: la tablet ya no los
 --     descarga. 5 fallos seguidos = espera.
 --   - Planta solo puede tocar lo suyo; usuarios, puestos, accesos y tablets solo un administrador.
@@ -42,6 +43,19 @@ create table if not exists dispositivos (
   creado_at timestamptz not null default now(),
   aprobado_at timestamptz,
   visto_at timestamptz
+);
+
+-- contraseña de planta: una sola fila. La ve Oficina, la cambia un administrador, y las tablets
+-- no la leen nunca: la comprueba dispositivo_activar()
+create table if not exists planta_acceso (
+  id int primary key default 1 check (id = 1),
+  clave text not null check (length(clave) >= 8),
+  cambiada_at timestamptz not null default now()
+);
+-- intentos fallidos de contraseña de planta (para frenar a quien pruebe al azar)
+create table if not exists planta_acceso_intentos (
+  ts timestamptz not null default now(),
+  auth_id uuid
 );
 
 create table if not exists pin_intentos (
@@ -149,18 +163,30 @@ begin
   return json_build_object('id', d.id, 'nombre', d.nombre, 'estado', d.estado);
 end $$;
 
-create or replace function dispositivo_solicitar(p_nombre text) returns json
+drop function if exists dispositivo_solicitar(text);
+
+-- La tablet escribe la contraseña de planta (una vez por dispositivo) y queda dada de alta con su
+-- nombre. Si en 15 minutos hay 10 contraseñas falladas (entre todos los dispositivos), no se admite
+-- ninguna más hasta que pase ese rato: quien pruebe al azar no avanza.
+create or replace function dispositivo_activar(p_nombre text, p_clave text) returns json
 language plpgsql security definer set search_path = public as $$
-declare d dispositivos; v_nombre text := left(trim(coalesce(p_nombre, '')), 60);
+declare d dispositivos; v_nombre text := left(trim(coalesce(p_nombre, '')), 60); v_clave text; v_fallos int;
 begin
   if auth.uid() is null then raise exception 'Sin sesión'; end if;
   if v_nombre = '' then raise exception 'Pon un nombre a la tablet'; end if;
-  insert into dispositivos(auth_id, nombre) values (auth.uid(), v_nombre)
-    on conflict (auth_id) do update
-      set nombre = excluded.nombre,
-          estado = case when dispositivos.estado = 'aprobado' then 'aprobado' else 'pendiente' end
+  select clave into v_clave from planta_acceso where id = 1;
+  if v_clave is null then return json_build_object('ok', false, 'motivo', 'sin_clave'); end if;
+  delete from planta_acceso_intentos where ts < now() - interval '1 day';
+  select count(*) into v_fallos from planta_acceso_intentos where ts > now() - interval '15 minutes';
+  if v_fallos >= 10 then return json_build_object('ok', false, 'motivo', 'espera'); end if;
+  if coalesce(p_clave, '') <> v_clave then
+    insert into planta_acceso_intentos(auth_id) values (auth.uid());
+    return json_build_object('ok', false, 'motivo', 'clave');
+  end if;
+  insert into dispositivos(auth_id, nombre, estado, aprobado_at) values (auth.uid(), v_nombre, 'aprobado', now())
+    on conflict (auth_id) do update set nombre = excluded.nombre, estado = 'aprobado', aprobado_at = now()
     returning * into d;
-  return json_build_object('id', d.id, 'nombre', d.nombre, 'estado', d.estado);
+  return json_build_object('ok', true, 'id', d.id, 'nombre', d.nombre, 'estado', d.estado);
 end $$;
 
 -- Puestos y encargados para la pantalla de entrada de la tablet. Sin el PIN: solo cuántas cifras tiene.
@@ -219,7 +245,7 @@ begin
     for p in select policyname from pg_policies where schemaname = 'public' and tablename = t.tablename loop
       execute format('drop policy %I on public.%I', p.policyname, t.tablename);
     end loop;
-    if t.tablename not in ('usuarios_oficina', 'dispositivos', 'pin_intentos', 'usuarios', 'puestos_trabajo') then
+    if t.tablename not in ('usuarios_oficina', 'dispositivos', 'pin_intentos', 'planta_acceso', 'planta_acceso_intentos', 'usuarios', 'puestos_trabajo') then
       execute format('create policy oficina_todo on public.%I for all to authenticated using (es_oficina()) with check (es_oficina())', t.tablename);
     end if;
   end loop;
@@ -242,11 +268,15 @@ create policy propia_o_admin on public.usuarios_oficina for select to authentica
 create policy admin_cambiar on public.usuarios_oficina for update to authenticated using (es_admin()) with check (es_admin());
 create policy admin_borrar on public.usuarios_oficina for delete to authenticated using (es_admin());
 
--- tablets: solo un administrador (la tablet consulta lo suyo con mi_dispositivo())
+-- tablets conectadas: las ve y les quita el acceso un administrador (la tablet consulta lo suyo con mi_dispositivo())
 create policy admin_ver on public.dispositivos for select to authenticated using (es_admin());
 create policy admin_cambiar on public.dispositivos for update to authenticated using (es_admin()) with check (es_admin());
 create policy admin_borrar on public.dispositivos for delete to authenticated using (es_admin());
--- pin_intentos: sin políticas, solo la toca planta_login()
+-- contraseña de planta: la ve cualquier usuario de oficina, solo la pone o la cambia un administrador
+create policy oficina_ver on public.planta_acceso for select to authenticated using (es_oficina());
+create policy admin_crear on public.planta_acceso for insert to authenticated with check (es_admin());
+create policy admin_cambiar on public.planta_acceso for update to authenticated using (es_admin()) with check (es_admin());
+-- pin_intentos y planta_acceso_intentos: sin políticas, solo las tocan planta_login() y dispositivo_activar()
 
 -- lo que puede hacer una tablet autorizada: l = leer, c = crear, m = modificar, b = borrar
 do $$
