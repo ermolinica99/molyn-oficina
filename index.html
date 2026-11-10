@@ -294,7 +294,7 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
 .sx-cob i u{display:block;height:100%}
 @media(max-width:1280px){ .sx-cuerpo{grid-template-columns:1fr} .sx-cola{position:static;max-height:520px;order:-1} }
 @media(max-width:900px){ .sx-progs{grid-template-columns:1fr} .sx-panel{width:100vw} .sx-lt table{min-width:720px} }
-.infk{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:4px}
+.infk{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:4px}
 @media(max-width:700px){.infk{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -3579,25 +3579,49 @@ function jornadaPuestos(usrs,plantillas){
   const r={}; Object.entries(tp).forEach(([p,set])=>{ r[p]={seg:[...set].reduce((a,id)=>a+Math.max(0,segPlantilla(pl[id])-(pl[id].descanso_min||0)*60),0),
     desc:[...set].reduce((a,id)=>a+(pl[id].descanso_min||0)*60,0)}; }); return r;
 }
+// CAMBIO DE PUESTO (parada con ese motivo en la tablet): el trabajador está en otro sitio, así que ese rato no
+// es de este puesto: no cuenta como jornada, ni como parada, ni cuesta aquí (su trabajo se cuenta donde fiche).
+// Si es lo último del día (se fue y no volvió), el día de este puesto acaba en ese momento.
+const esCambioPuesto=motivo=>/^cambio de puesto$/i.test(String(motivo||'').trim());
+const SIN_FICHAR='Sin fichar o sin registrar';
 // turnos de un puesto (y, para días sin fichaje, la jornada estimada de sus unidades) → fichado, base del OEE y extra.
 // a/b recortan al periodo (ms); estim: {dia:[iniMs,finMs]} de los días con unidades; pl: {seg,desc} de
 // jornadaPuestos; pars: paradas del puesto. Devuelve también plan: segundos de descanso marcados como parada
-// que no cuentan (hasta el descanso del turno cada día), para restarlos de las paradas.
+// que no cuentan (hasta el descanso del turno cada día), para restarlos de las paradas; cambio: segundos de
+// cambio de puesto quitados de lo fichado; cortado: lo fichado después de irse a otro puesto sin volver.
+// La jornada (base) de un día cerrado es como mínimo la del turno de plantilla: lo que falte por fichar queda
+// dentro de la jornada y sale como «Sin fichar o sin registrar». Hoy ese mínimo solo llega hasta la hora actual.
 function jornadaBase(turs,pl,a,b,now,estim,pars){
-  const plSeg=(pl&&pl.seg)||0, desc=(pl&&pl.desc)||0;
+  const plSeg=(pl&&pl.seg)||0, desc=(pl&&pl.desc)||0, hoy=ymdLocal(new Date(now));
+  const iv=x=>{ const i=new Date(x.inicio).getTime(), f=x.fin?new Date(x.fin).getTime():now; return [i,Math.max(i,f)]; };
+  const camb={}, otras={};
+  (pars||[]).forEach(x=>{ const v=iv(x), k=ymdLocal(new Date(v[0])), o=esCambioPuesto(x.motivo)?camb:otras; (o[k]=o[k]||[]).push(v); });
+  // ¿el último cambio de puesto del día fue para no volver? (ni unidades terminadas ni otras paradas después)
+  const corte={};
+  Object.entries(camb).forEach(([k,arr])=>{ const u=arr.reduce((m,c)=>c[0]>m[0]?c:m);
+    const finUds=(estim&&estim[k])?estim[k][1]:-Infinity;
+    const volvio=finUds>u[0]+1000 || (otras[k]||[]).some(o=>o[0]>u[0] && o[0]>=u[1]-1000);
+    if(!volvio) corte[k]=u[0]; });
   const dias={};
-  (turs||[]).forEach(t=>{ const i=new Date(t.inicio).getTime(), f=t.fin?new Date(t.fin).getTime():now;
-    const s=Math.max(0,(Math.min(f,b)-Math.max(i,a))/1000); if(!(s>0)) return;
-    const k=ymdLocal(new Date(i)), d=dias[k]||(dias[k]={f:0,abierto:false,est:false}); d.f+=s; if(!t.fin) d.abierto=true; });
-  Object.entries(estim||{}).forEach(([k,[i,f]])=>{ if(!dias[k]) dias[k]={f:Math.max(0,(f-i)/1000),abierto:k===ymdLocal(new Date(now)),est:true}; });
+  (turs||[]).forEach(t=>{ const [i,f]=iv(t), k=ymdLocal(new Date(i)), lo=Math.max(i,a); let hi=Math.min(f,b), cortado=0;
+    if(corte[k]!=null && hi>corte[k]){ const c=Math.max(lo,corte[k]); cortado=Math.max(0,(hi-c)/1000); hi=c; }
+    const s=Math.max(0,(hi-lo)/1000); if(!(s>0) && !(cortado>0)) return;
+    const d=dias[k]||(dias[k]={f:0,abierto:false,est:false,cb:0,cortado:0,ini:i}); d.f+=s; d.cortado+=cortado; d.ini=Math.min(d.ini,i);
+    if(!t.fin && corte[k]==null) d.abierto=true;
+    (camb[k]||[]).forEach(c=>{ if(corte[k]===c[0]) return; d.cb+=Math.max(0,(Math.min(hi,c[1])-Math.max(lo,c[0]))/1000); }); });
+  Object.entries(estim||{}).forEach(([k,[i,f]])=>{ if(!dias[k]) dias[k]={f:Math.max(0,(f-i)/1000),abierto:k===hoy,est:true,cb:0,cortado:0,ini:i}; });
   // descanso marcado cada día (desayuno, descanso…)
   const des={}; (pars||[]).forEach(x=>{ if(!esDescanso(x.motivo)) return; const i=new Date(x.inicio).getTime(), f=x.fin?new Date(x.fin).getTime():now;
     const s=Math.max(0,(Math.min(f,b)-Math.max(i,a))/1000); if(s>0){ const k=ymdLocal(new Date(i)); des[k]=(des[k]||0)+s; } });
-  let fichado=0, base=0, extra=0, est=false, plan=0;
+  let fichado=0, base=0, extra=0, est=false, plan=0, cambio=0, cortado=0;
   Object.entries(dias).forEach(([k,d])=>{ if(d.est) est=true;
-    const marc=des[k]||0, q=Math.min(d.f,d.abierto?Math.min(desc,marc):desc), f=d.f-q; plan+=Math.min(marc,q);
-    fichado+=f; base+=(plSeg>0 && !d.abierto)?Math.max(f,plSeg):f; if(plSeg>0) extra+=Math.max(0,f-plSeg); });
-  return {fichado,base,extra,est,plan,dias:Object.keys(dias).length};
+    const seFue=corte[k]!=null, bruto=Math.max(0,d.f-d.cb);
+    const marc=des[k]||0, q=Math.min(bruto,(d.abierto||seFue)?Math.min(desc,marc):desc), f=bruto-q; plan+=Math.min(marc,q);
+    let min=Math.max(0,plSeg-d.cb);
+    if(k===hoy) min=Math.min(min,Math.max(0,(Math.min(now,b)-d.ini)/1000-q-d.cb));
+    fichado+=f; base+=(plSeg>0 && !d.abierto && !seFue)?Math.max(f,min):f; if(plSeg>0) extra+=Math.max(0,f-plSeg);
+    cambio+=d.cb; cortado+=d.cortado; });
+  return {fichado,base,extra,est,plan,cambio,cortado,dias:Object.keys(dias).length};
 }
 function solaparSeg(iniMs,finMs,intervalos){
   let t=0;
@@ -3758,10 +3782,14 @@ const Prodv = {
     // jornada para el OEE (como Informes): lo fichado con el turno de plantilla como mínimo cada día cerrado
     const rg=this._rangoMs||[-Infinity,Infinity];
     const jor=jornadaBase(turO,(this._plSeg||{})[o.id],rg[0],rg[1],now.getTime(),estim,parO);
+    // el rato en "Cambio de puesto" no es de este puesto: fuera del turno, y no es una parada
+    turno=Math.max(0,turno-jor.cambio-jor.cortado);
     // tiempo teórico de lo hecho (el del programa de cada referencia)
     const teo=Object.values(porSku).reduce((a,s)=>a+s.n*Prod.tiempoRefDe(s.sku),0);
     let paradas=0,npar=0,pausa=null; const porMotivo={};
-    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000); paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[this.bucketIdx(i)]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p;
+    parO.forEach(p=>{ const i=new Date(p.inicio), f=p.fin?new Date(p.fin):now; const _d=Math.max(0,(f-i)/1000);
+      if(esCambioPuesto(p.motivo)){ if(!p.fin)pausa=p; return; }
+      paradas+=_d; npar++; const _pb=this.hourly&&this.hourly[this.bucketIdx(i)]; if(_pb)_pb.pausas+=_d; if(!p.fin)pausa=p;
       const mo=porMotivo[p.motivo||'Otro']=porMotivo[p.motivo||'Otro']||{motivo:p.motivo||'Otro',seg:0,n:0}; mo.seg+=_d; mo.n++; });
     const disp=Math.max(0,turno-paradas);
     const lastTimes=[...evO.map(e=>e.ts),...parO.map(p=>p.fin||p.inicio),...turO.map(t=>t.fin||t.inicio)].filter(Boolean).map(x=>new Date(x));
@@ -3775,7 +3803,14 @@ const Prodv = {
     else if(inTurno||turno>0){ estado='Sin actividad'; color='var(--blue)'; tint='#E4EDF0'; sort=2; detalle=idle==null?'Sin eventos hoy':'Último movimiento hace '+fmtDur(idle); }
 
     const ritmo=efectivo>0?hechas/(efectivo/3600):0;
-    const ocup=turno>0?disp/turno:0, rend=disp>0?efectivo/disp:0, media=hechas?efectivo/hechas:0;
+    // ocupación: tiempo fabricando sobre la JORNADA (no sobre lo fichado: fichar poco no la sube)
+    const ocup=jor.base>0?Math.min(1,efectivo/jor.base):0, rend=disp>0?efectivo/disp:0, media=hechas?efectivo/hechas:0;
+    // lo que falta hasta completar la jornada y no es ni unidades ni una parada marcada (se fue sin fichar, o
+    // ratos sin registrar). La unidad que está en curso ahora no cuenta: aún no ha sumado su tiempo.
+    const enCurso=abierta?Math.min(8*3600,Math.max(0,(now-new Date(abierta.ts))/1000)):0;
+    const parPen=Math.min(Math.max(0,paradas-(jor.plan||0)),jor.fichado);
+    const sinFichar=Math.max(0,jor.base-efectivo-enCurso-parPen);
+    if(sinFichar>=60) porMotivo[SIN_FICHAR]={motivo:SIN_FICHAR,seg:sinFichar,n:1};
     const refs=Object.values(porSku).sort((a,b)=>b.total-a.total);
     let eficiencia=null;
     const ponder=refs.filter(s=>s.hist>0&&s.mediana>0).reduce((acc,s)=>{ const k=s.durs.length; acc.real+=s.mediana*k; acc.hist+=s.hist*k; return acc; },{real:0,hist:0});
@@ -3786,7 +3821,7 @@ const Prodv = {
     if(!pausa && !abierta && (inTurno||turno>0) && idle!=null && idle>15*60)this.alerts.push({tipo:'Sin actividad',msg:o.nombre+' lleva '+fmtDur(idle)+' sin registrar avance',sev:'warn'});
     if(abierta && currentSecs>45*60)this.alerts.push({tipo:'Tarea larga',msg:o.nombre+' lleva '+fmtDur(currentSecs)+' en '+(abierta.sku||abierta.ot||'una tarea'),sev:'warn'});
 
-    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,jornada:jor.base,fichadoJ:jor.fichado,planJ:jor.plan,teo,paradas,npar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
+    return {id:o.id,nombre:o.nombre,estado,color,tint,sort,detalle,actual:abierta,currentSecs,lastTs,efectivo,turno,jornada:jor.base,fichadoJ:jor.fichado,planJ:jor.plan,teo,paradas,npar,sinFichar,disp,hechas,ocup,rend,media,ritmo,eficiencia,retrabajos,calidad,porSku:refs,porMotivo:Object.values(porMotivo)};
   },
   // agrupa las filas por operario (this.rows) en filas por puesto de trabajo, sumando sus métricas
   fmtUd(s){ s=Math.round(s||0); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); },
@@ -3978,9 +4013,9 @@ const Prodv = {
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
               <span style="font-size:12px;font-weight:700">${esc(m.motivo)}</span>
               <span class="mono" style="margin-left:auto;font-size:13px;font-weight:700">${fmtDur(m.seg)}</span>
-              <span style="font-size:10px;color:var(--muted);font-family:'Work Sans',system-ui,sans-serif;text-transform:uppercase">· ${m.n}×</span>
+              <span style="font-size:10px;color:var(--muted);font-family:'Work Sans',system-ui,sans-serif;text-transform:uppercase">· ${m.motivo===SIN_FICHAR?m.n+' puesto'+(m.n===1?'':'s'):m.n+'×'}</span>
             </div>
-            <div style="height:8px;background:var(--surf2);overflow:hidden"><div style="width:${Math.round(m.seg/maxSeg*100)}%;height:100%;background:${m.motivo==='Preparación'?'var(--blue)':m.motivo==='Retrabajo'?'var(--red)':'var(--terra)'}"></div></div>
+            <div style="height:8px;background:var(--surf2);overflow:hidden"><div style="width:${Math.round(m.seg/maxSeg*100)}%;height:100%;background:${m.motivo==='Preparación'?'var(--blue)':m.motivo==='Retrabajo'?'var(--red)':m.motivo===SIN_FICHAR?'var(--ink)':'var(--terra)'}"></div></div>
           </div>`).join(''):'<div class="vacio" style="padding:20px">Sin pausas hoy</div>'}
       </div></div>`;
     return `<div style="display:grid;grid-template-columns:1fr 320px 320px;gap:14px;margin-bottom:14px">${trend}${mixCard}${motCard}</div>`;
@@ -4150,7 +4185,7 @@ const ProdvOld = {
           <div><div style="font-size:11px;color:var(--muted)">Turno</div><div style="font-family:'JetBrains Mono',monospace;font-weight:700">${fmtDur(r.turno)}</div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-          <div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Ocupación del turno · ${Math.round(r.ocup*100)}%</div>${bar(r.ocup,'var(--blue)')}</div>
+          <div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Ocupación de la jornada · ${Math.round(r.ocup*100)}%</div>${bar(r.ocup,'var(--blue)')}</div>
           <div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Rendimiento (efectivo/disp) · ${Math.round(r.rend*100)}%</div>${bar(r.rend,'var(--terra)')}</div>
         </div>
       </div></div>`).join('')
@@ -4201,8 +4236,10 @@ const Inf = {
       await Prod.init();
       const F=r.fin.toISOString(), P=r.pini.toISOString(), P1=new Date(r.pini.getTime()-86400000).toISOString();
       const plantillas=await selectAll('turnos_plantilla','*').catch(()=>[]);
-      const [evs,pars,turs,pts,usrs]=await Promise.all([
+      const [evs,cons,pars,turs,pts,usrs]=await Promise.all([
         selectWhere('fabricacion_eventos','unidad_id,sku,puesto_id,tipo,ts',q=>q.gte('ts',P).lt('ts',F)),
+        // núcleos consumidos (los que el encargado escanea en Planta → Consumo) en este periodo y en el anterior
+        selectWhere('unidades','sku,consumida_at',q=>q.eq('estado','consumida').gte('consumida_at',P).lt('consumida_at',F)),
         selectWhere('paradas','puesto_id,motivo,inicio,fin',q=>q.gte('inicio',P1).lt('inicio',F)).catch(()=>[]),
         selectWhere('turnos','puesto_id,inicio,fin',q=>q.gte('inicio',P1).lt('inicio',F)).catch(()=>[]),
         selectAll('puestos_trabajo','*').catch(()=>[]),
@@ -4211,7 +4248,13 @@ const Inf = {
       await Prod.cargarRefs(r.fin.getTime());
       const ds=Prod.duraciones(evs,pars); ds.forEach(x=>{ x.raro=Prod.esRaro(x); x.teo=Prod.tiempoRefDe(x.sku); });
       const cur=ds.filter(x=>en(x.fin,ims,r.fin.getTime())), prev=ds.filter(x=>en(x.fin,r.pini.getTime(),ims));
-      this.d={r,cur,prev,pars,turs,pts,usrs,plantillas};
+      const consCur=cons.filter(x=>en(x.consumida_at,ims,r.fin.getTime())), consPrev=cons.filter(x=>en(x.consumida_at,r.pini.getTime(),ims));
+      // unidad en curso ahora mismo en cada puesto (inicio sin fin): su tiempo aún no está en ninguna unidad terminada
+      const enCurso={}, ahora=Date.now();
+      if(ahora<r.fin.getTime()){ const ult={};
+        evs.forEach(e=>{ const k=e.puesto_id+'|'+e.unidad_id, t=new Date(e.ts).getTime(); if(!ult[k]||t>=ult[k].t) ult[k]={t,tipo:e.tipo,p:e.puesto_id}; });
+        Object.values(ult).forEach(u=>{ if(u.tipo==='inicio' && u.t>=ims) enCurso[u.p]=Math.max(enCurso[u.p]||0,Math.min(8*3600,(ahora-u.t)/1000)); }); }
+      this.d={r,cur,prev,consCur,consPrev,pars,turs,pts,usrs,plantillas,enCurso};
       this.pintar();
     }catch(e){ el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
     finally{ this.loading=false; }
@@ -4237,7 +4280,8 @@ const Inf = {
     const d=this.d, a=d.r.ini.getTime(), b=d.r.fin.getTime();
     const clave=this.por==='programa'?(x=>progDe({sku:x.sku})):(x=>String(x.puesto_id));
     const gC=this.agrupar(d.cur,clave), gP=this.agrupar(d.prev,clave);
-    const pausa=this.horasPuesto(d.pars,a,b), now=Date.now();
+    // el cambio de puesto no es una parada de este puesto (ver jornadaBase)
+    const pausa=this.horasPuesto(d.pars.filter(x=>!esCambioPuesto(x.motivo)),a,b), now=Date.now();
     // jornada de cada puesto: lo fichado, con el turno de plantilla como mínimo cada día (ver jornadaBase);
     // los días que trabajó sin fichar se estiman de la primera a la última unidad
     const estim={}; d.cur.forEach(x=>{ const f=new Date(x.fin).getTime(), i0=f-x.seg*1000, k=ymdLocal(new Date(f)), e=(estim[x.puesto_id]=estim[x.puesto_id]||{});
@@ -4252,7 +4296,7 @@ const Inf = {
         udh:y.seg>=300?y.n/(y.seg/3600):null, med:y.nV?y.segV/y.nV:0, ef:y.segV?y.teoV/y.segV:0,
         nP:p.n, efP:p.segV?p.teoV/p.segV:0};
       f.calidad=f.n?Math.max(0,(f.n-f.ret)/f.n):1;
-      if(this.por==='puesto'){ f.turno=turno[y.k]||0; f.turnoEst=estimado.has(y.k); f.fichado=(jor[y.k]||{}).fichado||0; f.extra=(jor[y.k]||{}).extra||0; f.ocup=f.fichado>0?Math.min(1,y.seg/f.fichado):null; f.gente=this.trabajadores(y.k);
+      if(this.por==='puesto'){ f.turno=turno[y.k]||0; f.turnoEst=estimado.has(y.k); f.fichado=(jor[y.k]||{}).fichado||0; f.extra=(jor[y.k]||{}).extra||0; f.ocup=f.turno>0?Math.min(1,y.seg/f.turno):null; f.udhJ=f.turno>0?y.n/(f.turno/3600):null; f.gente=this.trabajadores(y.k);
         f.oee=f.turno>0?(f.teo/f.turno)*f.calidad:null; }
       return f;
     });
@@ -4282,12 +4326,23 @@ const Inf = {
     Object.values(mot).forEach(m=>{ m.plan=0; m.planEur=0; });
     Object.entries(jor).forEach(([pu,j])=>{ let q=j.plan||0;
       Object.values(mot).filter(m=>esDescanso(m.motivo)).forEach(m=>{ const t=Math.min(q,(m.porP||{})[pu]||0); if(t>0){ q-=t; m.seg-=t; m.plan+=t; const eu=t*ehP(pu)/3600; m.eur-=eu; m.planEur+=eu; } }); });
+    // el cambio de puesto no penaliza ni cuesta en este puesto: pasa entero al paréntesis, como el descanso
+    Object.values(mot).forEach(m=>{ if(esCambioPuesto(m.motivo)){ m.plan+=m.seg; m.planEur+=m.eur; m.seg=0; m.eur=0; } });
+    // SIN FICHAR O SIN REGISTRAR: lo que falta hasta completar la jornada de cada puesto y no es ni tiempo de
+    // unidades ni una parada marcada (se fue sin fichar, se olvidó de cerrar, ratos sueltos). Se paga igual, así
+    // que cuenta en horas y en euros: tiempo efectivo + paradas + esto = jornada.
+    const sf={motivo:SIN_FICHAR,seg:0,n:0,eur:0,plan:0,planEur:0,sf:true};
+    Object.entries(jor).forEach(([pu,j])=>{ const ef=((gPu[pu]||{}).seg||0)+((d.enCurso||{})[pu]||0);
+      const pa=Math.min(Math.max(0,(pausa[pu]||0)-(j.plan||0)),j.fichado||0), x=Math.max(0,(j.base||0)-ef-pa);
+      if(x>=60){ sf.seg+=x; sf.n++; sf.eur+=x*ehP(pu)/3600; } });
+    if(sf.seg>0) mot[SIN_FICHAR]=sf;
     // días trabajados: días con unidades terminadas o con turno fichado dentro del periodo
     const diasT=new Set(d.cur.map(x=>ymdLocal(new Date(x.fin))));
     d.turs.forEach(t=>{ const i=new Date(t.inicio).getTime(); if(i>=a&&i<b) diasT.add(ymdLocal(new Date(i))); });
-    // unidades terminadas por día
-    const dias=[]; for(let t=new Date(d.r.ini);t<d.r.fin;t.setDate(t.getDate()+1)) dias.push({k:ymdLocal(t),d:new Date(t),n:0});
+    // unidades terminadas (n) y núcleos consumidos (c) por día
+    const dias=[]; for(let t=new Date(d.r.ini);t<d.r.fin;t.setDate(t.getDate()+1)) dias.push({k:ymdLocal(t),d:new Date(t),n:0,c:0});
     d.cur.forEach(x=>{ const z=dias.find(z=>z.k===ymdLocal(new Date(x.fin))); if(z) z.n++; });
+    (d.consCur||[]).forEach(x=>{ const z=dias.find(z=>z.k===ymdLocal(new Date(x.consumida_at))); if(z) z.c++; });
     const tot=d.cur.reduce((o,x)=>{ o.seg+=x.seg; o.teo+=x.teo; o.eur+=x.eur; if(x.ret) o.ret++; if(x.raro) o.raros++; return o; },{seg:0,teo:0,eur:0,ret:0,raros:0});
     const totP=d.prev.reduce((o,x)=>{ o.seg+=x.seg; o.teo+=x.teo; return o; },{seg:0,teo:0});
     return {filas,rank,refs,motivos:Object.values(mot).sort((x,y)=>y.seg-x.seg),dias,tot,totP,diasT:diasT.size};
@@ -4311,27 +4366,28 @@ const Inf = {
     const par=t=>t?` <span style="font-size:13px;color:var(--muted);font-weight:600">(${t})</span>`:'';
     let h=`<div class="infk">
       ${kpi(n0(d.cur.length),'Unidades terminadas',delta(d.cur.length,d.prev.length))}
+      ${kpi(n0(d.consCur.length),'Núcleos consumidos',delta(d.consCur.length,d.consPrev.length))}
       ${kpi(n1(c.tot.seg/3600)+' h','Horas de trabajo efectivo')}
       ${kpi(e(c.tot.eur),'Coste mano de obra · tiempo efectivo')}
       ${kpi(n1(totPar/3600)+' h'+par(totPlan>=60?'+'+n1(totPlan/3600)+' h descanso':''),'Horas de parada')}
       ${kpi(e(eurPar)+par(totPlan>=60?'+'+e(eurPlan)+' descanso':''),'Coste mano de obra · tiempo parado')}
       ${kpi(n0(c.diasT),'Días trabajados')}
-    </div><div style="font-size:11px;color:var(--muted);margin:6px 2px">Las flechas comparan con ${ant}. Coste del tiempo parado: horas de parada de cada puesto × su coste por hora. El descanso del turno (Configuración → Turnos) no penaliza: entre paréntesis. Días trabajados: días con unidades terminadas o turno fichado.</div>`;
+    </div><div style="font-size:11px;color:var(--muted);margin:6px 2px">Las flechas comparan con ${ant}. Coste del tiempo parado: horas de parada de cada puesto × su coste por hora; incluye lo que queda sin fichar o sin registrar dentro de la jornada. El descanso del turno (Configuración → Turnos) y el cambio de puesto no penalizan: entre paréntesis. Días trabajados: días con unidades terminadas o turno fichado.</div>`;
 
     // 2) productividad por programa / puesto
     const esP=this.por==='puesto';
     h+=card('Productividad '+(esP?'por puesto de trabajo':'por programa'),'Unidades terminadas en el periodo, tiempo real (sin pausas) y comparación con '+ant+'.',
       c.filas.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left">
-        <th style="padding:8px 10px">${esP?'Puesto':'Programa'}</th><th style="${th}">Uds</th><th style="${th}">Horas</th><th style="${th}">Uds/hora</th><th style="${th}">Tiempo medio</th><th style="${th}">Eficiencia</th>
+        <th style="padding:8px 10px">${esP?'Puesto':'Programa'}</th><th style="${th}">Uds</th><th style="${th}">Horas</th><th style="${th}">${esP?'Uds/h trabajada':'Uds/hora'}</th>${esP?`<th style="${th}">Uds/h jornada</th>`:''}<th style="${th}">Tiempo medio</th><th style="${th}">Eficiencia</th>
         ${esP?`<th style="${th}">Jornada</th><th style="${th}">Extra</th><th style="${th}">Ocupación</th><th style="${th}">OEE</th>`:''}<th style="${th}">Retrabajos</th><th style="${th}">Calidad</th><th style="${th}">Coste M.O.</th><th style="${th}">€/ud</th></tr></thead><tbody>
         ${c.filas.map(f=>`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 10px"><b>${esc(f.txt)}</b>${esP&&f.gente.length?`<div style="font-size:10px;color:var(--muted)">${f.gente.map(esc).join(', ')}</div>`:''}</td>
-          <td style="${tdn}">${n0(f.n)} ${delta(f.n,f.nP)}</td><td style="${tdn}">${n1(f.seg/3600)}</td><td style="${tdn}">${f.udh!=null?n1(f.udh):'—'}</td><td style="${tdn}">${fmtDur(f.med)}</td>
+          <td style="${tdn}">${n0(f.n)} ${delta(f.n,f.nP)}</td><td style="${tdn}">${n1(f.seg/3600)}</td><td style="${tdn}">${f.udh!=null?n1(f.udh):'—'}</td>${esP?`<td style="${tdn}">${f.udhJ!=null?n1(f.udhJ):'—'}</td>`:''}<td style="${tdn}">${fmtDur(f.med)}</td>
           <td style="${tdn};font-weight:700;color:${f.ef>=1?'var(--green)':f.ef<0.85?'var(--red)':'var(--ink)'}">${pc(f.ef)} ${delta(f.ef,f.efP)}</td>
           ${esP?`<td style="${tdn}">${f.turno?n1(f.turno/3600)+' h'+(f.turnoEst?'*':''):'—'}</td><td style="${tdn};color:${f.extra>0?'var(--terra)':'var(--muted)'}">${f.extra>=60?n1(f.extra/3600)+' h':'—'}</td><td style="${tdn}">${f.ocup!=null?pc(f.ocup):'—'}</td><td style="${tdn};font-weight:800">${f.oee!=null?pc(f.oee):'—'}</td>`:''}
           <td style="${tdn}">${f.ret||'—'}</td><td style="${tdn};color:${f.calidad<0.97?'var(--red)':'var(--ink)'}">${pc(f.calidad)}</td>
           <td style="${tdn}">${e(f.eur)}</td><td style="${tdn}">${e(f.n?f.eur/f.n:0)}</td></tr>`).join('')}
         </tbody></table></div>
-        <div style="font-size:11px;color:var(--muted);padding:8px 14px">${c.tot.raros?`<b style="color:var(--terra)">${n0(c.tot.raros)} uds con tiempo raro</b> (menos de 1 minuto, o menos de la mitad o más del doble de lo normal en su núcleo): cuentan como fabricadas pero no entran en el tiempo medio ni en la eficiencia; se ven en Tiempo por núcleo. `:''}Eficiencia: tiempo de referencia del núcleo (mediana de sus tiradas, con 7 tiradas o más; si no, el estándar del programa) ÷ tiempo real. Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Ocupación: tiempo trabajando unidades sobre las horas fichadas. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
+        <div style="font-size:11px;color:var(--muted);padding:8px 14px">${c.tot.raros?`<b style="color:var(--terra)">${n0(c.tot.raros)} uds con tiempo raro</b> (menos de 1 minuto, o menos de la mitad o más del doble de lo normal en su núcleo): cuentan como fabricadas pero no entran en el tiempo medio ni en la eficiencia; se ven en Tiempo por núcleo. `:''}Eficiencia: tiempo de referencia del núcleo (mediana de sus tiradas, con 7 tiradas o más; si no, el estándar del programa) ÷ tiempo real. Retrabajos: unidades durante las que el puesto marcó una parada «Retrabajo» en la tablet.${esP?' Uds/h trabajada: sobre el tiempo de las unidades; Uds/h jornada: sobre toda la jornada. Ocupación: tiempo trabajando unidades sobre la jornada (no sobre lo fichado). El rato marcado como «Cambio de puesto» no cuenta en este puesto. OEE = disponibilidad × rendimiento × calidad. Jornada: lo fichado sin el descanso, contando como mínimo las horas efectivas de su turno (Configuración → Turnos de trabajo) cada día trabajado; lo que pase del turno son horas extra y también cuentan. * Días sin fichar: la jornada se estima de la primera a la última unidad.':''}</div>`
       :'<div class="vacio">No hay unidades terminadas en este periodo.</div>');
 
     // 3) puestos más productivos
@@ -4358,18 +4414,20 @@ const Inf = {
       :'<div class="vacio">No hay referencias con unidades suficientes en los dos periodos para comparar.</div>');
 
     // 5) paradas y 6) unidades por día
-    h+=card('Unidades terminadas por día','',(()=>{ const mx=Math.max(1,...c.dias.map(x=>x.n)); return `<div style="display:flex;align-items:flex-end;gap:${c.dias.length>10?2:8}px;height:140px;padding:12px 14px 4px">
-          ${c.dias.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${x.d.toLocaleDateString('es-ES')}: ${x.n}">
-            <div style="font-size:10px;font-family:'JetBrains Mono',monospace">${x.n||''}</div><div style="width:100%;max-width:34px;height:${x.n/mx*100}%;min-height:${x.n?2:0}px;background:var(--blue);border-radius:3px 3px 0 0"></div></div>`).join('')}</div>
-          <div style="display:flex;gap:${c.dias.length>10?2:8}px;padding:0 14px 10px">${c.dias.map(x=>`<div style="flex:1;text-align:center;font-size:9px;color:var(--muted)">${this.tipo==='semana'?['L','M','X','J','V','S','D'][(x.d.getDay()+6)%7]:x.d.getDate()}</div>`).join('')}</div>`; })());
-    h+=card('Paradas por motivo','Tiempo parado de todos los puestos en el periodo y lo que cuesta en mano de obra: '+fmtDur(totPar)+' · '+e(eurPar)+'.'+(totPlan>=60?' Entre paréntesis, el descanso del turno, que no penaliza: '+fmtDur(totPlan)+' · '+e(eurPlan)+'.':''),
+    const barras=(campo,color)=>{ const mx=Math.max(1,...c.dias.map(x=>x[campo])); return `<div style="display:flex;align-items:flex-end;gap:${c.dias.length>10?2:8}px;height:140px;padding:12px 14px 4px">
+          ${c.dias.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${x.d.toLocaleDateString('es-ES')}: ${x[campo]}">
+            <div style="font-size:10px;font-family:'JetBrains Mono',monospace">${x[campo]||''}</div><div style="width:100%;max-width:34px;height:${x[campo]/mx*100}%;min-height:${x[campo]?2:0}px;background:${color};border-radius:3px 3px 0 0"></div></div>`).join('')}</div>
+          <div style="display:flex;gap:${c.dias.length>10?2:8}px;padding:0 14px 10px">${c.dias.map(x=>`<div style="flex:1;text-align:center;font-size:9px;color:var(--muted)">${this.tipo==='semana'?['L','M','X','J','V','S','D'][(x.d.getDay()+6)%7]:x.d.getDate()}</div>`).join('')}</div>`; };
+    h+=card('Unidades terminadas por día','',barras('n','var(--blue)'));
+    h+=card('Núcleos consumidos por día','Núcleos que el encargado ha consumido en Planta cada día: '+n0(d.consCur.length)+' en el periodo.',barras('c','var(--terra)'));
+    h+=card('Paradas por motivo','Tiempo parado de todos los puestos en el periodo y lo que cuesta en mano de obra: '+fmtDur(totPar)+' · '+e(eurPar)+'.'+(totPlan>=60?' Entre paréntesis, lo que no penaliza (descanso del turno y cambio de puesto): '+fmtDur(totPlan)+' · '+e(eurPlan)+'.':'')+' «'+SIN_FICHAR+'» es lo que falta hasta completar la jornada de cada puesto y no es ni unidades ni una parada marcada.',
       c.motivos.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left">
         <th style="padding:8px 10px">Motivo</th><th style="padding:8px 10px;width:40%"></th><th style="${th}">Veces</th><th style="${th}">Tiempo</th><th style="${th}">% del parado</th><th style="${th}">Coste M.O.</th><th style="${th}">€/vez</th></tr></thead><tbody>
-        ${c.motivos.map(x=>`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 10px"><b>${esc(x.motivo)}</b></td>
-          <td style="padding:7px 10px"><div style="height:10px;background:var(--surf2);border-radius:5px;overflow:hidden"><div style="height:100%;width:${totPar?x.seg/totPar*100:0}%;background:var(--terra)"></div></div></td>
-          <td style="${tdn}">${x.n}</td><td style="${tdn}">${fmtDur(x.seg)}${x.plan>=60?` <span style="color:var(--muted)">(${fmtDur(x.plan)})</span>`:''}</td><td style="${tdn}">${totPar?Math.round(x.seg/totPar*100):0}%</td>
-          <td style="${tdn};font-weight:800">${e(x.eur)}${x.plan>=60?` <span style="color:var(--muted);font-weight:400">(${e(x.planEur)})</span>`:''}</td><td style="${tdn}">${e(x.n?x.eur/x.n:0)}</td></tr>`).join('')}
-        <tr style="border-top:2px solid var(--ink)"><td style="padding:7px 10px"><b>Total</b></td><td></td><td style="${tdn}">${c.motivos.reduce((a,x)=>a+x.n,0)}</td><td style="${tdn}">${fmtDur(totPar)}${totPlan>=60?` <span style="color:var(--muted)">(${fmtDur(totPlan)})</span>`:''}</td><td style="${tdn}">100%</td><td style="${tdn};font-weight:800">${e(eurPar)}${totPlan>=60?` <span style="color:var(--muted);font-weight:400">(${e(eurPlan)})</span>`:''}</td><td></td></tr>
+        ${c.motivos.map(x=>`<tr style="border-top:1px solid var(--border)"><td style="padding:7px 10px"><b>${esc(x.motivo)}</b>${x.sf?`<div style="font-size:10px;color:var(--muted)">${x.n} puesto${x.n===1?'':'s'}</div>`:''}</td>
+          <td style="padding:7px 10px"><div style="height:10px;background:var(--surf2);border-radius:5px;overflow:hidden"><div style="height:100%;width:${totPar?x.seg/totPar*100:0}%;background:${x.sf?'var(--ink)':'var(--terra)'}"></div></div></td>
+          <td style="${tdn}">${x.sf?'—':x.n}</td><td style="${tdn}">${fmtDur(x.seg)}${x.plan>=60?` <span style="color:var(--muted)">(${fmtDur(x.plan)})</span>`:''}</td><td style="${tdn}">${totPar?Math.round(x.seg/totPar*100):0}%</td>
+          <td style="${tdn};font-weight:800">${e(x.eur)}${x.plan>=60?` <span style="color:var(--muted);font-weight:400">(${e(x.planEur)})</span>`:''}</td><td style="${tdn}">${x.sf?'—':e(x.n?x.eur/x.n:0)}</td></tr>`).join('')}
+        <tr style="border-top:2px solid var(--ink)"><td style="padding:7px 10px"><b>Total</b></td><td></td><td style="${tdn}">${c.motivos.reduce((a,x)=>a+(x.sf?0:x.n),0)}</td><td style="${tdn}">${fmtDur(totPar)}${totPlan>=60?` <span style="color:var(--muted)">(${fmtDur(totPlan)})</span>`:''}</td><td style="${tdn}">100%</td><td style="${tdn};font-weight:800">${e(eurPar)}${totPlan>=60?` <span style="color:var(--muted);font-weight:400">(${e(eurPlan)})</span>`:''}</td><td></td></tr>
         </tbody></table></div>`:'<div class="vacio">Sin paradas.</div>');
     el.innerHTML=h;
   },
@@ -4379,12 +4437,12 @@ const Inf = {
     if(typeof XLSX==='undefined'||!XLSX.utils.book_new){ toast('No se ha podido cargar la librería de Excel','err'); return; }
     const c=this.calc, d=this.d, r2=x=>Math.round(x*100)/100, wb=XLSX.utils.book_new();
     const hoja=(nombre,rows)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{'':'Sin datos'}]),nombre);
-    hoja('Productividad',c.filas.map(f=>({[this.por==='programa'?'Programa':'Puesto']:f.txt,...(this.por==='puesto'?{Trabajadores:f.gente.join(', ')}:{}),Uds:f.n,'Uds periodo anterior':f.nP,Horas:r2(f.seg/3600),'Uds/hora':f.udh!=null?r2(f.udh):'',
+    hoja('Productividad',c.filas.map(f=>({[this.por==='programa'?'Programa':'Puesto']:f.txt,...(this.por==='puesto'?{Trabajadores:f.gente.join(', ')}:{}),Uds:f.n,'Uds periodo anterior':f.nP,Horas:r2(f.seg/3600),[this.por==='puesto'?'Uds/hora trabajada':'Uds/hora']:f.udh!=null?r2(f.udh):'',...(this.por==='puesto'?{'Uds/hora jornada':f.udhJ!=null?r2(f.udhJ):'','Ocupación %':f.ocup!=null?Math.round(f.ocup*100):''}:{}),
       'Tiempo medio (min)':r2(f.med/60),'Eficiencia %':Math.round(f.ef*100),'Eficiencia anterior %':Math.round(f.efP*100),Retrabajos:f.ret,'Calidad %':Math.round(f.calidad*100),...(this.por==='puesto'?{'Horas jornada':r2(f.turno/3600),'Horas fichadas':r2((f.fichado||0)/3600),'Horas extra':r2((f.extra||0)/3600),'OEE %':f.oee!=null?Math.round(f.oee*100):''}:{}),'Coste MO €':r2(f.eur),'€/ud':r2(f.n?f.eur/f.n:0)})));
     hoja('Ranking OEE',c.rank.map((x,i)=>({Posición:i+1,'Puesto de trabajo':x.txt,Trabajadores:x.gente.join(', '),Uds:x.n,'OEE %':Math.round(x.oee*100),'Disponibilidad %':Math.round(x.disp*100),'Rendimiento %':Math.round(x.rend*100),'Calidad %':Math.round(x.cal*100),'Uds/hora':r2(x.udh)})));
     hoja('Tiempos referencia',[...c.refs].sort((a,b)=>a.pct-b.pct).map(x=>({Referencia:x.sku,Programa:x.prog,'Uds antes':x.nP,'Uds ahora':x.n,'Antes (min)':r2(x.medP/60),'Ahora (min)':r2(x.med/60),'Cambio %':Math.round(x.pct),'Teórico (min)':r2(x.teo/60)})));
-    hoja('Paradas',c.motivos.map(x=>({Motivo:x.motivo,Veces:x.n,'Horas (penalizan)':r2(x.seg/3600),'Coste MO €':r2(x.eur),'Horas descanso turno (no penalizan)':r2(x.plan/3600),'Coste descanso €':r2(x.planEur)})));
-    hoja('Por día',c.dias.map(x=>({Día:x.k,'Unidades terminadas':x.n})));
+    hoja('Paradas',c.motivos.map(x=>({Motivo:x.motivo,Veces:x.sf?'':x.n,'Horas (penalizan)':r2(x.seg/3600),'Coste MO €':r2(x.eur),'Horas que no penalizan (descanso, cambio de puesto)':r2(x.plan/3600),'Coste que no penaliza €':r2(x.planEur)})));
+    hoja('Por día',c.dias.map(x=>({Día:x.k,'Unidades terminadas':x.n,'Núcleos consumidos':x.c})));
     XLSX.writeFile(wb,'informe_'+this.tipo+'_'+ymdLocal(d.r.ini)+'.xlsx');
   },
   imprimir(){
