@@ -295,7 +295,7 @@ body{font-family:'Work Sans',system-ui,sans-serif;background:var(--bg);color:var
 .sx-cob i u{display:block;height:100%}
 @media(max-width:1280px){ .sx-cuerpo{grid-template-columns:1fr} .sx-cola{position:static;max-height:520px;order:-1} }
 @media(max-width:900px){ .sx-progs{grid-template-columns:1fr} .sx-panel{width:100vw} .sx-lt table{min-width:720px} }
-.infk{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:4px}
+.infk{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:4px}
 @media(max-width:700px){.infk{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -4240,8 +4240,10 @@ const Inf = {
       await Prod.init();
       const F=r.fin.toISOString(), P=r.pini.toISOString(), P1=new Date(r.pini.getTime()-86400000).toISOString();
       const plantillas=await selectAll('turnos_plantilla','*').catch(()=>[]);
-      const [evs,pars,turs,pts,usrs]=await Promise.all([
+      const [evs,cons,pars,turs,pts,usrs]=await Promise.all([
         selectWhere('fabricacion_eventos','unidad_id,sku,puesto_id,tipo,ts',q=>q.gte('ts',P).lt('ts',F)),
+        // núcleos consumidos (los que el encargado escanea en Planta → Consumo) en este periodo y en el anterior
+        selectWhere('unidades','sku,consumida_at',q=>q.eq('estado','consumida').gte('consumida_at',P).lt('consumida_at',F)),
         selectWhere('paradas','puesto_id,motivo,inicio,fin',q=>q.gte('inicio',P1).lt('inicio',F)).catch(()=>[]),
         selectWhere('turnos','puesto_id,inicio,fin',q=>q.gte('inicio',P1).lt('inicio',F)).catch(()=>[]),
         selectAll('puestos_trabajo','*').catch(()=>[]),
@@ -4250,7 +4252,8 @@ const Inf = {
       await Prod.cargarRefs(r.fin.getTime());
       const ds=Prod.duraciones(evs,pars); ds.forEach(x=>{ x.raro=Prod.esRaro(x); x.teo=Prod.tiempoRefDe(x.sku); });
       const cur=ds.filter(x=>en(x.fin,ims,r.fin.getTime())), prev=ds.filter(x=>en(x.fin,r.pini.getTime(),ims));
-      this.d={r,cur,prev,pars,turs,pts,usrs,plantillas};
+      const consCur=cons.filter(x=>en(x.consumida_at,ims,r.fin.getTime())), consPrev=cons.filter(x=>en(x.consumida_at,r.pini.getTime(),ims));
+      this.d={r,cur,prev,consCur,consPrev,pars,turs,pts,usrs,plantillas};
       this.pintar();
     }catch(e){ el.innerHTML='<div class="vacio">Error: '+esc(e.message||e)+'</div>'; }
     finally{ this.loading=false; }
@@ -4324,9 +4327,10 @@ const Inf = {
     // días trabajados: días con unidades terminadas o con turno fichado dentro del periodo
     const diasT=new Set(d.cur.map(x=>ymdLocal(new Date(x.fin))));
     d.turs.forEach(t=>{ const i=new Date(t.inicio).getTime(); if(i>=a&&i<b) diasT.add(ymdLocal(new Date(i))); });
-    // unidades terminadas por día
-    const dias=[]; for(let t=new Date(d.r.ini);t<d.r.fin;t.setDate(t.getDate()+1)) dias.push({k:ymdLocal(t),d:new Date(t),n:0});
+    // unidades terminadas (n) y núcleos consumidos (c) por día
+    const dias=[]; for(let t=new Date(d.r.ini);t<d.r.fin;t.setDate(t.getDate()+1)) dias.push({k:ymdLocal(t),d:new Date(t),n:0,c:0});
     d.cur.forEach(x=>{ const z=dias.find(z=>z.k===ymdLocal(new Date(x.fin))); if(z) z.n++; });
+    (d.consCur||[]).forEach(x=>{ const z=dias.find(z=>z.k===ymdLocal(new Date(x.consumida_at))); if(z) z.c++; });
     const tot=d.cur.reduce((o,x)=>{ o.seg+=x.seg; o.teo+=x.teo; o.eur+=x.eur; if(x.ret) o.ret++; if(x.raro) o.raros++; return o; },{seg:0,teo:0,eur:0,ret:0,raros:0});
     const totP=d.prev.reduce((o,x)=>{ o.seg+=x.seg; o.teo+=x.teo; return o; },{seg:0,teo:0});
     return {filas,rank,refs,motivos:Object.values(mot).sort((x,y)=>y.seg-x.seg),dias,tot,totP,diasT:diasT.size};
@@ -4350,6 +4354,7 @@ const Inf = {
     const par=t=>t?` <span style="font-size:13px;color:var(--muted);font-weight:600">(${t})</span>`:'';
     let h=`<div class="infk">
       ${kpi(n0(d.cur.length),'Unidades terminadas',delta(d.cur.length,d.prev.length))}
+      ${kpi(n0(d.consCur.length),'Núcleos consumidos',delta(d.consCur.length,d.consPrev.length))}
       ${kpi(n1(c.tot.seg/3600)+' h','Horas de trabajo efectivo')}
       ${kpi(e(c.tot.eur),'Coste mano de obra · tiempo efectivo')}
       ${kpi(n1(totPar/3600)+' h'+par(totPlan>=60?'+'+n1(totPlan/3600)+' h descanso':''),'Horas de parada')}
@@ -4397,10 +4402,12 @@ const Inf = {
       :'<div class="vacio">No hay referencias con unidades suficientes en los dos periodos para comparar.</div>');
 
     // 5) paradas y 6) unidades por día
-    h+=card('Unidades terminadas por día','',(()=>{ const mx=Math.max(1,...c.dias.map(x=>x.n)); return `<div style="display:flex;align-items:flex-end;gap:${c.dias.length>10?2:8}px;height:140px;padding:12px 14px 4px">
-          ${c.dias.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${x.d.toLocaleDateString('es-ES')}: ${x.n}">
-            <div style="font-size:10px;font-family:'JetBrains Mono',monospace">${x.n||''}</div><div style="width:100%;max-width:34px;height:${x.n/mx*100}%;min-height:${x.n?2:0}px;background:var(--blue);border-radius:3px 3px 0 0"></div></div>`).join('')}</div>
-          <div style="display:flex;gap:${c.dias.length>10?2:8}px;padding:0 14px 10px">${c.dias.map(x=>`<div style="flex:1;text-align:center;font-size:9px;color:var(--muted)">${this.tipo==='semana'?['L','M','X','J','V','S','D'][(x.d.getDay()+6)%7]:x.d.getDate()}</div>`).join('')}</div>`; })());
+    const barras=(campo,color)=>{ const mx=Math.max(1,...c.dias.map(x=>x[campo])); return `<div style="display:flex;align-items:flex-end;gap:${c.dias.length>10?2:8}px;height:140px;padding:12px 14px 4px">
+          ${c.dias.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${x.d.toLocaleDateString('es-ES')}: ${x[campo]}">
+            <div style="font-size:10px;font-family:'JetBrains Mono',monospace">${x[campo]||''}</div><div style="width:100%;max-width:34px;height:${x[campo]/mx*100}%;min-height:${x[campo]?2:0}px;background:${color};border-radius:3px 3px 0 0"></div></div>`).join('')}</div>
+          <div style="display:flex;gap:${c.dias.length>10?2:8}px;padding:0 14px 10px">${c.dias.map(x=>`<div style="flex:1;text-align:center;font-size:9px;color:var(--muted)">${this.tipo==='semana'?['L','M','X','J','V','S','D'][(x.d.getDay()+6)%7]:x.d.getDate()}</div>`).join('')}</div>`; };
+    h+=card('Unidades terminadas por día','',barras('n','var(--blue)'));
+    h+=card('Núcleos consumidos por día','Núcleos que el encargado ha consumido en Planta cada día: '+n0(d.consCur.length)+' en el periodo.',barras('c','var(--terra)'));
     h+=card('Paradas por motivo','Tiempo parado de todos los puestos en el periodo y lo que cuesta en mano de obra: '+fmtDur(totPar)+' · '+e(eurPar)+'.'+(totPlan>=60?' Entre paréntesis, el descanso del turno, que no penaliza: '+fmtDur(totPlan)+' · '+e(eurPlan)+'.':''),
       c.motivos.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--surf2);text-align:left">
         <th style="padding:8px 10px">Motivo</th><th style="padding:8px 10px;width:40%"></th><th style="${th}">Veces</th><th style="${th}">Tiempo</th><th style="${th}">% del parado</th><th style="${th}">Coste M.O.</th><th style="${th}">€/vez</th></tr></thead><tbody>
@@ -4423,7 +4430,7 @@ const Inf = {
     hoja('Ranking OEE',c.rank.map((x,i)=>({Posición:i+1,'Puesto de trabajo':x.txt,Trabajadores:x.gente.join(', '),Uds:x.n,'OEE %':Math.round(x.oee*100),'Disponibilidad %':Math.round(x.disp*100),'Rendimiento %':Math.round(x.rend*100),'Calidad %':Math.round(x.cal*100),'Uds/hora':r2(x.udh)})));
     hoja('Tiempos referencia',[...c.refs].sort((a,b)=>a.pct-b.pct).map(x=>({Referencia:x.sku,Programa:x.prog,'Uds antes':x.nP,'Uds ahora':x.n,'Antes (min)':r2(x.medP/60),'Ahora (min)':r2(x.med/60),'Cambio %':Math.round(x.pct),'Teórico (min)':r2(x.teo/60)})));
     hoja('Paradas',c.motivos.map(x=>({Motivo:x.motivo,Veces:x.n,'Horas (penalizan)':r2(x.seg/3600),'Coste MO €':r2(x.eur),'Horas descanso turno (no penalizan)':r2(x.plan/3600),'Coste descanso €':r2(x.planEur)})));
-    hoja('Por día',c.dias.map(x=>({Día:x.k,'Unidades terminadas':x.n})));
+    hoja('Por día',c.dias.map(x=>({Día:x.k,'Unidades terminadas':x.n,'Núcleos consumidos':x.c})));
     XLSX.writeFile(wb,'informe_'+this.tipo+'_'+ymdLocal(d.r.ini)+'.xlsx');
   },
   imprimir(){
