@@ -752,7 +752,10 @@ async function idsPendientesDeOT(ot){
 const PROG_DESC={N001:'Extra Firm',N002:'040',N003:'030',N004:'V50',N005:'Medium',N006:'V65/32',N007:'V65/40',N008:'V80 Soft',N009:'V80/40',N010:'Abatible',N011:'Kids',N012:'Articulado'};
 // texto bajo el código del núcleo: medida + nombre (si el nombre aporta algo distinto del código)
 function etiquetaNuc(b){const med=medida(b.sku), nom=(b.nombre&&b.nombre!==b.sku)?b.nombre:''; return [med,nom].filter(Boolean).join(' · ');}
-function progDe(p){const m=(p.descripcion||p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
+// programa de un núcleo (N001…). Se busca en la descripción y, si ahí no está (p. ej. una importación que la dejó sin
+// el código de programa), en el propio SKU, que siempre empieza por él. Antes, si la descripción tenía texto pero sin
+// "N0xx", TODOS los núcleos caían en un programa "—" y desaparecían los programas del Dashboard.
+function progDe(p){const m=String(p.descripcion||'').match(/(N\d{3})/)||String(p.sku||'').match(/(N\d{3})/);return m?m[1]:'—'}
 function medida(sku){const rest=String(sku||'').replace(/^N\d{3}/,'');const m=rest.match(/(\d{2,3})\s*[xX]\s*(\d{3})/);return m?`Medida ${m[1]} × ${m[2]}`:''}
 
 let CFG={dias_historico:5,umbral_semanal:2.0,maduracion:2,coste_hora_operario:0};
