@@ -1580,12 +1580,17 @@ function startViewAuto(v){
 
 const Prod = {
   lineas:[], cant:{}, tipo:{}, manual:{}, manualTipo:{}, parteNum:'',
-  modelosMap:{}, prodMap:{}, costeMat:{}, tiempos:{}, refs:false,
+  modelosMap:{}, prodMap:{}, costeMat:{}, tiempos:{},
+  // OJO: «refs» son los TIEMPOS de referencia de cada núcleo (los calcula cargarRefs, desde Informes, Productividad o
+  // Tiempo por núcleo). Antes también se usaba como «ya he cargado el catálogo»: si alguna de esas pantallas se abría antes
+  // que Producción, «refs» ya era un objeto, Producción creía tener el catálogo y todas las líneas del parte salían «sin núcleo»;
+  // y al revés, cargar el catálogo pisaba los tiempos con «true». Ahora el aviso de catálogo cargado es «catalogoOk».
+  refs:false, catalogoOk:false,
 
   async init(){
     await this.cargarCostesPuesto(); // barato: siempre al día, aunque el resto ya esté cacheado
     // las referencias ya cargadas se reutilizan, salvo que el catálogo de modelos se hubiera quedado vacío
-    if(this.refs && Object.keys(this.modelosMap).length) return;
+    if(this.catalogoOk && Object.keys(this.modelosMap).length) return;
     try{
       let modelos;
       try{ modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id,especial'); this.hayEspecial=true; }
@@ -1599,7 +1604,7 @@ const Prod = {
       const tsku = await selectWhere('tiempos_sku','sku,mediana_seg,n_unidades',q=>q.eq('vigente',true));
       this.tiempos = {}; tsku.forEach(t=>{ this.tiempos[t.sku]={seg:Number(t.mediana_seg||0)||0, n:Number(t.n_unidades||0)||0}; });
       await Pers.load(); // cargar categorías de personalización
-      this.refs = true; this.errRefs='';
+      this.catalogoOk = true; this.errRefs='';
     }catch(e){ this.errRefs=(e&&e.message)||String(e); toast('Error cargando referencias: '+this.errRefs,'err'); }
   },
 
@@ -5204,7 +5209,7 @@ const Alta = {
       $('#altaTabla').innerHTML='';$('#altaAviso').innerHTML='';
       btn.textContent='Importar';btn.style.opacity=.5;
       // refrescar métricas y referencias de producción
-      await refrescarMet(true); render(); Prod.refs=false;
+      await refrescarMet(true); render(); Prod.catalogoOk=false;
     }catch(e){ toast('Error al importar: '+(e.message||e),'err'); btn.disabled=false; btn.textContent='Importar'; }
   }
 };
