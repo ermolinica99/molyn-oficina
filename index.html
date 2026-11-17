@@ -1582,7 +1582,8 @@ const Prod = {
 
   async init(){
     await this.cargarCostesPuesto(); // barato: siempre al día, aunque el resto ya esté cacheado
-    if(this.refs) return;
+    // las referencias ya cargadas se reutilizan, salvo que el catálogo de modelos se hubiera quedado vacío
+    if(this.refs && Object.keys(this.modelosMap).length) return;
     try{
       let modelos;
       try{ modelos = await selectAll('modelos','sku_pf,nombre,medida,sku_nucleo,sin_nucleo,categoria_sin_nucleo_id,especial'); this.hayEspecial=true; }
